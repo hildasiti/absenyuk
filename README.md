@@ -81,3 +81,4 @@ jadi 1 blok kode dengan pola yang sama seperti `handleLogin` di
 Kirim daftar fungsi yang mau diprioritaskan dulu (misalnya
 `saveAbsenMasuk` + `getDashboardData` dulu karena paling sering
 dipakai), nanti saya portingkan satu-satu dengan pola yang sama.
+oke
