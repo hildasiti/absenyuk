@@ -98,6 +98,17 @@ export default {
         return await handleLogout(request, env);
       }
 
+      // ENDPOINT DEBUG SEMENTARA - hapus setelah masalah env var selesai.
+      // Tidak membocorkan isi secret, cuma menunjukkan nama key yang ke-bind.
+      if (request.method === 'GET' && url.pathname === '/api/debug-env') {
+        return json({
+          env_keys_tersedia: Object.keys(env),
+          SUPABASE_URL_ada: typeof env.SUPABASE_URL !== 'undefined',
+          SUPABASE_SERVICE_ROLE_KEY_ada: typeof env.SUPABASE_SERVICE_ROLE_KEY !== 'undefined',
+          SESSIONS_KV_ada: typeof env.SESSIONS !== 'undefined'
+        });
+      }
+
       return json({ success: false, message: 'Endpoint tidak ditemukan: ' + url.pathname }, 404);
     } catch (err) {
       return json({ success: false, message: 'CRITICAL BACKEND ERROR: ' + err.message }, 500);
