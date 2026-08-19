@@ -7,7 +7,7 @@ compatibility_date = "2026-08-01"
 # dengan ID yang muncul dari perintah wrangler.
 [[kv_namespaces]]
 binding = "SESSIONS"
-id = "GANTI_DENGAN_ID_NAMESPACE_KV"
+id = "614e992ccfd643b8ac628d0de257937b"
 
 # CATATAN: SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY TIDAK ditaruh di sini.
 # Keduanya harus disimpan sebagai Worker Secrets (wrangler secret put),
