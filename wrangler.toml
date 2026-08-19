@@ -1,0 +1,14 @@
+name = "absenyuk-worker"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# Binding KV untuk session (pengganti CacheService Apps Script).
+# Setelah buat namespace (lihat langkah di README), isi "id" di bawah
+# dengan ID yang muncul dari perintah wrangler.
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "GANTI_DENGAN_ID_NAMESPACE_KV"
+
+# CATATAN: SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY TIDAK ditaruh di sini.
+# Keduanya harus disimpan sebagai Worker Secrets (wrangler secret put),
+# bukan di file ini, supaya tidak ikut ter-commit ke Git.
