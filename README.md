@@ -1,7 +1,7 @@
 # AbsenYuk! Worker — Setup & Deploy
 
 ## 1. Install dependencies
-```bash
+```bash 
 cd absenyuk-worker
 npm install
 ```
