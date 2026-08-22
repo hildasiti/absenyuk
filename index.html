@@ -1188,13 +1188,15 @@
 
 <script>//<![CDATA[
 // ==========================================
-// GAS API SHIM — dipakai di Blogger/Google Sites sebagai pengganti google.script.run
-// Cukup ganti GAS_API_URL di bawah dengan URL Web App hasil deploy Anda.
-// Setelah ini dimuat, seluruh kode di JS.html bisa jalan TANPA diubah sama sekali,
-// karena shim ini meniru persis pola google.script.run.withSuccessHandler(...).namaFungsi(...)
+// API SHIM — jembatan antara frontend dan Worker Cloudflare.
+// Meniru pola google.script.run.withSuccessHandler(...).namaFungsi(...)
+// (nama itu cuma konvensi penamaan JS, sudah tidak terhubung ke Google
+// Apps Script sama sekali) supaya seluruh kode di bawah tetap jalan
+// tanpa perlu diubah satu per satu.
+// Cukup ganti WORKER_API_URL di bawah kalau URL Worker berubah.
 // ==========================================
 
-var GAS_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
+var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
 
 (function () {
   function buatRunner(successHandler, failureHandler) {
@@ -1210,12 +1212,11 @@ var GAS_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
         return function () {
           var args = Array.prototype.slice.call(arguments);
 
-          fetch(GAS_API_URL, {
+          fetch(WORKER_API_URL, {
             method: 'POST',
-            // PENTING: pakai text/plain, BUKAN application/json.
-            // Kalau pakai application/json, browser akan mengirim preflight
-            // request (OPTIONS) dulu, dan Apps Script Web App TIDAK bisa
-            // menjawab preflight itu dengan benar -> request akan gagal (CORS error).
+            // text/plain dipakai supaya browser tidak perlu kirim preflight
+            // request (OPTIONS) sebelum request sesungguhnya - sedikit lebih
+            // cepat. Worker tetap membaca body-nya sebagai JSON seperti biasa.
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({ action: propName, args: args })
           })
@@ -1224,7 +1225,7 @@ var GAS_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
               if (json.success) {
                 if (successHandler) successHandler(json.data);
               } else {
-                console.error('GAS API error [' + propName + ']:', json.error);
+                console.error('Worker API error [' + propName + ']:', json.error);
                 if (failureHandler) failureHandler(new Error(json.error));
               }
             })

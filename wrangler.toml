@@ -2,7 +2,7 @@ name = "absenyuk"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
 
-# Binding KV untuk session (pengganti CacheService Apps Script).
+# Binding KV untuk session login.
 # Setelah buat namespace (lihat langkah di README), isi "id" di bawah
 # dengan ID yang muncul dari perintah wrangler.
 [[kv_namespaces]]
@@ -12,3 +12,10 @@ id = "614e992ccfd643b8ac628d0de257937b"
 # CATATAN: SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY TIDAK ditaruh di sini.
 # Keduanya harus disimpan sebagai Worker Secrets (wrangler secret put),
 # bukan di file ini, supaya tidak ikut ter-commit ke Git.
+
+# Cron Triggers - jadwal otomatis notifikasi & auto-alpa.
+# Waktu dalam UTC (WIB = UTC+7):
+#   "20 0 * * *" -> 07:20 WIB setiap hari - pengingat belum absen (FCM)
+#   "0 5 * * *"  -> 12:00 WIB setiap hari - auto set "Tanpa Keterangan"
+[triggers]
+crons = ["20 0 * * *", "0 5 * * *"]

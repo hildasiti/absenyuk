@@ -1,84 +1,61 @@
-# AbsenYuk! Worker — Setup & Deploy
+# AbsenYuk! — Backend (Cloudflare Worker)
 
-## 1. Install dependencies
-```bash 
-cd absenyuk-worker
-npm install
+Backend AbsenYuk! sekarang berjalan sepenuhnya di atas 3 layanan:
+- **GitHub** — penyimpanan kode & pemicu deploy otomatis (push = deploy)
+- **Cloudflare Workers** — backend/API (folder ini)
+- **Supabase** — database (Postgres)
+
+Frontend (`index.html`) di-hosting terpisah di **GitHub Pages**.
+
+Tidak ada lagi ketergantungan ke Google Apps Script atau Firestore —
+keduanya sudah sepenuhnya digantikan.
+
+## Struktur project
+
 ```
-
-## 2. Login ke Cloudflare (sekali saja)
-```bash
-npx wrangler login
-```
-Ini akan buka browser untuk otorisasi akun Cloudflare Anda.
-
-## 3. Buat KV namespace untuk session
-```bash
-npx wrangler kv namespace create SESSIONS
-```
-Perintah ini akan mengeluarkan output berisi `id = "xxxxxxxx"`. Salin id
-itu, lalu tempel ke `wrangler.toml`, ganti bagian:
-```toml
-id = "GANTI_DENGAN_ID_NAMESPACE_KV"
-```
-
-## 4. Set secrets (SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY)
-Ambil dari Supabase Dashboard > Project Settings > API.
-```bash
-npx wrangler secret put SUPABASE_URL
-# tempel: https://xxxxx.supabase.co (TANPA trailing slash)
-
-npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-# tempel: service_role key (BUKAN anon key -- ini yang bypass RLS)
+absenyuk-worker/
+├── wrangler.toml       # konfigurasi Worker: nama, KV binding, jadwal cron
+├── package.json
+└── src/
+    ├── index.js         # entry point: routing request + jadwal cron
+    ├── handlers.js       # semua logic bisnis (login, absen, dsb)
+    ├── supabase.js       # helper baca/tulis ke Supabase (PostgREST)
+    ├── session.js        # session login, disimpan di Workers KV
+    ├── auth.js            # verifikasi & migrasi password
+    ├── settings.js         # baca tabel settings (dengan cache)
+    ├── libur.js             # cek hari libur + hitung jarak GPS
+    ├── date.js               # jam/tanggal Asia/Jakarta yang akurat
+    ├── cache.js               # helper cache generik di KV
+    ├── googleAuth.js           # OAuth2 Service Account (dipakai FCM)
+    └── fcm.js                   # kirim notifikasi push (Firebase Cloud Messaging)
 ```
 
-## 5. Jalankan lokal untuk testing
-```bash
-npm run dev
-```
-Wrangler akan jalankan Worker di `http://localhost:8787`. Test login:
-```bash
-curl -X POST http://localhost:8787/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"nuptk":"admin","password":"admins123"}'
-```
-Response yang diharapkan (login pertama = masih plaintext, otomatis
-ter-hash setelah ini):
+## Cara deploy (lewat GitHub, tanpa command line)
+
+1. Push/upload seluruh isi folder ini ke repo GitHub.
+2. Di Cloudflare dashboard: **Workers & Pages > Create > Import a repository**, pilih repo tersebut. Cloudflare otomatis build & deploy setiap ada commit baru.
+3. Buat KV namespace lewat dashboard (**Workers & Pages > KV > Create a namespace**, beri nama `SESSIONS`), lalu tempel Namespace ID-nya ke `wrangler.toml` (baris `id = "..."` di bagian `[[kv_namespaces]]`).
+4. Isi secret di **Settings > Runtime > Variables and secrets** (bukan Build):
+   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — dari Supabase Project Settings > API
+   - `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY` — dari service account Firebase (untuk fitur notifikasi push)
+5. Cron Trigger (pengingat jam 07:20 & auto-alpa jam 12:00 WIB) otomatis aktif begitu `wrangler.toml` ter-deploy, tidak perlu setup manual tambahan.
+
+## Cara kerja endpoint
+
+Worker cuma punya **satu route** (`POST /`) yang menerima:
 ```json
-{"success":true,"token":"...","user":{"id":"U01","nuptk":"admin","nama":"Administrator","role":"ADMIN","kategori":"Tidak Mengajar"}}
+{ "action": "namaFungsi", "args": [ /* argumen sesuai fungsi */ ] }
 ```
-
-## 6. Deploy ke Cloudflare
-```bash
-npm run deploy
+dan mengembalikan:
+```json
+{ "success": true, "data": /* hasil fungsi */ }
 ```
-Setelah selesai, Wrangler menampilkan URL Worker Anda, contoh:
-`https://absenyuk-worker.<subdomain-anda>.workers.dev`
+Semua nama fungsi yang bisa dipanggil ada di peta `handlers` di ujung `src/handlers.js`.
 
-Ini adalah URL pengganti `GAS_WEB_APP_URL` di frontend lama.
+Frontend memanggil ini lewat shim `google.script.run` yang sudah tertanam di `index.html` — nama itu sekadar konvensi penamaan JavaScript di sana, isinya murni `fetch()` ke Worker ini.
 
----
+## Menambah fungsi baru
 
-## Menambah endpoint baru
-
-Setiap fungsi Apps Script (`saveAbsenMasuk`, `getDashboardData`, dst)
-jadi 1 blok kode dengan pola yang sama seperti `handleLogin` di
-`src/index.js`:
-
-1. Buat fungsi `handleNamaFungsi(request, env)` — baca body via
-   `await request.json()`, proses pakai helper dari `supabase.js`
-   (`sbSelect`, `sbInsert`, `sbUpdate`, `sbDelete`), return `json({...})`.
-2. Daftarkan route-nya di blok `if` dalam `fetch()`.
-3. Kalau endpoint butuh login, tambahkan pengecekan session di awal
-   fungsi:
-   ```js
-   const authHeader = request.headers.get('Authorization') || '';
-   const token = authHeader.replace('Bearer ', '');
-   const session = await getSession(env, token);
-   if (!session) return json({ success: false, message: 'Sesi tidak valid.' }, 401);
-   ```
-
-Kirim daftar fungsi yang mau diprioritaskan dulu (misalnya
-`saveAbsenMasuk` + `getDashboardData` dulu karena paling sering
-dipakai), nanti saya portingkan satu-satu dengan pola yang sama.
-oke oke 
+1. Tulis fungsi baru di `handlers.js`, format `async function namaFungsi(args, env) { ... }` — `args[0]` biasanya token sesi (kecuali `loginUser`).
+2. Daftarkan di objek `handlers` pada akhir file.
+3. Selesai — tidak perlu sentuh `index.js` atau routing apa pun, dan tidak perlu ubah `index.html` selama nama fungsinya sama dengan yang dipanggil di frontend.
