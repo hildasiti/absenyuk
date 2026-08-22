@@ -5,6 +5,7 @@ import { getSettingsMap } from './settings.js';
 import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
 import { nowJakarta, getPeriodeBerjalan, getMingguIniSeninJumat, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
+import { kirimNotifikasiKeSatuHP } from './fcm.js';
 
 function generateShortID(prefix) {
   const karakter = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -31,7 +32,7 @@ async function getJadwalKegiatanCached(env) {
   return cached(env, 'JADWAL_KEGIATAN_CACHE', 60, () => sbSelect(env, 'jadwal_kegiatan'));
 }
 
-// Konfigurasi jenis laporan/kegiatan - padanan KEGIATAN_HEADER_MAP di code.gs.
+// Konfigurasi jenis laporan/kegiatan (8 jenis majelis/kegiatan rutin yang identik strukturnya).
 const KEGIATAN_IDENTIK = [
   'BRIEFING_TAWASUL', 'PENDAMPINGAN_DHUHA', 'SHOLAT_DZUHUR', 'SHOLAT_ASHAR',
   'DZIKIR_MAKHSUS', 'PENGAJIAN_AHAD', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL'
@@ -896,9 +897,102 @@ async function saveAfirmasiUntukGuru(args, env) {
 }
 
 // ====================================================================
-// EXPORT: peta nama fungsi -> handler. Nama HARUS sama persis dengan
-// nama fungsi Apps Script yang lama, supaya frontend (index.html) tidak
-// perlu diubah kecuali bagian shim google.script.run di paling atas.
+// FCM / NOTIFIKASI (dipanggil dari frontend & dari cron)
+// ====================================================================
+
+async function simpanTokenFCM(args, env) {
+  const [token, fcmToken] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { success: false, message: 'Unauthenticated' };
+
+  const rows = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(user.nuptk)}&limit=1`);
+  if (!rows[0]) return { success: false, message: 'User tidak ditemukan di database.' };
+
+  await sbUpdate(env, 'users', 'nuptk', user.nuptk, { fcm_token: fcmToken });
+  await invalidate(env, 'USERS_CACHE');
+  return { success: true, message: 'Token berhasil diupdate.' };
+}
+
+/** Dipanggil dari Cron Trigger (07:20 WIB). Tidak dipanggil dari frontend. */
+export async function cekDanKirimNotifikasiBelumAbsen(env) {
+  const { dateStr, dayOfWeek } = nowJakarta();
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    console.log('Akhir pekan, sistem libur.');
+    return;
+  }
+
+  const statusLibur = await checkApakahHariLibur(env, dateStr);
+  if (statusLibur) {
+    console.log('Hari ini libur: ' + statusLibur + '. Notifikasi dibatalkan.');
+    return;
+  }
+
+  const users = await getUsersListCached(env);
+  const absenHariIni = await sbSelect(env, 'absen_masuk', `tanggal=eq.${dateStr}`);
+  const sudahAbsenNuptk = absenHariIni.map((r) => String(r.nuptk).trim());
+
+  let jumlahDikirim = 0;
+  for (const u of users) {
+    const uRole = String(u.role).trim(), uStatus = String(u.status).trim(), uNuptk = String(u.nuptk).trim();
+    const fcmToken = u.fcm_token;
+    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(uRole) && uStatus === 'Aktif') {
+      if (!sudahAbsenNuptk.includes(uNuptk) && fcmToken) {
+        const judul = 'Pengingat Presensi Masuk ⏱️';
+        const pesan = `Halo ${u.nama}, waktu sudah menunjukkan pukul 07.20 WIB. Mari segera lakukan presensi masuk sebelum terlambat!`;
+        await kirimNotifikasiKeSatuHP(env, fcmToken, judul, pesan);
+        jumlahDikirim++;
+      }
+    }
+  }
+  console.log(`Selesai! Notifikasi pengingat dikirim ke ${jumlahDikirim} GTK yang belum absen.`);
+}
+
+/** Dipanggil dari Cron Trigger (12:00 WIB). Tidak dipanggil dari frontend. */
+export async function autoSetTanpaKeterangan(env) {
+  const settings = await getSettingsMap(env);
+  if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
+    console.log('Sistem Auto Alpa Presensi Masuk dihentikan karena fitur di-Nonaktifkan sementara oleh Admin.');
+    return;
+  }
+
+  const { dateStr, dayOfWeek } = nowJakarta();
+  if (dayOfWeek === 0 || dayOfWeek === 6) return;
+
+  const statusLibur = await checkApakahHariLibur(env, dateStr);
+  if (statusLibur) return;
+
+  const users = await getUsersListCached(env);
+  const absenHariIni = await sbSelect(env, 'absen_masuk', `tanggal=eq.${dateStr}`);
+  const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
+
+  for (const u of users) {
+    const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
+    const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
+
+    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(userRole) && userStatus === 'Aktif') {
+      if (!sudahAbsenHariIni.includes(userNuptk)) {
+        try {
+          await sbInsert(env, 'absen_masuk', {
+            id: generateShortID('AO'), tanggal: dateStr, nuptk: userNuptk, nama: userNama,
+            jam: '--:--', latitude: '-', longitude: '-', jarak: 'xx m',
+            status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
+          });
+        } catch (err) {
+          // race condition (mis. guru absen manual persis saat cron jalan) - lewati saja
+          if (!String(err.message).includes('duplicate key')) throw err;
+        }
+      }
+    }
+  }
+  await invalidate(env, 'ABSEN_MASUK_PERIODE_CACHE');
+}
+
+// ====================================================================
+// PETA NAMA FUNGSI -> HANDLER
+// Nama-nama ini dipanggil langsung dari index.html lewat shim
+// google.script.run (nama variabel dipertahankan untuk kompatibilitas,
+// tapi isinya sekarang fetch() ke Worker ini - lihat komentar shim
+// di index.html untuk detailnya).
 // ====================================================================
 
 export const handlers = {
@@ -935,5 +1029,6 @@ export const handlers = {
   saveRekapJamPelajaran,
   getAfirmasiBulanIni,
   getDaftarAfirmasiUntukInput,
-  saveAfirmasiUntukGuru
+  saveAfirmasiUntukGuru,
+  simpanTokenFCM
 };

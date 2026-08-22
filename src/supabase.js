@@ -1,16 +1,10 @@
 /**
  * ====================================================================
- * SUPABASE HELPER — pengganti FirestoreLayer.gs
+ * SUPABASE HELPER
  * ====================================================================
  * Fetch langsung ke PostgREST (REST API bawaan Supabase), pakai
  * service_role key supaya bypass RLS (Worker = backend trusted).
- *
- * Padanan fungsi lama:
- *   firestoreGetDocument(col, id)     -> sbGetOne(env, table, filterCol, id)
- *   firestoreQuery(col, filters)      -> sbSelect(env, table, queryString)
- *   firestoreSetDocument(col, id, d)  -> sbUpdate(env, table, filterCol, id, data)
- *   firestoreAddDocument(col, data)   -> sbInsert(env, table, data)
- *   firestoreDeleteDocument(col, id)  -> sbDelete(env, table, filterCol, id)
+ * Ini satu-satunya cara Worker bicara ke database.
  * ====================================================================
  */
 

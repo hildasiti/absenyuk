@@ -1,8 +1,7 @@
 /**
  * Workers berjalan di UTC secara internal, tapi V8 di Workers sudah include
  * data timezone lengkap (ICU) - jadi Intl.DateTimeFormat dengan timeZone
- * 'Asia/Jakarta' akurat tanpa perlu hitung offset manual, padanan langsung
- * dari Utilities.formatDate(now, 'Asia/Jakarta', ...) di Apps Script.
+ * 'Asia/Jakarta' akurat tanpa perlu hitung offset manual.
  */
 export function nowJakarta() {
   const now = new Date();

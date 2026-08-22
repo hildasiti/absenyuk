@@ -2,9 +2,8 @@ import bcrypt from 'bcryptjs';
 import { sbUpdate } from './supabase.js';
 
 /**
- * Semua password hasil migrasi dari Firestore masih PLAINTEXT (sama
- * seperti perilaku loginUser() Apps Script yang lama: perbandingan
- * String langsung, tanpa hash). Daripada memaksa semua guru reset
+ * Beberapa akun hasil migrasi data awal masih menyimpan password
+ * PLAINTEXT (belum sempat di-hash). Daripada memaksa semua guru reset
  * password saat migrasi, dipakai strategi "migrate on login":
  *
  * 1. Kalau nilai di kolom password sudah berbentuk hash bcrypt

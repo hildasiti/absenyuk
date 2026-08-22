@@ -16,8 +16,8 @@ export function hitungRadiusGPS(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Padanan checkApakahHariLiburFirestore(). Cache 5 menit di KV, sama
- * alasannya seperti settings: dipanggil di tiap absen masuk.
+ * Cek apakah sebuah tanggal termasuk hari libur. Cache 5 menit di KV
+ * karena dipanggil di tiap absen masuk.
  */
 export async function checkApakahHariLibur(env, targetDateStr) {
   const cacheKey = 'LIBUR_LIST_CACHE';

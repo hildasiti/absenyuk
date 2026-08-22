@@ -1,9 +1,8 @@
 import { sbSelect } from './supabase.js';
 
 /**
- * Padanan getSettingsMap() di code.gs. Settings jarang berubah tapi dibaca
- * di hampir setiap absen masuk, jadi di-cache 5 menit di KV (sama seperti
- * cache 300 detik yang lama).
+ * Baca tabel settings (key-value) dari Supabase. Jarang berubah tapi
+ * dibaca di hampir setiap absen masuk, jadi di-cache 5 menit di KV.
  */
 export async function getSettingsMap(env) {
   const cached = await env.SESSIONS.get('SETTINGS_CACHE');

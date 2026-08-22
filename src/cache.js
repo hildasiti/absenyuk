@@ -1,4 +1,4 @@
-/** Padanan pola "cache.get / kalau kosong query lalu cache.put" yang berulang di code.gs. */
+/** Cache generik di Workers KV: ambil dari cache, kalau kosong jalankan fetchFn lalu simpan ke cache. */
 export async function cached(env, key, ttlSeconds, fetchFn) {
   const hit = await env.SESSIONS.get(key);
   if (hit) return JSON.parse(hit);

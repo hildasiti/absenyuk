@@ -1,19 +1,21 @@
 /**
  * ====================================================================
- * ABSENYUK! WORKER — dispatcher generik, pengganti Code.gs + doPost()
+ * ABSENYUK! WORKER
  * ====================================================================
- * Format request/response SENGAJA dibuat SAMA PERSIS dengan shim
- * "GAS API SHIM" yang sudah ada di index.html (peninggalan versi
- * Blogger + Apps Script Web App):
- *   Request : { action: "namaFungsi", args: [...] }
- *   Response sukses : { success: true, data: <hasil fungsi> }
- *   Response gagal  : { success: false, error: "pesan error" }
- * Supaya index.html TIDAK PERLU diubah sama sekali kecuali baris
- * GAS_API_URL di bagian shim.
+ * Backend tunggal AbsenYuk!: satu endpoint menerima { action, args },
+ * mencari fungsinya di handlers.js, menjalankan, lalu mengembalikan
+ *   Sukses : { success: true, data: <hasil fungsi> }
+ *   Gagal  : { success: false, error: "pesan error" }
+ * Frontend (index.html, di-hosting GitHub Pages) memanggil endpoint ini
+ * lewat pola google.script.run(...).namaFungsi(...) - nama itu cuma
+ * konvensi penamaan JS di frontend, isinya murni fetch() ke sini.
+ *
+ * "scheduled" di bawah dipicu otomatis oleh Cron Triggers Cloudflare
+ * sesuai jadwal di wrangler.toml, terpisah dari request dari frontend.
  * ====================================================================
  */
 
-import { handlers } from './handlers.js';
+import { handlers, autoSetTanpaKeterangan, cekDanKirimNotifikasiBelumAbsen } from './handlers.js';
 
 const ALLOWED_ORIGIN = '*'; // TODO: ganti ke domain GitHub Pages Anda setelah frontend live
 
@@ -44,13 +46,10 @@ export default {
       return json({ success: true, data: 'AbsenYuk Worker aktif.' });
     }
 
-    // Worker cuma perlu SATU route untuk semua fungsi (persis seperti
-    // doPost(e) generik yang lama). Terima di root ATAU /api/call biar
-    // fleksibel dengan versi GAS_API_URL lama yang tanpa path.
     if (request.method === 'POST') {
       try {
         const body = await request.json();
-        const fnName = body.action || body.fn; // dukung dua nama field
+        const fnName = body.action || body.fn;
         const args = Array.isArray(body.args) ? body.args : [];
 
         const handler = handlers[fnName];
@@ -66,5 +65,18 @@ export default {
     }
 
     return json({ success: false, error: 'Endpoint tidak ditemukan: ' + url.pathname }, 404);
+  },
+
+  // Dipanggil otomatis oleh Cloudflare sesuai jadwal di wrangler.toml.
+  // event.cron berisi expression cron yang cocok, dipakai untuk membedakan
+  // 2 jadwal berbeda yang jalan di Worker yang sama.
+  async scheduled(event, env, ctx) {
+    if (event.cron === '20 0 * * *') {
+      // 07:20 WIB = 00:20 UTC - pengingat belum absen
+      ctx.waitUntil(cekDanKirimNotifikasiBelumAbsen(env));
+    } else if (event.cron === '0 5 * * *') {
+      // 12:00 WIB = 05:00 UTC - auto set Tanpa Keterangan
+      ctx.waitUntil(autoSetTanpaKeterangan(env));
+    }
   }
 };

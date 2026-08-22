@@ -1,10 +1,5 @@
 /**
- * Padanan langsung dari CacheService di Apps Script:
- *   CacheService.getScriptCache().put(token, json, 21600)  -> createSession
- *   CacheService.getScriptCache().get(token)                -> getSession
- *   CacheService.getScriptCache().remove(token)              -> destroySession
- *
- * TTL dipertahankan sama: 21600 detik (6 jam), sesuai perilaku lama.
+ * Session login disimpan di Workers KV dengan TTL 6 jam (21600 detik).
  */
 
 const SESSION_TTL_SECONDS = 21600;
