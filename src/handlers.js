@@ -836,67 +836,6 @@ async function saveRekapJamPelajaran(args, env) {
 }
 
 // ====================================================================
-// AFIRMASI GURU
-// ====================================================================
-
-async function getAfirmasiBulanIni(args, env) {
-  const [token] = args;
-  const user = await requireUser(env, token);
-  if (!user) return null;
-
-  const settings = await getSettingsMap(env);
-  const aktif = (settings.afirmasi_aktif || 'Aktif') !== 'Nonaktif';
-  const periode = getPeriodeBerjalan();
-  const periodeId = toDateStr(periode.start);
-
-  let pesan = '', sudahDiisi = false;
-  if (aktif) {
-    const rows = await sbSelect(env, 'afirmasi_guru', `id=eq.${encodeURIComponent(periodeId + '_' + user.nuptk)}&limit=1`);
-    if (rows[0] && rows[0].pesan) { pesan = rows[0].pesan; sudahDiisi = true; }
-  }
-  return { aktif, periodeLabel: periode.label, sudahDiisi, pesan };
-}
-
-async function getDaftarAfirmasiUntukInput(args, env) {
-  const [token] = args;
-  const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'KEPALA_SEKOLAH')) return { periodeLabel: '', staf: [] };
-
-  const periode = getPeriodeBerjalan();
-  const periodeId = toDateStr(periode.start);
-  const users = await getUsersListCached(env);
-  const staf = users.filter((u) => ['GURU', 'PIKET'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif');
-
-  const afirmasiPeriodeIni = await sbSelect(env, 'afirmasi_guru', `periode_id=eq.${encodeURIComponent(periodeId)}`);
-  const afirmasiMap = {};
-  afirmasiPeriodeIni.forEach((a) => { afirmasiMap[a.nuptk] = a.pesan; });
-
-  const daftar = staf.map((u) => ({ nuptk: u.nuptk, nama: u.nama, pesan: afirmasiMap[u.nuptk] || '', sudahDiisi: !!afirmasiMap[u.nuptk] }));
-  return { periodeLabel: periode.label, staf: daftar };
-}
-
-async function saveAfirmasiUntukGuru(args, env) {
-  const [token, nuptkTarget, pesan] = args;
-  const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'KEPALA_SEKOLAH')) return { success: false, message: 'Akses ditolak. Fitur ini khusus Kepala Sekolah/Admin.' };
-
-  const teks = String(pesan || '').trim();
-  if (!teks) return { success: false, message: 'Kalimat afirmasi tidak boleh kosong.' };
-  if (!nuptkTarget) return { success: false, message: 'Guru/staf tujuan belum dipilih.' };
-
-  const periode = getPeriodeBerjalan();
-  const periodeId = toDateStr(periode.start);
-  const id = periodeId + '_' + nuptkTarget;
-  const data = { id, nuptk: nuptkTarget, periode_id: periodeId, pesan: teks, updated_by: user.nama, updated_at: new Date().toISOString() };
-
-  const existing = await sbSelect(env, 'afirmasi_guru', `id=eq.${encodeURIComponent(id)}&limit=1`);
-  if (existing.length > 0) await sbUpdate(env, 'afirmasi_guru', 'id', id, data);
-  else await sbInsert(env, 'afirmasi_guru', data);
-
-  return { success: true, message: 'Afirmasi berhasil dikirim.' };
-}
-
-// ====================================================================
 // FCM / NOTIFIKASI (dipanggil dari frontend & dari cron)
 // ====================================================================
 
@@ -1027,8 +966,5 @@ export const handlers = {
   getRekapJamPelajaranSendiri,
   getPayrollJamPelajaran,
   saveRekapJamPelajaran,
-  getAfirmasiBulanIni,
-  getDaftarAfirmasiUntukInput,
-  saveAfirmasiUntukGuru,
   simpanTokenFCM
 };
