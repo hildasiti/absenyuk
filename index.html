@@ -11,8 +11,8 @@
 
 <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'/>
 <link href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css' rel='stylesheet'/>
-<script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'/>
-<script src='https://cdn.jsdelivr.net/npm/chart.js'/>
+<script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
 
 <style>/*<![CDATA[*/
 
@@ -431,12 +431,12 @@
 
 <div id='global-loader'>
   <div class='loader-logo'>AbsenYuk!</div>
-  <div class='loader-spinner'/>
+  <div class='loader-spinner'></div>
 </div>
 
 <div class='view-section active' id='login-view'>
   <div class='login-card text-center'>
-    <i class='bi bi-fingerprint' style='font-size: 3rem; color: var(--primary-color);'/>
+    <i class='bi bi-fingerprint' style='font-size: 3rem; color: var(--primary-color);'></i>
     <h3 class='mt-3 mb-4 fw-bold'>AbsenYuk!</h3>
     <form id='form-login' onsubmit='handleLogin(event)'>
       <div class='mb-3 text-start'>
@@ -463,37 +463,37 @@
 
       <div id='menu-guru' style='display: none;'>
         <p class='menu-section-label'>Absensi GTK</p>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;dashboard-guru&apos;)'><i class='bi bi-house-door me-2'/> Dashboard</a>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-masuk&apos;)'><i class='bi bi-geo-alt me-2'/> Absen Masuk</a>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan&apos;)'><i class='bi bi-calendar-event me-2'/> Kegiatan Sekolah</a>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-pesantren&apos;)'><i class='bi bi-book me-2'/> Kegiatan Pesantren</a>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan-khusus&apos;)'><i class='bi bi-ui-checks me-2'/> Absen Kegiatan Khusus</a>
+        <a class='menu-btn' href='#' onclick='switchView(&apos;dashboard-guru&apos;)'><i class='bi bi-house-door me-2'></i> Dashboard</a>
+        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-masuk&apos;)'><i class='bi bi-geo-alt me-2'></i> Absen Masuk</a>
+        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan&apos;)'><i class='bi bi-calendar-event me-2'></i> Kegiatan Sekolah</a>
+        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-pesantren&apos;)'><i class='bi bi-book me-2'></i> Kegiatan Pesantren</a>
+        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan-khusus&apos;)'><i class='bi bi-ui-checks me-2'></i> Absen Kegiatan Khusus</a>
       </div>
 
       <div id='menu-admin' style='display: none;'>
         <hr class='menu-section-divider'/>
         <p class='menu-section-label'>Menu Admin</p>
-        <a class='menu-btn' href='#' id='sub-dashboard-admin' onclick='switchView(&apos;dashboard-admin&apos;)'><i class='bi bi-speedometer2 me-2'/> Admin Panel</a>
-        <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'/> Kalender Libur</a>
-        <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'/> Kelola Kegiatan Khusus</a>
-        <a class='menu-btn' href='#' id='sub-data-guru' onclick='switchView(&apos;data-guru&apos;)'><i class='bi bi-people me-2'/> Data Guru</a>
-        <a class='menu-btn' href='#' id='sub-jam-pelajaran' onclick='switchView(&apos;rekap-jam-pelajaran&apos;)'><i class='bi bi-journal-x me-2'/> Rekap Jam Pelajaran</a>
-        <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'/> Laporan</a>
-        <a class='menu-btn' href='#' id='sub-edit-absen' onclick='switchView(&apos;edit-absen&apos;)'><i class='bi bi-pencil-square me-2'/> Edit Absen Masuk</a>
-        <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'/> Rekap Payroll</a>
-        <a class='menu-btn' href='#' id='sub-pengaturan' onclick='switchView(&apos;pengaturan&apos;)'><i class='bi bi-gear me-2'/> Pengaturan</a>
+        <a class='menu-btn' href='#' id='sub-dashboard-admin' onclick='switchView(&apos;dashboard-admin&apos;)'><i class='bi bi-speedometer2 me-2'></i> Admin Panel</a>
+        <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'></i> Kalender Libur</a>
+        <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'></i> Kelola Kegiatan Khusus</a>
+        <a class='menu-btn' href='#' id='sub-data-guru' onclick='switchView(&apos;data-guru&apos;)'><i class='bi bi-people me-2'></i> Data Guru</a>
+        <a class='menu-btn' href='#' id='sub-jam-pelajaran' onclick='switchView(&apos;rekap-jam-pelajaran&apos;)'><i class='bi bi-journal-x me-2'></i> Rekap Jam Pelajaran</a>
+        <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'></i> Laporan</a>
+        <a class='menu-btn' href='#' id='sub-edit-absen' onclick='switchView(&apos;edit-absen&apos;)'><i class='bi bi-pencil-square me-2'></i> Edit Absen Masuk</a>
+        <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'></i> Rekap Payroll</a>
+        <a class='menu-btn' href='#' id='sub-pengaturan' onclick='switchView(&apos;pengaturan&apos;)'><i class='bi bi-gear me-2'></i> Pengaturan</a>
       </div>
 
       <a class='text-danger mt-5 d-inline-flex align-items-center decoration-none' href='#' onclick='handleLogout()' style='padding: 10px 20px;'>
-        <i class='bi bi-box-arrow-left me-2'/> <strong>Logout</strong>
+        <i class='bi bi-box-arrow-left me-2'></i> <strong>Logout</strong>
       </a>
     </div>
 
-    <div class='sidebar-backdrop' id='sidebarBackdrop' onclick='closeSidebar()'/>
+    <div class='sidebar-backdrop' id='sidebarBackdrop' onclick='closeSidebar()'></div>
 
     <div class='main-content p-4'>
       <button class='btn btn-outline-primary d-md-none mb-3' onclick='toggleSidebar()'>
-        <i class='bi bi-list'/> Menu
+        <i class='bi bi-list'></i> Menu
       </button>
 
       <div class='d-flex justify-content-between align-items-center mb-4'>
@@ -504,7 +504,7 @@
       <div class='content-section active' id='dashboard-guru'>
   <div class='alert alert-info shadow-sm'>
     <h5>Status Hari Ini: <strong id='status-hari-ini'>Memuat...</strong></h5>
-    <small id='tanggal-hari-ini'/>
+    <small id='tanggal-hari-ini'></small>
   </div>
   
   <!-- TAMBAHAN BARU: Filter Tanggal Mandiri untuk Guru Validasi Absen -->
@@ -513,7 +513,7 @@
     <div class='row g-2'>
       <div class='col-md-4'><input class='form-control' id='guru-dash-start' title='Tanggal Awal' type='date'/></div>
       <div class='col-md-4'><input class='form-control' id='guru-dash-end' title='Tanggal Akhir' type='date'/></div>
-      <div class='col-md-4'><button class='btn btn-primary w-100' onclick='applyGuruFilter()'><i class='bi bi-funnel'/> Terapkan Filter Tanggal</button></div>
+      <div class='col-md-4'><button class='btn btn-primary w-100' onclick='applyGuruFilter()'><i class='bi bi-funnel'></i> Terapkan Filter Tanggal</button></div>
     </div>
   </div>
   
@@ -533,7 +533,7 @@
 
   <!-- BARIS KEDUA: REKAP KETIDAKHADIRAN JAM PELAJARAN (dicatat Piket), pakai filter &amp; periode yang sama di atas -->
   <div class='mb-2'>
-    <small class='text-muted fw-semibold'><i class='bi bi-journal-text'/> Rekap Jam Pelajaran (dicatat Piket)</small>
+    <small class='text-muted fw-semibold'><i class='bi bi-journal-text'></i> Rekap Jam Pelajaran (dicatat Piket)</small>
   </div>
   <div class='row g-2 mb-4'>
     <div class='col-6 col-md-4 col-lg-2'><div class='card card-stat p-3 text-center h-100 bg-white'><h2 class='text-primary fw-bold' id='stat-jp-impal'>0</h2><span>Impal</span></div></div>
@@ -548,7 +548,7 @@
 <!-- FORM 1: ABSEN MASUK SEKOLAH (MENGGUNAKAN GPS) -->
 <div class='content-section' id='absen-masuk'>
   <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
-    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-geo-alt-fill text-primary'/> Presensi Masuk Sekolah</h5>
+    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-geo-alt-fill text-primary'></i> Presensi Masuk Sekolah</h5>
     <form id='form-absen-masuk' onsubmit='submitAbsenMasuk(event)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Status Kehadiran</label>
@@ -561,11 +561,11 @@
       </div>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Keterangan / Alasan</label>
-        <textarea class='form-control' id='am-ket' maxlength='50' oninput='updateCharCount(this, &apos;am-ket-count&apos;)' placeholder='Kosongkan jika hadir fisik normal...' rows='2'/>
+        <textarea class='form-control' id='am-ket' maxlength='50' oninput='updateCharCount(this, &apos;am-ket-count&apos;)' placeholder='Kosongkan jika hadir fisik normal...' rows='2'></textarea>
         <small class='text-muted float-end' id='am-ket-count'>0/50</small>
       </div>
       <button class='btn btn-primary w-100 fw-bold shadow-sm' id='btn-absen' style='background-color: var(--primary-color);' type='submit'>
-        <i class='bi bi-geo-alt-fill me-2'/> Kirim Presensi Masuk (Validasi GPS)
+        <i class='bi bi-geo-alt-fill me-2'></i> Kirim Presensi Masuk (Validasi GPS)
       </button>
     </form>
   </div>
@@ -574,7 +574,7 @@
 <!-- FORM 2: LAPORAN KEGIATAN SEKOLAH -->
 <div class='content-section' id='absen-kegiatan'>
   <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
-    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-journal-check text-primary'/> Laporan Kegiatan Sekolah</h5>
+    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-journal-check text-primary'></i> Laporan Kegiatan Sekolah</h5>
     <form onsubmit='submitKegiatan(event, &apos;Sekolah&apos;)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Jenis Kegiatan Sekolah</label>
@@ -585,7 +585,7 @@
           <option value='SHOLAT_ASHAR'>Pendampingan Sholat Ashar</option>
         </select>
       </div>
-      <div class='alert alert-success py-2 px-3 mb-3' id='ak-lock-info' style='display: none; font-size: 0.85rem;'/>
+      <div class='alert alert-success py-2 px-3 mb-3' id='ak-lock-info' style='display: none; font-size: 0.85rem;'></div>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Status Kehadiran</label>
         <select class='form-select' id='ak-status' required='required'>
@@ -594,9 +594,9 @@
           <option value='Sakit'>Sakit</option>
         </select>
       </div>
-      <div class='mb-3'><label class='form-label fw-semibold'>Jurnal / Catatan Kegiatan</label><textarea class='form-control' id='ak-jurnal' maxlength='50' oninput='updateCharCount(this, &apos;ak-jurnal-count&apos;)' placeholder='Tuliskan uraian ringkas pelaksanaan kegiatan...' required='required' rows='2'/><small class='text-muted float-end' id='ak-jurnal-count'>0/50</small></div>
+      <div class='mb-3'><label class='form-label fw-semibold'>Jurnal / Catatan Kegiatan</label><textarea class='form-control' id='ak-jurnal' maxlength='50' oninput='updateCharCount(this, &apos;ak-jurnal-count&apos;)' placeholder='Tuliskan uraian ringkas pelaksanaan kegiatan...' required='required' rows='2'></textarea><small class='text-muted float-end' id='ak-jurnal-count'>0/50</small></div>
       <button class='btn btn-primary w-100 fw-bold shadow-sm' id='ak-btn-submit' style='background-color: var(--primary-color);' type='submit'>
-        <i class='bi bi-send-check-fill me-2'/> Kirim Laporan Kegiatan Sekolah
+        <i class='bi bi-send-check-fill me-2'></i> Kirim Laporan Kegiatan Sekolah
       </button>
     </form>
   </div>
@@ -605,7 +605,7 @@
 <!-- FORM 3: KEHADIRAN KEPESANTRENAN (MENGGUNAKAN GPS) -->
 <div class='content-section' id='absen-pesantren'>
   <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
-    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-moon-stars-fill text-primary'/> Kehadiran Kepesantrenan</h5>
+    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-moon-stars-fill text-primary'></i> Kehadiran Kepesantrenan</h5>
     <form onsubmit='submitKegiatan(event, &apos;Pesantren&apos;)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Kegiatan Kepesantrenan</label>
@@ -620,7 +620,7 @@
         <label class='form-label fw-semibold'>Tanggal Kegiatan</label>
         <input class='form-control' id='ap-tanggal' onchange='checkLockKegiatan(&apos;ap&apos;)' required='required' type='date'/>
       </div>
-      <div class='alert alert-success py-2 px-3 mb-3' id='ap-lock-info' style='display: none; font-size: 0.85rem;'/>
+      <div class='alert alert-success py-2 px-3 mb-3' id='ap-lock-info' style='display: none; font-size: 0.85rem;'></div>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Opsi Kehadiran</label>
         <select class='form-select' id='ap-status' required='required'>
@@ -629,9 +629,9 @@
           <option value='Berhalangan'>Berhalangan</option>
         </select>
       </div>
-      <div class='mb-3'><label class='form-label fw-semibold'>Catatan Tambahan</label><textarea class='form-control' id='ap-jurnal' maxlength='50' oninput='updateCharCount(this, &apos;ap-jurnal-count&apos;)' placeholder='Tulis catatan pendukung bila diperlukan...' rows='2'/><small class='text-muted float-end' id='ap-jurnal-count'>0/50</small></div>
+      <div class='mb-3'><label class='form-label fw-semibold'>Catatan Tambahan</label><textarea class='form-control' id='ap-jurnal' maxlength='50' oninput='updateCharCount(this, &apos;ap-jurnal-count&apos;)' placeholder='Tulis catatan pendukung bila diperlukan...' rows='2'></textarea><small class='text-muted float-end' id='ap-jurnal-count'>0/50</small></div>
       <button class='btn btn-primary w-100 fw-bold shadow-sm' id='ap-btn-submit' style='background-color: var(--primary-color);' type='submit'>
-        <i class='bi bi-geo-alt-fill me-2'/> Kirim Laporan Kehadiran Pesantren (Validasi GPS)
+        <i class='bi bi-geo-alt-fill me-2'></i> Kirim Laporan Kehadiran Pesantren (Validasi GPS)
       </button>
     </form>
   </div>
@@ -640,7 +640,7 @@
 <!-- FORM 4: ABSEN KEGIATAN KHUSUS -->
 <div class='content-section' id='absen-kegiatan-khusus' style='display: none;'>
   <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
-    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-calendar-check-fill text-primary'/> Absensi Kegiatan Khusus (Rapat/Bimtek)</h5>
+    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-calendar-check-fill text-primary'></i> Absensi Kegiatan Khusus (Rapat/Bimtek)</h5>
     <form onsubmit='submitAbsenKhusus(event)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Pilih Agenda Kegiatan</label>
@@ -660,11 +660,11 @@
       </div>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Catatan / Keterangan</label>
-        <textarea class='form-control' id='akk-catatan' maxlength='50' oninput='updateCharCount(this, &apos;akk-catatan-count&apos;)' placeholder='Tuliskan alasan jika tidak hadir fisik...' rows='2'/>
+        <textarea class='form-control' id='akk-catatan' maxlength='50' oninput='updateCharCount(this, &apos;akk-catatan-count&apos;)' placeholder='Tuliskan alasan jika tidak hadir fisik...' rows='2'></textarea>
         <small class='text-muted float-end' id='akk-catatan-count'>0/50</small>
       </div>
       <button class='btn btn-primary w-100 fw-bold shadow-sm' style='background-color: var(--primary-color);' type='submit'>
-        <i class='bi bi-send-check-fill me-2'/> Kirim Presensi Kegiatan Khusus
+        <i class='bi bi-send-check-fill me-2'></i> Kirim Presensi Kegiatan Khusus
       </button>
     </form>
   </div>
@@ -679,13 +679,13 @@
     <div class='d-flex justify-content-between align-items-center mb-3'>
       <h6 class='mb-0 text-secondary fw-bold'>Filter Data Dashboard</h6>
       <button class='btn btn-sm btn-outline-primary' id='btn-refresh-admin' onclick='refreshAdminCards()' title='Segarkan data tanpa reload halaman'>
-        <i class='bi bi-arrow-clockwise'/> Segarkan Data
+        <i class='bi bi-arrow-clockwise'></i> Segarkan Data
       </button>
     </div>
     <div class='row g-2'>
       <div class='col-md-4'><input class='form-control' id='dash-start' title='Tanggal Awal' type='date'/></div>
       <div class='col-md-4'><input class='form-control' id='dash-end' title='Tanggal Akhir' type='date'/></div>
-      <div class='col-md-4'><button class='btn btn-primary w-100' onclick='applyAdminFilter()'><i class='bi bi-funnel'/> Terapkan Filter</button></div>
+      <div class='col-md-4'><button class='btn btn-primary w-100' onclick='applyAdminFilter()'><i class='bi bi-funnel'></i> Terapkan Filter</button></div>
     </div>
   </div>
 
@@ -699,7 +699,7 @@
     </div>
     <div class='col-6'>
       <div class='card p-2 shadow-sm h-100 d-flex align-items-center justify-content-center'>
-        <canvas height='100' id='adminChart'/>
+        <canvas height='100' id='adminChart'></canvas>
       </div>
     </div>
   </div>
@@ -747,7 +747,7 @@
   <!-- TAMBAHAN BARU: Daftar Guru Belum Absen / Tanpa Keterangan Hari Ini -->
   <div class='card p-4 shadow-sm mt-4 border-0 border-start border-danger border-4' id='container-belum-absen' style='display: none;'>
     <div class='d-flex justify-content-between align-items-center mb-3'>
-      <h6 class='text-danger fw-bold mb-0'><i class='bi bi-person-x-fill'/> Daftar Guru Belum Presensi / Tanpa Keterangan (Hari Ini)</h6>
+      <h6 class='text-danger fw-bold mb-0'><i class='bi bi-person-x-fill'></i> Daftar Guru Belum Presensi / Tanpa Keterangan (Hari Ini)</h6>
       <span class='badge bg-danger' id='badge-jumlah-belum'>0 Orang</span>
     </div>
     <div class='table-responsive'>
@@ -771,7 +771,7 @@
 <div class='content-section' id='pengaturan' style='display: none;'>
   <div class='card p-4 shadow-sm'>
     <form onsubmit='saveSettings(event)'>
-      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-sliders'/> Aturan Presensi Sekolah</h5>
+      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-sliders'></i> Aturan Presensi Sekolah</h5>
       <div class='row'>
         <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Jam Masuk</label><input class='form-control' id='set-jam' required='required' type='time'/></div>
         <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Toleransi (Menit)</label><input class='form-control' id='set-tol' required='required' type='number'/></div>
@@ -779,10 +779,10 @@
         <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Longitude Sekolah</label><input class='form-control' id='set-lon' required='required' type='text'/></div>
         <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Radius GPS (Meter)</label><input class='form-control' id='set-rad' required='required' type='number'/></div>
       </div>
-      <button class='btn btn-info btn-sm text-white mb-4' onclick='getLokasiSekarang()' type='button'><i class='bi bi-crosshair'/> Ambil Lokasi Saat Ini</button>
+      <button class='btn btn-info btn-sm text-white mb-4' onclick='getLokasiSekarang()' type='button'><i class='bi bi-crosshair'></i> Ambil Lokasi Saat Ini</button>
 
       <div class='mb-3'>
-        <label class='form-label fw-semibold text-danger'><i class='bi bi-toggle-on'/> Status Fitur Auto Alpa Harian</label>
+        <label class='form-label fw-semibold text-danger'><i class='bi bi-toggle-on'></i> Status Fitur Auto Alpa Harian</label>
         <select class='form-select border-danger' id='set-auto-alpa' required='required'>
           <option value='Aktif'>Aktif (Kunci Otomatis Jalankan Alpa)</option>
           <option value='Nonaktif'>Nonaktifkan (Abaikan Kunci Otomatis)</option>
@@ -790,20 +790,20 @@
         <small class='text-muted'>*Pilih &#39;Nonaktif&#39; jika hari ini ada kegiatan sekolah siang hari agar guru tidak otomatis ter-Alpa pada jam 12 siang.</small>
       </div>
 
-      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-building'/> Identitas Kop &amp; Tanda Tangan Laporan</h5>
+      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-building'></i> Identitas Kop &amp; Tanda Tangan Laporan</h5>
       <div class='row'>
         <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Instansi / Sekolah</label><input class='form-control' id='set-nama-sekolah' placeholder='Contoh: SDIT IDRISIYYAH TAMANSARI' required='required' type='text'/></div>
         <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Wakasek Bidang SDM</label><input class='form-control' id='set-nama-wakasek' placeholder='Contoh: Hilda Siti Awaliyah, S.Pd.' required='required' type='text'/></div>
-        <div class='col-12 mb-3'><label class='form-label fw-semibold'>Alamat Lengkap Sekolah</label><textarea class='form-control' id='set-alamat-sekolah' placeholder='Tulis alamat lengkap untuk kop surat resmi...' required='required' rows='2'/></div>
+        <div class='col-12 mb-3'><label class='form-label fw-semibold'>Alamat Lengkap Sekolah</label><textarea class='form-control' id='set-alamat-sekolah' placeholder='Tulis alamat lengkap untuk kop surat resmi...' required='required' rows='2'></textarea></div>
       </div>
       
-      <button class='btn btn-primary w-100 mt-2' type='submit'><i class='bi bi-save-fill'/> Simpan Seluruh Pengaturan</button>
+      <button class='btn btn-primary w-100 mt-2' type='submit'><i class='bi bi-save-fill'></i> Simpan Seluruh Pengaturan</button>
     </form>
   </div>
 </div>
 
 <div class='content-section' id='laporan' style='display: none;'>
-  <script src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'/>
+  <script src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'></script>
 
   <div class='card p-4 shadow-sm mb-3 border-0 border-start border-primary border-4'>
     <h6 class='mb-3 text-secondary fw-bold'>Filter Laporan Absensi &amp; Kegiatan</h6>
@@ -842,33 +842,33 @@
       </div>
       
       <div class='col-md-2'>
-        <button class='btn btn-primary w-100' onclick='loadReport()'><i class='bi bi-search'/> Tampilkan</button>
+        <button class='btn btn-primary w-100' onclick='loadReport()'><i class='bi bi-search'></i> Tampilkan</button>
       </div>
     </div>
   </div>
   
   <div class='mb-3'>
     <button class='btn btn-success shadow-sm me-2' onclick='exportToExcelAsTable()'>
-      <i class='bi bi-file-earmark-excel-fill'/> Download Excel (.xlsx)
+      <i class='bi bi-file-earmark-excel-fill'></i> Download Excel (.xlsx)
     </button>
     <button class='btn btn-danger shadow-sm' onclick='printLaporanPDF()'>
-      <i class='bi bi-file-earmark-pdf-fill'/> Cetap PDF Resmi
+      <i class='bi bi-file-earmark-pdf-fill'></i> Cetap PDF Resmi
     </button>
   </div>
   
   <div class='table-responsive bg-white shadow-sm p-2 rounded'>
     <table class='table table-striped table-hover align-middle' id='table-report'>
       <thead class='table-light' id='tr-head'><tr><th>Pilih filter &amp; klik Tampilkan</th></tr></thead>
-      <tbody id='tr-body'/>
+      <tbody id='tr-body'></tbody>
     </table>
   </div>
 
-  <div class='mt-3' id='laporan-rekap-box'/>
+  <div class='mt-3' id='laporan-rekap-box'></div>
 </div>
 
 <div class='content-section' id='edit-absen' style='display: none;'>
   <div class='card p-4 shadow-sm mb-3 border-0 border-start border-primary border-4'>
-    <h6 class='mb-3 text-secondary fw-bold'><i class='bi bi-pencil-square'/> Perbaiki Data Absen Masuk</h6>
+    <h6 class='mb-3 text-secondary fw-bold'><i class='bi bi-pencil-square'></i> Perbaiki Data Absen Masuk</h6>
     <p class='text-muted small mb-3'>Gunakan menu ini kalau ada guru yang mengalami kendala presensi di pagi hari (GPS gagal, HP bermasalah, lupa absen, dsb). Pilih tanggal &amp; guru, lalu klik <strong>Edit</strong> pada baris yang perlu disesuaikan.</p>
     <div class='row g-2'>
       <div class='col-md-3'><input class='form-control' id='ea-tanggal' title='Tanggal' type='date'/></div>
@@ -878,7 +878,7 @@
         </select>
       </div>
       <div class='col-md-2'>
-        <button class='btn btn-primary w-100' onclick='loadEditAbsenList()'><i class='bi bi-search'/> Tampilkan</button>
+        <button class='btn btn-primary w-100' onclick='loadEditAbsenList()'><i class='bi bi-search'></i> Tampilkan</button>
       </div>
     </div>
   </div>
@@ -909,7 +909,7 @@
                     <option value='PIKET'>Role: PIKET</option>
                 </select>
             </div>
-            <div class='col-md-2'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'/> Tambah</button></div>
+            <div class='col-md-2'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
         </form>
     </div>
 
@@ -917,7 +917,7 @@
         <div class='d-flex justify-content-between align-items-center mb-3'>
             <h5 class='text-secondary fw-bold mb-0'>Daftar Akun Guru</h5>
             <button class='btn btn-sm btn-outline-secondary' onclick='loadGuruList()'>
-                <i class='bi bi-arrow-clockwise'/> Segarkan Data
+                <i class='bi bi-arrow-clockwise'></i> Segarkan Data
             </button>
         </div>
         <div class='table-responsive'>
@@ -954,14 +954,14 @@
       <div class='col-md-2'><label class='form-label fw-semibold small mb-1'>Tanggal Awal</label><input class='form-control' id='pay-start' required='required' type='date'/></div>
       <div class='col-md-2'><label class='form-label fw-semibold small mb-1'>Tanggal Akhir</label><input class='form-control' id='pay-end' required='required' type='date'/></div>
       <div class='col-md-4 d-flex align-items-end'>
-        <button class='btn btn-success w-100' onclick='loadPayrollReport()'><i class='bi bi-arrow-clockwise'/> Hitung Rekapitulasi</button>
+        <button class='btn btn-success w-100' onclick='loadPayrollReport()'><i class='bi bi-arrow-clockwise'></i> Hitung Rekapitulasi</button>
       </div>
     </div>
   </div>
 
   <div class='mb-3'>
     <button class='btn btn-danger shadow-sm' onclick='printPayrollPDF()'>
-      <i class='bi bi-file-earmark-pdf-fill'/> Cetak PDF Payroll Resmi
+      <i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF Payroll Resmi
     </button>
   </div>
 
@@ -987,7 +987,7 @@
     </table>
   </div>
 
-  <div class='mt-3' id='payroll-rekap-box'/>
+  <div class='mt-3' id='payroll-rekap-box'></div>
 </div>
 
 <div class='content-section' id='kalender-libur' style='display: none;'>
@@ -1007,7 +1007,7 @@
         <input class='form-control' id='libur-ket' placeholder='Contoh: Libur Hari Raya Idul Fitri' required='required' type='text'/>
       </div>
       <div class='col-md-2 d-flex align-items-end'>
-        <button class='btn btn-danger w-100' type='submit'><i class='bi bi-calendar-plus'/> Simpan</button>
+        <button class='btn btn-danger w-100' type='submit'><i class='bi bi-calendar-plus'></i> Simpan</button>
       </div>
     </form>
   </div>
@@ -1071,8 +1071,8 @@
       <div class='col-12 mt-2'>
         <div class='card bg-light border-0 p-3'>
           <div class='d-flex justify-content-between align-items-center mb-2'>
-            <label class='form-label fw-semibold mb-0'><i class='bi bi-geo-alt-fill text-danger'/> Lokasi Kegiatan <span class='text-muted fw-normal'>(opsional - kosongkan jika tidak perlu validasi GPS, misal rapat online)</span></label>
-            <button class='btn btn-sm btn-outline-primary' onclick='pakaiLokasiSaatIni()' type='button'><i class='bi bi-crosshair'/> Pakai Lokasi Saya Sekarang</button>
+            <label class='form-label fw-semibold mb-0'><i class='bi bi-geo-alt-fill text-danger'></i> Lokasi Kegiatan <span class='text-muted fw-normal'>(opsional - kosongkan jika tidak perlu validasi GPS, misal rapat online)</span></label>
+            <button class='btn btn-sm btn-outline-primary' onclick='pakaiLokasiSaatIni()' type='button'><i class='bi bi-crosshair'></i> Pakai Lokasi Saya Sekarang</button>
           </div>
           <div class='row g-2'>
             <div class='col-md-4'>
@@ -1093,7 +1093,7 @@
       </div>
 
       <div class='col-12 mt-2'>
-        <button class='btn btn-info text-white w-100 fw-bold shadow-sm' type='submit'><i class='bi bi-plus-circle'/> Tambah Jadwal Kegiatan</button>
+        <button class='btn btn-info text-white w-100 fw-bold shadow-sm' type='submit'><i class='bi bi-plus-circle'></i> Tambah Jadwal Kegiatan</button>
       </div>
     </form>
   </div>
@@ -1124,7 +1124,7 @@
 <!-- PANEL INPUT REKAP JAM PELAJARAN - KHUSUS PIKET -->
 <div class='content-section' id='rekap-jam-pelajaran'>
   <div class='card p-4 shadow-sm border-0 border-start border-primary border-4 mb-4'>
-    <h6 class='mb-3 text-secondary fw-bold'><i class='bi bi-journal-x'/> Input Ketidakhadiran Guru per Jam Pelajaran</h6>
+    <h6 class='mb-3 text-secondary fw-bold'><i class='bi bi-journal-x'></i> Input Ketidakhadiran Guru per Jam Pelajaran</h6>
     <form id='form-jam-pelajaran' onsubmit='submitRekapJamPelajaran(event)'>
       <div class='row g-3'>
         <div class='col-md-6'>
@@ -1171,14 +1171,14 @@
           </select>
         </div>
         <div class='col-md-12'>
-          <button class='btn btn-primary w-100' type='submit'><i class='bi bi-save'/> Simpan Rekap</button>
+          <button class='btn btn-primary w-100' type='submit'><i class='bi bi-save'></i> Simpan Rekap</button>
         </div>
       </div>
     </form>
   </div>
 
   <div class='alert alert-info shadow-sm'>
-    <i class='bi bi-info-circle-fill'/> Data yang sudah disimpan bisa dilihat lewat menu <strong>Laporan</strong> &amp;rarr; pilih jenis laporan <strong>&quot;Rekap Ketidakhadiran Jam Pelajaran&quot;</strong>.
+    <i class='bi bi-info-circle-fill'></i> Data yang sudah disimpan bisa dilihat lewat menu <strong>Laporan</strong> &amp;rarr; pilih jenis laporan <strong>&quot;Rekap Ketidakhadiran Jam Pelajaran&quot;</strong>.
   </div>
 </div>
 
@@ -3046,6 +3046,6 @@ var GAS_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
 
 //]]></script>
 
-<b:section id='blogger-required-section' maxwidgets='0' showaddelement='no'/>
+<b:section id='blogger-required-section' maxwidgets='0' showaddelement='no'></b>
 </body>
 </html>
