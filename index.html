@@ -9,10 +9,15 @@
 <meta content='width=device-width, initial-scale=1.0' name='viewport'/>
 <title>AbsenYuk! - Sistem Presensi</title>
 
+<link href='absenyuk.png' rel='icon' type='image/png'/>
+<link href='absenyuk.png' rel='apple-touch-icon'/>
+
 <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'/>
 <link href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css' rel='stylesheet'/>
 <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
 <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
+<script src='https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js'></script>
+<script src='https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js'></script>
 
 <style>/*<![CDATA[*/
 
@@ -1341,6 +1346,146 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
     }).loginUser(n, p);
   }
 
+  // ==========================================
+  // PUSH NOTIFICATION (Firebase Cloud Messaging)
+  // ==========================================
+  // GANTI 6 nilai ini dengan firebaseConfig dari Firebase Console >
+  // Project Settings > General > Your apps (aman ditaruh di frontend,
+  // beda dengan service account key yang harus rahasia).
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyCWTg7mrM35xTifB-r_gc9HHirgEATpcBU",
+    authDomain: "absenyuk-2c7a6.firebaseapp.com",
+    projectId: "absenyuk-2c7a6",
+    storageBucket: "absenyuk-2c7a6.firebasestorage.app",
+    messagingSenderId: "842486377837",
+    appId: "1:842486377837:web:88c715b23d7ab5c86d7e64"
+  };
+  // GANTI dengan VAPID key dari Firebase Console > Project Settings >
+  // Cloud Messaging > Web configuration > Web Push certificates.
+  const FIREBASE_VAPID_KEY = "BDh68ZUP0UawqLigvfryXDdzCY-qkb-n8Egl4mkWgWacZzurbmT-Wvb8Mq-VMUNZN2voJIjK1hTvy2qjP9CSCqU";
+
+  let pushNotifSudahDisetup = false;
+
+  function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  }
+  function isStandalonePWA() {
+    return window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  }
+
+  // Dipanggil dari initApp(). TIDAK PERNAH melempar error ke luar dan
+  // TIDAK PERNAH menunda render halaman - semua proses notifikasi
+  // berjalan di belakang layar, kalaupun gagal total aplikasi tetap
+  // berjalan normal seperti biasa.
+  function maybeOfferPushNotification() {
+    try {
+      if (FIREBASE_CONFIG.apiKey.indexOf('GANTI_DENGAN') === 0) return; // belum dikonfigurasi
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) return; // browser tidak dukung sama sekali
+
+      const pilihanTersimpan = localStorage.getItem('push_notif_choice');
+
+      // iOS Safari HANYA bisa push notification kalau sudah di-"Add to Home Screen".
+      // Kalau belum, jangan tanya - cuma kasih info sekali, jangan ganggu terus.
+      if (isIOS() && !isStandalonePWA()) {
+        if (!pilihanTersimpan && typeof Swal !== 'undefined') {
+          localStorage.setItem('push_notif_choice', 'ios_belum_install');
+          setTimeout(() => {
+            Swal.fire({
+              icon: 'info',
+              title: 'Notifikasi di iPhone',
+              html: 'Untuk mengaktifkan notifikasi pengingat absen di iPhone, tambahkan AbsenYuk! ke Home Screen dulu lewat menu Share (ikon kotak dengan panah ke atas) &gt; "Add to Home Screen". Ini cuma perlu dilakukan sekali.',
+              confirmButtonText: 'Mengerti'
+            });
+          }, 1500);
+        }
+        return;
+      }
+
+      if (pilihanTersimpan === 'declined') return; // sudah pernah nolak, jangan tanya lagi
+      if (pilihanTersimpan === 'granted') { setupPushNotification(); return; } // sudah pernah setuju, langsung setup diam-diam
+
+      // Belum pernah ditanya - tanya dulu, jangan langsung minta izin browser.
+      if (typeof Swal === 'undefined') return;
+      setTimeout(() => {
+        Swal.fire({
+          icon: 'question',
+          title: 'Aktifkan Notifikasi?',
+          text: 'Dapatkan pengingat kalau lupa presensi masuk. Bisa dimatikan kapan saja lewat pengaturan browser.',
+          showCancelButton: true,
+          confirmButtonText: 'Aktifkan',
+          cancelButtonText: 'Nanti saja'
+        }).then((result) => {
+          if (result.isConfirmed) {
+            localStorage.setItem('push_notif_choice', 'granted');
+            setupPushNotification();
+          } else {
+            localStorage.setItem('push_notif_choice', 'declined');
+          }
+        });
+      }, 1500);
+    } catch (err) {
+      console.warn('maybeOfferPushNotification gagal (diabaikan, tidak mengganggu aplikasi):', err);
+    }
+  }
+
+  async function setupPushNotification() {
+    if (pushNotifSudahDisetup) return; // jangan setup dobel
+    if (FIREBASE_CONFIG.apiKey.indexOf('GANTI_DENGAN') === 0) {
+      console.warn('Push notification belum dikonfigurasi (FIREBASE_CONFIG masih placeholder).');
+      return;
+    }
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      console.warn('Browser ini tidak mendukung push notification.');
+      return;
+    }
+
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+
+      // Cek dukungan browser secara lebih akurat lewat SDK Firebase sendiri
+      // (mendeteksi keterbatasan Safari/browser lama yang tidak kelihatan
+      // dari sekadar cek 'Notification' in window).
+      const didukung = await firebase.messaging.isSupported().catch(() => false);
+      if (!didukung) {
+        console.warn('Browser ini tidak didukung Firebase Messaging.');
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        console.warn('Izin notifikasi ditolak/diabaikan oleh pengguna.');
+        localStorage.setItem('push_notif_choice', 'declined');
+        return;
+      }
+
+      const messaging = firebase.messaging();
+      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const fcmToken = await messaging.getToken({ vapidKey: FIREBASE_VAPID_KEY, serviceWorkerRegistration: registration });
+
+      if (fcmToken) {
+        google.script.run
+          .withSuccessHandler(() => { console.log('Token FCM tersimpan.'); })
+          .withFailureHandler((err) => { console.warn('Gagal simpan token FCM:', err.message); })
+          .simpanTokenFCM(SESSION_TOKEN, fcmToken);
+      }
+
+      pushNotifSudahDisetup = true;
+
+      messaging.onMessage((payload) => {
+        const judul = (payload.notification && payload.notification.title) || 'AbsenYuk!';
+        const isi = (payload.notification && payload.notification.body) || '';
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({ icon: 'info', title: judul, text: isi, toast: true, position: 'top-end', timer: 6000, showConfirmButton: false });
+        }
+      });
+    } catch (err) {
+      // Kegagalan apa pun di sini (termasuk keterbatasan iOS Safari yang
+      // belum ter-cover pengecekan di atas) sengaja HANYA di-log, tidak
+      // pernah dilempar lebih jauh - aplikasi utama harus tetap jalan normal.
+      console.warn('Setup push notification gagal (diabaikan):', err);
+    }
+  }
+
   function initApp() {
     document.getElementById('login-view').classList.remove('active');
     setTimeout(() => {
@@ -1349,7 +1494,7 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
       setTimeout(() => document.getElementById('app-view').classList.add('active'), 50);
     }, 400);
 
-    document.getElementById('user-name-display').innerText = USER_DATA.nama;
+    maybeOfferPushNotification();
     document.getElementById('user-role-display').innerText = USER_DATA.role;
 
     // Staf berkategori "Tidak Mengajar" tidak perlu lihat kartu Terlambat/Dinas/Sakit/Izin/Alpa
