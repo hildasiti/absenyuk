@@ -3,7 +3,7 @@
 Backend AbsenYuk! sekarang berjalan sepenuhnya di atas 3 layanan:
 - **GitHub** — penyimpanan kode & pemicu deploy otomatis (push = deploy)
 - **Cloudflare Workers** — backend/API (folder ini)
-- **Supabase** — database (Postgres)
+- **Supabase** — database (Postgres) 
 
 Frontend (`index.html`) di-hosting terpisah di **GitHub Pages**.
 
