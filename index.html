@@ -1022,7 +1022,7 @@
         <input class='form-control' id='libur-ket' placeholder='Contoh: Libur Hari Raya Idul Fitri' required='required' type='text'/>
       </div>
       <div class='col-md-2 d-flex align-items-end'>
-        <button class='btn btn-danger w-100' type='submit'><i class='bi bi-calendar-plus'></i> Simpan</button>
+        <button class='btn btn-primary w-100' type='submit'><i class='bi bi-calendar-plus'></i> Simpan</button>
       </div>
     </form>
   </div>
@@ -1108,7 +1108,7 @@
       </div>
 
       <div class='col-12 mt-2'>
-        <button class='btn btn-info text-white w-100 fw-bold shadow-sm' type='submit'><i class='bi bi-plus-circle'></i> Tambah Jadwal Kegiatan</button>
+        <button class='btn btn-primary w-100' type='submit'><i class='bi bi-plus-circle'></i> Tambah Jadwal Kegiatan</button>
       </div>
     </form>
   </div>
@@ -1551,6 +1551,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }, 400);
 
     maybeOfferPushNotification();
+    document.getElementById('user-name-display').innerText = USER_DATA.nama;
     document.getElementById('user-role-display').innerText = USER_DATA.role +
       (USER_DATA.role !== 'ADMIN_UTAMA' && USER_DATA.sekolahNama ? ' • ' + USER_DATA.sekolahNama : '');
 
@@ -1586,6 +1587,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       const opsiAdminSekolah = document.getElementById('opsi-role-admin-sekolah');
       if (opsiAdminSekolah) opsiAdminSekolah.style.display = '';
     } else if(USER_DATA.role === 'ADMIN_SEKOLAH') {
+      // Admin Sekolah: staf sekolah biasa juga, jadi tetap bisa absen harian
+      // seperti guru - BUKAN akun terpisah yang cuma bisa mengelola.
+      document.getElementById('menu-guru').style.display = 'block';
       document.getElementById('menu-admin').style.display = 'block';
       // Reset eksplisit semua submenu ke terlihat - jaga-jaga ada sisa state dari role lain di sesi yang sama
       document.getElementById('sub-kalender-libur').style.display = 'block';
@@ -1596,8 +1600,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       if (subEditAbsenAdmin) subEditAbsenAdmin.style.display = 'block';
       const menuJamPelajaranAdmin = document.getElementById('sub-jam-pelajaran');
       if (menuJamPelajaranAdmin) menuJamPelajaranAdmin.style.display = 'block';
-      switchView('dashboard-admin');
-      loadSettings();
+      switchView('absen-masuk'); // halaman pertama = Absen Masuk, sama seperti Piket/Kepsek/Guru
     } else if(USER_DATA.role === 'PIKET' || USER_DATA.role === 'KEPALA_SEKOLAH') {
       // Piket & Kepala Sekolah: bisa absen seperti guru, DAN dapat akses terbatas Admin Panel
       document.getElementById('menu-guru').style.display = 'block';
