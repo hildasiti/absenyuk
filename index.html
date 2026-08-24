@@ -466,6 +466,13 @@
         <small id='user-role-display'>Role</small>
       </div>
 
+      <div id='sekolah-picker-box' style='display: none; padding: 12px 16px;' class='border-bottom border-light'>
+        <label for='sekolah-picker-select' class='form-label small text-white-50 mb-1'>Kelola Sekolah</label>
+        <select id='sekolah-picker-select' class='form-select form-select-sm' onchange='gantiSekolahAktif(this.value)'>
+          <option value=''>-- Pilih Sekolah --</option>
+        </select>
+      </div>
+
       <div id='menu-guru' style='display: none;'>
         <p class='menu-section-label'>Absensi GTK</p>
         <a class='menu-btn' href='#' onclick='switchView(&apos;dashboard-guru&apos;)'><i class='bi bi-house-door me-2'></i> Dashboard</a>
@@ -912,6 +919,8 @@
                 <select class='form-select' id='u-role' required='required' title='Role Akses Akun'>
                     <option selected='selected' value='GURU'>Role: GURU</option>
                     <option value='PIKET'>Role: PIKET</option>
+                    <option value='KEPALA_SEKOLAH'>Role: KEPALA SEKOLAH</option>
+                    <option value='ADMIN_SEKOLAH' id='opsi-role-admin-sekolah' style='display:none;'>Role: ADMIN SEKOLAH</option>
                 </select>
             </div>
             <div class='col-md-2'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
@@ -930,14 +939,15 @@
                 <thead class='table-light'>
                     <tr>
                         <th width='5%'>No</th>
-                        <th width='20%'>NUPTK</th>
-                        <th width='45%'>Nama Lengkap</th>
-                        <th class='text-center' width='15%'>Status</th>
-                        <th class='text-center' width='15%'>Aksi</th>
+                        <th width='18%'>NUPTK</th>
+                        <th width='32%'>Nama Lengkap</th>
+                        <th class='text-center' width='13%'>Role</th>
+                        <th class='text-center' width='12%'>Status</th>
+                        <th class='text-center' width='20%'>Aksi</th>
                     </tr>
                 </thead>
                 <tbody id='tbody-guru'>
-                    <tr><td class='text-center text-muted' colspan='5'>Klik tab Data Guru untuk memuat data...</td></tr>
+                    <tr><td class='text-center text-muted' colspan='6'>Klik tab Data Guru untuk memuat data...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1203,6 +1213,19 @@
 
 var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
 
+// Fungsi-fungsi backend yang butuh tahu "sekolah mana" saat dipanggil oleh
+// Admin Utama (yang bisa kelola lintas sekolah). Daftar ini HARUS cocok
+// dengan urutan parameter terakhir tiap fungsi di handlers.js Worker.
+// Untuk role lain (Admin Sekolah/Piket/Kepsek/Guru) daftar ini diabaikan -
+// backend selalu pakai sekolah milik akun mereka sendiri, tidak peduli
+// apa pun yang dikirim dari sini (lihat resolveSekolahId di Worker).
+var FUNGSI_BUTUH_SEKOLAH_ID = [
+  'getDashboardData', 'getAbsenMasukUntukEdit', 'saveJadwalKegiatan', 'getJadwalKegiatan',
+  'getSettingsData', 'saveSettingsData', 'getUsers', 'saveHariLibur', 'getLiburList',
+  'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
+  'getGuruMengajarList', 'getStafAktifUntukImpal'
+];
+
 (function () {
   function buatRunner(successHandler, failureHandler) {
     return new Proxy({}, {
@@ -1216,6 +1239,13 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
         // propName di sini adalah nama fungsi backend, misalnya "loginUser"
         return function () {
           var args = Array.prototype.slice.call(arguments);
+
+          // Admin Utama: tempelkan sekolah yang sedang dipilih di UI sebagai
+          // parameter terakhir, KHUSUS untuk fungsi yang memang butuh itu.
+          if (typeof USER_DATA !== 'undefined' && USER_DATA && USER_DATA.role === 'ADMIN_UTAMA'
+              && FUNGSI_BUTUH_SEKOLAH_ID.indexOf(propName) !== -1) {
+            args = args.concat([typeof CURRENT_SEKOLAH_ID !== 'undefined' ? CURRENT_SEKOLAH_ID : null]);
+          }
 
           fetch(WORKER_API_URL, {
             method: 'POST',
@@ -1253,6 +1283,7 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
 <script>//<![CDATA[
 
   let SESSION_TOKEN = localStorage.getItem('abs_token');
+  let CURRENT_SEKOLAH_ID = null; // hanya relevan untuk role ADMIN_UTAMA - sekolah yang sedang dikelola
   let USER_DATA = null;
   let LAST_REPORT_DATA = null; 
   let LAST_PAYROLL_DATA = null; 
@@ -1486,6 +1517,31 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
     }
   }
 
+  function muatDaftarSekolahUntukPicker() {
+    google.script.run
+      .withSuccessHandler((list) => {
+        const sel = document.getElementById('sekolah-picker-select');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">-- Pilih Sekolah --</option>' +
+          (list || []).map(s => `<option value="${s.id}">${s.nama}</option>`).join('');
+        if (CURRENT_SEKOLAH_ID) sel.value = CURRENT_SEKOLAH_ID;
+      })
+      .withFailureHandler((err) => console.warn('Gagal memuat daftar sekolah:', err.message))
+      .getSekolahList(SESSION_TOKEN);
+  }
+
+  function gantiSekolahAktif(sekolahId) {
+    CURRENT_SEKOLAH_ID = sekolahId || null;
+    if (!CURRENT_SEKOLAH_ID) return;
+    const sel = document.getElementById('sekolah-picker-select');
+    const namaSekolahDipilih = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+    document.getElementById('user-role-display').innerText = 'ADMIN_UTAMA' + (namaSekolahDipilih ? ' • ' + namaSekolahDipilih : '');
+    // Setelah ganti sekolah, muat ulang halaman Admin Panel dari awal
+    // supaya semua data (dashboard, settings, dst) sesuai sekolah baru.
+    switchView('dashboard-admin');
+    loadSettings();
+  }
+
   function initApp() {
     document.getElementById('login-view').classList.remove('active');
     setTimeout(() => {
@@ -1495,7 +1551,8 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
     }, 400);
 
     maybeOfferPushNotification();
-    document.getElementById('user-role-display').innerText = USER_DATA.role;
+    document.getElementById('user-role-display').innerText = USER_DATA.role +
+      (USER_DATA.role !== 'ADMIN_UTAMA' && USER_DATA.sekolahNama ? ' • ' + USER_DATA.sekolahNama : '');
 
     // Staf berkategori "Tidak Mengajar" tidak perlu lihat kartu Terlambat/Dinas/Sakit/Izin/Alpa
     // di baris rekap jam pelajaran dashboard-nya - cukup kartu Impal saja.
@@ -1508,8 +1565,27 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
 
     document.getElementById('menu-guru').style.display = 'none';
     document.getElementById('menu-admin').style.display = 'none';
+    const sekolahPickerBox = document.getElementById('sekolah-picker-box');
+    if (sekolahPickerBox) sekolahPickerBox.style.display = 'none';
 
-    if(USER_DATA.role === 'ADMIN') {
+    if(USER_DATA.role === 'ADMIN_UTAMA') {
+      // Admin Utama: bukan guru, jadi TIDAK ada menu absen pribadi.
+      // Semua menu Admin tersedia, tapi WAJIB pilih sekolah dulu.
+      document.getElementById('menu-admin').style.display = 'block';
+      document.getElementById('sub-kalender-libur').style.display = 'block';
+      document.getElementById('sub-kelola-kegiatan').style.display = 'block';
+      document.getElementById('sub-data-guru').style.display = 'block';
+      document.getElementById('sub-pengaturan').style.display = 'block';
+      const subEditAbsenUtama = document.getElementById('sub-edit-absen');
+      if (subEditAbsenUtama) subEditAbsenUtama.style.display = 'block';
+      const menuJamPelajaranUtama = document.getElementById('sub-jam-pelajaran');
+      if (menuJamPelajaranUtama) menuJamPelajaranUtama.style.display = 'block';
+
+      if (sekolahPickerBox) sekolahPickerBox.style.display = 'block';
+      muatDaftarSekolahUntukPicker();
+      const opsiAdminSekolah = document.getElementById('opsi-role-admin-sekolah');
+      if (opsiAdminSekolah) opsiAdminSekolah.style.display = '';
+    } else if(USER_DATA.role === 'ADMIN_SEKOLAH') {
       document.getElementById('menu-admin').style.display = 'block';
       // Reset eksplisit semua submenu ke terlihat - jaga-jaga ada sisa state dari role lain di sesi yang sama
       document.getElementById('sub-kalender-libur').style.display = 'block';
@@ -1549,7 +1625,14 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
     // Tetap sinkron data dashboard di latar belakang (dibutuhkan untuk kunci status
     // tombol Absen Masuk hari ini), tapi TANPA modal loading & TANPA pindah halaman -
     // dashboard sendiri baru benar-benar dimuat saat menunya diklik (lihat switchView).
-    refreshDashboard(null, null, false, hideSplash);
+    // Admin Utama dilewati: belum ada "dashboard pribadi" sebelum sekolah dipilih,
+    // dan getDashboardData akan gagal tanpa sekolahId - panggil hideSplash langsung
+    // supaya splash screen tidak macet menunggu response yang tidak akan sukses.
+    if (USER_DATA.role === 'ADMIN_UTAMA') {
+      hideSplash();
+    } else {
+      refreshDashboard(null, null, false, hideSplash);
+    }
   }
 
   function handleLogout() {
@@ -2058,40 +2141,120 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
     const data = {
         nuptk: document.getElementById('u-nuptk').value,
         nama: document.getElementById('u-nama').value,
-        email: '-', password: document.getElementById('u-pass').value, role: 'GURU'
+        email: '-', password: document.getElementById('u-pass').value,
+        role: document.getElementById('u-role').value
     };
+    if (USER_DATA.role === 'ADMIN_UTAMA') {
+      if (!CURRENT_SEKOLAH_ID) { Swal.fire('Pilih Sekolah Dulu', 'Pilih sekolah di pojok kiri atas sebelum menambah akun.', 'warning'); return; }
+      data.sekolahId = CURRENT_SEKOLAH_ID;
+    }
     google.script.run.withSuccessHandler(res => {
-        Swal.fire('Berhasil', 'Guru baru ditambahkan', 'success'); e.target.reset(); loadGuruList(); refreshDashboard();
+        if (res) {
+          Swal.fire('Berhasil', 'Akun baru ditambahkan', 'success'); e.target.reset(); loadGuruList(); refreshDashboard();
+        } else {
+          Swal.fire('Gagal', 'Akun gagal ditambahkan. Periksa kembali data yang diisi.', 'error');
+        }
     }).saveUser(SESSION_TOKEN, data);
   }
 
   function loadGuruList() {
     const tbody = document.getElementById('tbody-guru');
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm" role="status"></div><br>Mengambil data...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm" role="status"></div><br>Mengambil data...</td></tr>';
     google.script.run.withSuccessHandler(res => {
         let html = '';
         if(res.length === 0) {
-            html = '<tr><td colspan="5" class="text-center text-muted py-3">Belum ada data guru.</td></tr>';
+            html = '<tr><td colspan="6" class="text-center text-muted py-3">Belum ada data guru.</td></tr>';
         } else {
             res.forEach((guru, index) => {
                 const statusBadge = guru.status === 'Aktif' ? 'bg-success' : 'bg-danger';
+                const isAdminRow = guru.role === 'ADMIN_SEKOLAH' || guru.role === 'ADMIN_UTAMA';
                 html += `
                 <tr>
                     <td>${index + 1}</td>
                     <td><strong>${guru.nuptk}</strong></td>
                     <td>${guru.nama}</td>
+                    <td class="text-center"><span class="badge bg-secondary">${guru.role.replace('_', ' ')}</span></td>
                     <td class="text-center"><span class="badge ${statusBadge}">${guru.status}</span></td>
                     <td class="text-center">
-                        <button class="btn btn-sm btn-danger shadow-sm" onclick="hapusGuru(${guru.row}, '${guru.nama}')">
-                            <i class="bi bi-trash"></i> Hapus
+                        <button class="btn btn-sm btn-outline-primary shadow-sm me-1" onclick='bukaModalEditGuru(${JSON.stringify(guru)})'>
+                            <i class="bi bi-pencil-square"></i> Edit
                         </button>
+                        ${isAdminRow && USER_DATA.role !== 'ADMIN_UTAMA' ? '' : `
+                        <button class="btn btn-sm btn-danger shadow-sm" onclick="hapusGuru('${guru.nuptk}', '${guru.nama}')">
+                            <i class="bi bi-trash"></i> Hapus
+                        </button>`}
                     </td>
                 </tr>
                 `;
             });
         }
         tbody.innerHTML = html;
-    }).getGuruList(SESSION_TOKEN);
+    }).getUsers(SESSION_TOKEN);
+  }
+
+  function bukaModalEditGuru(guru) {
+    const bisaUbahRoleAdmin = USER_DATA.role === 'ADMIN_UTAMA';
+    Swal.fire({
+      title: 'Edit Data: ' + guru.nama,
+      html: `
+        <div class="text-start">
+          <label class="form-label small fw-semibold">Nama Lengkap</label>
+          <input id="edit-u-nama" class="form-control mb-2" value="${guru.nama}" />
+
+          <label class="form-label small fw-semibold">Email</label>
+          <input id="edit-u-email" class="form-control mb-2" value="${guru.email && guru.email !== '-' ? guru.email : ''}" />
+
+          <label class="form-label small fw-semibold">Role</label>
+          <select id="edit-u-role" class="form-select mb-2">
+            <option value="GURU" ${guru.role === 'GURU' ? 'selected' : ''}>GURU</option>
+            <option value="PIKET" ${guru.role === 'PIKET' ? 'selected' : ''}>PIKET</option>
+            <option value="KEPALA_SEKOLAH" ${guru.role === 'KEPALA_SEKOLAH' ? 'selected' : ''}>KEPALA SEKOLAH</option>
+            ${bisaUbahRoleAdmin ? `<option value="ADMIN_SEKOLAH" ${guru.role === 'ADMIN_SEKOLAH' ? 'selected' : ''}>ADMIN SEKOLAH</option>` : ''}
+          </select>
+
+          <label class="form-label small fw-semibold">Kategori</label>
+          <select id="edit-u-kategori" class="form-select mb-2">
+            <option value="Mengajar" ${guru.kategori === 'Mengajar' ? 'selected' : ''}>Mengajar</option>
+            <option value="Tidak Mengajar" ${guru.kategori === 'Tidak Mengajar' ? 'selected' : ''}>Tidak Mengajar</option>
+          </select>
+
+          <label class="form-label small fw-semibold">Status</label>
+          <select id="edit-u-status" class="form-select mb-2">
+            <option value="Aktif" ${guru.status === 'Aktif' ? 'selected' : ''}>Aktif</option>
+            <option value="Nonaktif" ${guru.status === 'Nonaktif' ? 'selected' : ''}>Nonaktif</option>
+          </select>
+
+          <label class="form-label small fw-semibold">Password Baru <span class="text-muted fw-normal">(kosongkan kalau tidak diubah)</span></label>
+          <input id="edit-u-password" type="password" class="form-control" placeholder="•••••••" />
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Simpan Perubahan',
+      cancelButtonText: 'Batal',
+      preConfirm: () => {
+        return {
+          nama: document.getElementById('edit-u-nama').value,
+          email: document.getElementById('edit-u-email').value || '-',
+          role: document.getElementById('edit-u-role').value,
+          kategori: document.getElementById('edit-u-kategori').value,
+          status: document.getElementById('edit-u-status').value,
+          password: document.getElementById('edit-u-password').value
+        };
+      }
+    }).then((result) => {
+      if (!result.isConfirmed) return;
+      Swal.fire({ title: 'Menyimpan...', didOpen: () => Swal.showLoading() });
+      google.script.run.withSuccessHandler(res => {
+        if (res.success) {
+          Swal.fire('Tersimpan', res.message, 'success');
+          loadGuruList(); refreshDashboard();
+        } else {
+          Swal.fire('Gagal', res.message, 'error');
+        }
+      }).withFailureHandler(err => {
+        Swal.fire('Gagal', err.message, 'error');
+      }).updateUser(SESSION_TOKEN, guru.nuptk, result.value);
+    });
   }
 
   function hapusGuru(rowNumber, namaGuru) {
@@ -2918,7 +3081,7 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
               <td>${visualTanggal}</td>
               <td class="text-start text-danger fw-bold">${libur.keterangan}</td>
               <td>
-                <button class="btn btn-sm btn-outline-danger" onclick="hapusHariLibur(${libur.row})">
+                <button class="btn btn-sm btn-outline-danger" onclick="hapusHariLibur('${libur.row}')">
                   <i class="bi bi-trash"></i> Hapus
                 </button>
               </td>
