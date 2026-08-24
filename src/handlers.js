@@ -409,7 +409,7 @@ async function tutupAbsenKegiatan(args, env) {
     const userNuptk = String(u.nuptk).trim();
     const userRole = String(u.role).trim();
     const userStatus = String(u.status).trim();
-    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(userRole) && userStatus === 'Aktif') {
+    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
       const diundang = kegTipePeserta !== 'Terbatas' || kegDaftarPeserta.includes(userNuptk);
       if (diundang && !sudahAbsen.includes(userNuptk)) {
         await sbInsert(env, 'absen_kegiatan_khusus', {
@@ -542,7 +542,7 @@ async function getDashboardData(args, env) {
   }
 
   const users = await getUsersListCached(env, sekolahId);
-  data.totalGuru = users.filter((u) => ['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif').length;
+  data.totalGuru = users.filter((u) => ['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif').length;
 
   let sDate, eDate;
   if (startDate && endDate) {
@@ -602,7 +602,7 @@ async function getDashboardData(args, env) {
   users.forEach((u) => {
     const uNuptk = String(u.nuptk).trim(), uNama = String(u.nama).trim();
     const uRole = String(u.role).trim(), uStatus = String(u.status).trim();
-    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(uRole) && uStatus === 'Aktif') {
+    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(uRole) && uStatus === 'Aktif') {
       if (!sudahAbsenHariIni.includes(uNuptk)) {
         if (!apakahHariLibur) { data.listBelumAbsen.push({ nuptk: uNuptk, nama: uNama }); data.listAlpa.push(uNama); }
       } else {
@@ -838,7 +838,7 @@ async function getPayrollReport(args, env) {
   const users = await getUsersListCached(env, sekolahId);
   const payrollMap = {};
   users.forEach((u) => {
-    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif') {
+    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif') {
       payrollMap[u.nuptk] = { nuptk: u.nuptk, nama: u.nama, hadir: 0, terlambat: 0, sakit: 0, izin: 0, tugasLuar: 0, alpa: 0 };
     }
   });
@@ -943,7 +943,7 @@ async function getPayrollJamPelajaran(args, env) {
   const users = await getUsersListCached(env, sekolahId);
   const rekapMap = {};
   users.forEach((u) => {
-    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif') {
+    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif') {
       rekapMap[u.nuptk] = { nuptk: u.nuptk, nama: u.nama, impal: 0, terlambat: 0, sakit: 0, izin: 0, tugasLuar: 0, alpa: 0 };
     }
   });
@@ -1029,7 +1029,7 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
     for (const u of users) {
       const uRole = String(u.role).trim(), uStatus = String(u.status).trim(), uNuptk = String(u.nuptk).trim();
       const fcmToken = u.fcm_token;
-      if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(uRole) && uStatus === 'Aktif') {
+      if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(uRole) && uStatus === 'Aktif') {
         if (!sudahAbsenNuptk.includes(uNuptk) && fcmToken) {
           const judul = 'Pengingat Presensi Masuk ⏱️';
           const pesan = `Halo ${u.nama}, waktu sudah menunjukkan pukul 07.20 WIB. Mari segera lakukan presensi masuk sebelum terlambat!`;
@@ -1068,7 +1068,7 @@ export async function autoSetTanpaKeterangan(env) {
       const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
       const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
 
-      if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(userRole) && userStatus === 'Aktif') {
+      if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
         if (!sudahAbsenHariIni.includes(userNuptk)) {
           try {
             await sbInsert(env, 'absen_masuk', {
