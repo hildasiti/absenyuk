@@ -674,6 +674,10 @@ async function saveUser(args, env) {
   const user = await requireUser(env, token);
   if (!isAdminAny(user)) return false;
 
+  // Cuma Admin Utama yang boleh bikin akun ADMIN_SEKOLAH baru.
+  if (userData.role === 'ADMIN_SEKOLAH' && user.role !== 'ADMIN_UTAMA') return false;
+  if (userData.role === 'ADMIN_UTAMA') return false; // tidak ada UI untuk ini, sengaja diblokir dari sisi backend juga
+
   // Admin Sekolah: user baru otomatis masuk sekolahnya sendiri.
   // Admin Utama: WAJIB sertakan userData.sekolahId (pilih dari dropdown sekolah di form).
   let sekolahId;
@@ -692,6 +696,36 @@ async function saveUser(args, env) {
   });
   await invalidate(env, `USERS_CACHE_${sekolahId}`);
   return true;
+}
+
+async function updateUser(args, env) {
+  const [token, nuptkTarget, userData] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+
+  const rows = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(String(nuptkTarget).trim())}&limit=1`);
+  const target = rows[0];
+  if (!target) return { success: false, message: 'Pendidik tidak ditemukan.' };
+  if (user.role !== 'ADMIN_UTAMA' && target.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Pendidik ini bukan dari sekolah Anda.' };
+  }
+  // Admin Sekolah tidak boleh naikkan siapa pun jadi ADMIN_SEKOLAH/ADMIN_UTAMA lewat edit.
+  if (['ADMIN_SEKOLAH', 'ADMIN_UTAMA'].includes(userData.role) && user.role !== 'ADMIN_UTAMA') {
+    return { success: false, message: 'Akses ditolak. Hanya Admin Utama yang bisa mengatur role Admin.' };
+  }
+
+  const dataUpdate = {
+    nama: userData.nama, email: userData.email, role: userData.role,
+    status: userData.status, kategori: userData.kategori || 'Mengajar'
+  };
+  // Password cuma diupdate kalau memang diisi ulang (kolom dikosongkan di form = tidak diubah).
+  if (userData.password && String(userData.password).trim() !== '') {
+    dataUpdate.password = String(userData.password).trim();
+  }
+
+  await sbUpdate(env, 'users', 'nuptk', String(nuptkTarget).trim(), dataUpdate);
+  await invalidate(env, `USERS_CACHE_${target.sekolah_id}`);
+  return { success: true, message: `Data ${target.nama} berhasil diperbarui.` };
 }
 
 async function getGuruList(args, env) {
@@ -724,6 +758,9 @@ async function deleteUser(args, env) {
   if (!target) return { success: false, message: 'Pendidik tidak ditemukan.' };
   if (user.role !== 'ADMIN_UTAMA' && target.sekolah_id !== user.sekolahId) {
     return { success: false, message: 'Akses ditolak. Pendidik ini bukan dari sekolah Anda.' };
+  }
+  if (['ADMIN_SEKOLAH', 'ADMIN_UTAMA'].includes(target.role) && user.role !== 'ADMIN_UTAMA') {
+    return { success: false, message: 'Akses ditolak. Hanya Admin Utama yang bisa menghapus akun Admin.' };
   }
 
   await sbDelete(env, 'users', 'nuptk', String(nuptkAtauRow).trim());
@@ -1078,6 +1115,7 @@ export const handlers = {
   saveSettingsData,
   getUsers,
   saveUser,
+  updateUser,
   getGuruList,
   getGuruMengajarList,
   deleteUser,
