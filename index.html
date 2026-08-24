@@ -9,8 +9,8 @@
 <meta content='width=device-width, initial-scale=1.0' name='viewport'/>
 <title>AbsenYuk! - Sistem Presensi</title>
 
-<link href='absenyuk.png' rel='icon' type='image/png'/>
-<link href='absenyuk.png' rel='apple-touch-icon'/>
+<link href='absenyuk.png?v=2' rel='icon' type='image/png'/>
+<link href='absenyuk.png?v=2' rel='apple-touch-icon'/>
 
 <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'/>
 <link href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css' rel='stylesheet'/>
@@ -1538,7 +1538,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     document.getElementById('user-role-display').innerText = 'ADMIN_UTAMA' + (namaSekolahDipilih ? ' • ' + namaSekolahDipilih : '');
     // Setelah ganti sekolah, muat ulang halaman Admin Panel dari awal
     // supaya semua data (dashboard, settings, dst) sesuai sekolah baru.
+    // switchView() sendiri CUMA menampilkan div-nya, bukan memuat data -
+    // makanya refreshDashboard() dipanggil eksplisit di sini.
     switchView('dashboard-admin');
+    refreshDashboard();
     loadSettings();
   }
 
