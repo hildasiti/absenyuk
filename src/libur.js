@@ -16,17 +16,17 @@ export function hitungRadiusGPS(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Cek apakah sebuah tanggal termasuk hari libur. Cache 5 menit di KV
- * karena dipanggil di tiap absen masuk.
+ * Cek apakah sebuah tanggal termasuk hari libur (per sekolah). Cache
+ * 5 menit di KV karena dipanggil di tiap absen masuk.
  */
-export async function checkApakahHariLibur(env, targetDateStr) {
-  const cacheKey = 'LIBUR_LIST_CACHE';
+export async function checkApakahHariLibur(env, sekolahId, targetDateStr) {
+  const cacheKey = `LIBUR_LIST_CACHE_${sekolahId}`;
   let liburList;
   const cached = await env.SESSIONS.get(cacheKey);
   if (cached) {
     liburList = JSON.parse(cached);
   } else {
-    liburList = await sbSelect(env, 'libur_nasional');
+    liburList = await sbSelect(env, 'libur_nasional', `sekolah_id=eq.${sekolahId}`);
     await env.SESSIONS.put(cacheKey, JSON.stringify(liburList), { expirationTtl: 300 });
   }
 

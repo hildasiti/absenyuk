@@ -1,4 +1,4 @@
-import { sbSelect, sbInsert, sbUpdate, sbDelete } from './supabase.js';
+import { sbSelect, sbInsert, sbUpdate, sbUpdateWhere, sbDelete } from './supabase.js';
 import { createSession, getSession, destroySession } from './session.js';
 import { verifyAndMigratePassword } from './auth.js';
 import { getSettingsMap } from './settings.js';
@@ -22,14 +22,36 @@ function isRole(user, ...roles) {
   return !!user && roles.includes(String(user.role).trim());
 }
 
-async function getUsersListCached(env) {
-  return cached(env, 'USERS_CACHE', 180, () => sbSelect(env, 'users'));
+/** Admin Sekolah maupun Admin Utama, keduanya punya hak admin. */
+function isAdminAny(user) {
+  return isRole(user, 'ADMIN_SEKOLAH', 'ADMIN_UTAMA');
 }
-async function getLiburListCached(env) {
-  return cached(env, 'LIBUR_CACHE', 600, () => sbSelect(env, 'libur_nasional'));
+
+/**
+ * Tentukan sekolah_id yang dipakai untuk query.
+ * - Admin Sekolah / Piket / Kepala Sekolah / Guru: SELALU dipaksa pakai
+ *   sekolah_id milik akun mereka sendiri, TIDAK PEDULI nilai yang
+ *   dikirim dari frontend (supaya 1 sekolah tidak pernah bisa
+ *   mengintip/mengubah data sekolah lain walau request dimanipulasi).
+ * - Admin Utama: mengelola lintas sekolah, WAJIB pilih sekolah dulu di
+ *   frontend (dikirim lewat parameter requestedSekolahId).
+ */
+function resolveSekolahId(user, requestedSekolahId) {
+  if (user.role === 'ADMIN_UTAMA') {
+    if (!requestedSekolahId) throw new Error('Admin Utama harus memilih sekolah dulu.');
+    return requestedSekolahId;
+  }
+  return user.sekolahId;
 }
-async function getJadwalKegiatanCached(env) {
-  return cached(env, 'JADWAL_KEGIATAN_CACHE', 60, () => sbSelect(env, 'jadwal_kegiatan'));
+
+async function getUsersListCached(env, sekolahId) {
+  return cached(env, `USERS_CACHE_${sekolahId}`, 180, () => sbSelect(env, 'users', `sekolah_id=eq.${sekolahId}`));
+}
+async function getLiburListCached(env, sekolahId) {
+  return cached(env, `LIBUR_CACHE_${sekolahId}`, 600, () => sbSelect(env, 'libur_nasional', `sekolah_id=eq.${sekolahId}`));
+}
+async function getJadwalKegiatanCached(env, sekolahId) {
+  return cached(env, `JADWAL_KEGIATAN_CACHE_${sekolahId}`, 60, () => sbSelect(env, 'jadwal_kegiatan', `sekolah_id=eq.${sekolahId}`));
 }
 
 // Konfigurasi jenis laporan/kegiatan (8 jenis majelis/kegiatan rutin yang identik strukturnya).
@@ -88,10 +110,17 @@ async function loginUser(args, env) {
     return { success: false, message: 'Akun Anda dinonaktifkan oleh Admin.' };
   }
 
+  let sekolahNama = '';
+  if (userRow.sekolah_id) {
+    const sekolahRows = await sbSelect(env, 'sekolah', `id=eq.${encodeURIComponent(userRow.sekolah_id)}&limit=1`);
+    sekolahNama = sekolahRows[0] ? sekolahRows[0].nama : '';
+  }
+
   const userObj = {
     id: userRow.legacy_id, nuptk: userRow.nuptk, nama: userRow.nama,
     role: String(userRow.role).trim().toUpperCase().replace(/\s+/g, '_'),
-    kategori: userRow.kategori || 'Mengajar'
+    kategori: userRow.kategori || 'Mengajar',
+    sekolahId: userRow.sekolah_id, sekolahNama
   };
   const token = await createSession(env, userObj);
   return { success: true, token, user: userObj };
@@ -109,6 +138,18 @@ async function logoutFn(args, env) {
 }
 
 // ====================================================================
+// SEKOLAH (khusus Admin Utama - dipakai untuk pemilih sekolah di UI)
+// ====================================================================
+
+async function getSekolahList(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!isRole(user, 'ADMIN_UTAMA')) return [];
+  const rows = await sbSelect(env, 'sekolah', 'order=nama.asc');
+  return rows.map((s) => ({ id: s.id, nama: s.nama, status: s.status }));
+}
+
+// ====================================================================
 // ABSEN MASUK
 // ====================================================================
 
@@ -116,6 +157,7 @@ async function saveAbsenMasuk(args, env) {
   const [token, status, keterangan, lat, lon] = args;
   const user = await requireUser(env, token);
   if (!user) return { success: false, message: 'Sesi habis, silakan login ulang.' };
+  const sekolahId = user.sekolahId; // absen selalu untuk sekolah sendiri, tidak ada skenario admin utama absen
 
   const { dateStr, timeStr: jamLaporStr, dayOfWeek } = nowJakarta();
 
@@ -123,7 +165,7 @@ async function saveAbsenMasuk(args, env) {
   if (dayOfWeek === 0 || dayOfWeek === 6) {
     statusLiburSistem = 'Libur Akhir Pekan';
   } else {
-    const namaLiburNasional = await checkApakahHariLibur(env, dateStr);
+    const namaLiburNasional = await checkApakahHariLibur(env, sekolahId, dateStr);
     if (namaLiburNasional) statusLiburSistem = 'Libur Nasional: ' + namaLiburNasional;
   }
   if (statusLiburSistem !== '') {
@@ -139,7 +181,7 @@ async function saveAbsenMasuk(args, env) {
     return { success: false, message: 'Gagal memverifikasi koordinat GPS. Pastikan izin lokasi aktif.' };
   }
 
-  const settings = await getSettingsMap(env);
+  const settings = await getSettingsMap(env, sekolahId);
   let finalStatus = status;
   const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
   const jarakMeter = hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(settings.lat_sekolah), parseFloat(settings.long_sekolah));
@@ -157,7 +199,7 @@ async function saveAbsenMasuk(args, env) {
 
   try {
     await sbInsert(env, 'absen_masuk', {
-      id: generateShortID('AB'), tanggal: dateStr, nuptk: user.nuptk, nama: user.nama,
+      id: generateShortID('AB'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: user.nuptk, nama: user.nama,
       jam: jamLaporStr, latitude: String(lat), longitude: String(lon), jarak: jarakMeter + ' m',
       status: finalStatus, keterangan: keterangan || '-', maps_link: mapsLink
     });
@@ -167,7 +209,7 @@ async function saveAbsenMasuk(args, env) {
     }
     throw err;
   }
-  await invalidate(env, 'ABSEN_MASUK_PERIODE_CACHE');
+  await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
 
   let pesanSukses = `Presensi berhasil disimpan pada pukul ${jamLaporStr} WIB.`;
   switch (finalStatus) {
@@ -182,12 +224,13 @@ async function saveAbsenMasuk(args, env) {
 }
 
 async function getAbsenMasukUntukEdit(args, env) {
-  const [token, tanggal, filterNuptk] = args;
+  const [token, tanggal, filterNuptk, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!user || user.role !== 'ADMIN') return [];
+  if (!isAdminAny(user)) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const dateStr = tanggal || nowJakarta().dateStr;
-  const rows = await sbSelect(env, 'absen_masuk', `tanggal=eq.${dateStr}`);
+  const rows = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
   const filterTarget = String(filterNuptk || 'ALL').trim();
 
   return rows
@@ -199,7 +242,7 @@ async function getAbsenMasukUntukEdit(args, env) {
 async function updateAbsenMasuk(args, env) {
   const [token, docId, jamBaru, statusBaru, keteranganBaru] = args;
   const user = await requireUser(env, token);
-  if (!user || user.role !== 'ADMIN') return { success: false, message: 'Akses ditolak. Hanya Admin yang bisa mengubah data absen.' };
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak. Hanya Admin yang bisa mengubah data absen.' };
   if (!docId) return { success: false, message: 'Data absen tidak ditemukan (docId kosong).' };
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(jamBaru).trim())) {
     return { success: false, message: 'Format jam tidak valid. Gunakan format HH:mm, contoh 07:15.' };
@@ -209,11 +252,15 @@ async function updateAbsenMasuk(args, env) {
   const rows = await sbSelect(env, 'absen_masuk', `id=eq.${encodeURIComponent(docId)}&limit=1`);
   const existing = rows[0];
   if (!existing) return { success: false, message: 'Data absen tidak ditemukan di database (mungkin sudah dihapus).' };
+  // Admin Sekolah cuma boleh ubah data sekolahnya sendiri (Admin Utama bebas).
+  if (user.role === 'ADMIN_SEKOLAH' && existing.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Data ini bukan milik sekolah Anda.' };
+  }
 
   await sbUpdate(env, 'absen_masuk', 'id', docId, {
     jam: String(jamBaru).trim(), status: statusBaru, keterangan: keteranganBaru || '-'
   });
-  await invalidate(env, 'ABSEN_MASUK_PERIODE_CACHE');
+  await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${existing.sekolah_id}`);
   return { success: true, message: `Data absen ${existing.nama} tanggal ${existing.tanggal} berhasil diperbarui.` };
 }
 
@@ -229,7 +276,7 @@ async function checkSudahAbsenKegiatan(args, env) {
   if (!config) return { sudah: false };
 
   const dateStr = tanggal || nowJakarta().dateStr;
-  let query = `nuptk=eq.${encodeURIComponent(user.nuptk)}&${config.dateField}=eq.${dateStr}`;
+  let query = `sekolah_id=eq.${user.sekolahId}&nuptk=eq.${encodeURIComponent(user.nuptk)}&${config.dateField}=eq.${dateStr}`;
   if (config.jenisKegiatan) query += `&jenis_kegiatan=eq.${config.jenisKegiatan}`;
   const rows = await sbSelect(env, config.table, query);
   if (rows.length === 0) return { sudah: false };
@@ -244,9 +291,10 @@ async function saveKegiatan(args, env) {
   const [token, sheetName, kegiatan, status, catatan, tanggal, lat, lon] = args;
   const user = await requireUser(env, token);
   if (!user) return { success: false, message: 'Unauthenticated' };
+  const sekolahId = user.sekolahId;
 
   if (status === 'Hadir di Majelis') {
-    const settings = await getSettingsMap(env);
+    const settings = await getSettingsMap(env, sekolahId);
     if (lat && lon && settings.lat_pesantren && settings.long_pesantren) {
       const jarak = hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(settings.lat_pesantren), parseFloat(settings.long_pesantren));
       const batas = parseInt(settings.radius_pesantren || 100, 10);
@@ -260,7 +308,7 @@ async function saveKegiatan(args, env) {
 
   const dateStr = tanggal || nowJakarta().dateStr;
   await sbInsert(env, 'kegiatan_umum', {
-    id: generateShortID('K'), jenis_kegiatan: sheetName, tanggal: dateStr, nuptk: user.nuptk, nama: user.nama,
+    id: generateShortID('K'), sekolah_id: sekolahId, jenis_kegiatan: sheetName, tanggal: dateStr, nuptk: user.nuptk, nama: user.nama,
     kegiatan, status, catatan: catatan || '-', timestamp: new Date().toISOString()
   });
   return { success: true, message: 'Data kehadiran majelis berhasil disimpan.' };
@@ -270,11 +318,12 @@ async function saveAbsenKegiatanKhusus(args, env) {
   const [token, namaKegiatanStr, statusKehadiran, catatan, lat, lon] = args;
   const user = await requireUser(env, token);
   if (!user) return { success: false, message: 'Sesi habis, silakan login ulang.' };
+  const sekolahId = user.sekolahId;
 
   const { dateStr, timeStr: jamLaporStr } = nowJakarta();
   const inputCleanKegNama = String(namaKegiatanStr).trim().toLowerCase();
 
-  const existing = await sbSelect(env, 'absen_kegiatan_khusus', `nuptk=eq.${encodeURIComponent(user.nuptk)}&tanggal_lapor=eq.${dateStr}`);
+  const existing = await sbSelect(env, 'absen_kegiatan_khusus', `sekolah_id=eq.${sekolahId}&nuptk=eq.${encodeURIComponent(user.nuptk)}&tanggal_lapor=eq.${dateStr}`);
   const sudah = existing.some((r) => String(r.nama_kegiatan).trim().toLowerCase() === inputCleanKegNama);
   if (sudah) {
     return { success: false, message: `Ditolak! Anda sudah melakukan presensi untuk kegiatan "${namaKegiatanStr}" hari ini.` };
@@ -283,7 +332,7 @@ async function saveAbsenKegiatanKhusus(args, env) {
   let finalStatus = statusKehadiran;
   let waktuKegiatanStr = '', toleransiMenit = 15, latKegiatan = '', lonKegiatan = '', radiusKegiatan = 50;
 
-  const dataJadwal = await getJadwalKegiatanCached(env);
+  const dataJadwal = await getJadwalKegiatanCached(env, sekolahId);
   for (const k of dataJadwal) {
     const dbNama = String(k.nama).trim().toLowerCase();
     if (inputCleanKegNama.includes(dbNama) || dbNama.includes(inputCleanKegNama)) {
@@ -318,7 +367,7 @@ async function saveAbsenKegiatanKhusus(args, env) {
     : '-';
 
   await sbInsert(env, 'absen_kegiatan_khusus', {
-    id: generateShortID('AK'), tanggal_lapor: dateStr, waktu_lapor: jamLaporStr, nuptk: user.nuptk,
+    id: generateShortID('AK'), sekolah_id: sekolahId, tanggal_lapor: dateStr, waktu_lapor: jamLaporStr, nuptk: user.nuptk,
     nama: user.nama, nama_kegiatan: namaKegiatanStr, status_kehadiran: finalStatus,
     catatan: catatan || '', latitude: lat || '-', longitude: lon || '-', jarak: jarakTercatat
   });
@@ -329,17 +378,21 @@ async function saveAbsenKegiatanKhusus(args, env) {
 async function tutupAbsenKegiatan(args, env) {
   const [token, kegiatanId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'KEPALA_SEKOLAH')) return { success: false, message: 'Akses ditolak.' };
+  if (!isRole(user, 'ADMIN_SEKOLAH', 'ADMIN_UTAMA', 'KEPALA_SEKOLAH')) return { success: false, message: 'Akses ditolak.' };
 
   const rows = await sbSelect(env, 'jadwal_kegiatan', `id=eq.${encodeURIComponent(kegiatanId)}&limit=1`);
   const keg = rows[0];
   if (!keg) return { success: false, message: 'Kegiatan tidak ditemukan (mungkin sudah dihapus).' };
+  if (user.role !== 'ADMIN_UTAMA' && keg.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Kegiatan ini bukan milik sekolah Anda.' };
+  }
+  const sekolahId = keg.sekolah_id;
 
   const jamSekarangStr = nowJakarta().timeStr;
   const tanggalKeg = keg.tanggal;
   const cleanKegNama = String(keg.nama).trim().toLowerCase().split('(')[0].trim();
 
-  const absenKegIni = await sbSelect(env, 'absen_kegiatan_khusus', `tanggal_lapor=eq.${tanggalKeg}`);
+  const absenKegIni = await sbSelect(env, 'absen_kegiatan_khusus', `sekolah_id=eq.${sekolahId}&tanggal_lapor=eq.${tanggalKeg}`);
   const sudahAbsen = absenKegIni
     .filter((r) => {
       const rowKeg = String(r.nama_kegiatan).trim().toLowerCase().split('(')[0].trim();
@@ -347,7 +400,7 @@ async function tutupAbsenKegiatan(args, env) {
     })
     .map((r) => String(r.nuptk).trim());
 
-  const users = await getUsersListCached(env);
+  const users = await getUsersListCached(env, sekolahId);
   const kegTipePeserta = keg.tipe_peserta || 'Semua GTK';
   const kegDaftarPeserta = keg.daftar_peserta || [];
   let jumlahDitandai = 0;
@@ -360,7 +413,7 @@ async function tutupAbsenKegiatan(args, env) {
       const diundang = kegTipePeserta !== 'Terbatas' || kegDaftarPeserta.includes(userNuptk);
       if (diundang && !sudahAbsen.includes(userNuptk)) {
         await sbInsert(env, 'absen_kegiatan_khusus', {
-          id: generateShortID('AK'), tanggal_lapor: tanggalKeg, waktu_lapor: jamSekarangStr, nuptk: userNuptk,
+          id: generateShortID('AK'), sekolah_id: sekolahId, tanggal_lapor: tanggalKeg, waktu_lapor: jamSekarangStr, nuptk: userNuptk,
           nama: u.nama, nama_kegiatan: keg.nama, status_kehadiran: 'Tanpa Keterangan',
           catatan: 'Tidak Absen (Absen Ditutup Admin)', latitude: '-', longitude: '-', jarak: '-'
         });
@@ -370,7 +423,7 @@ async function tutupAbsenKegiatan(args, env) {
   }
 
   await sbUpdate(env, 'jadwal_kegiatan', 'id', kegiatanId, { status: 'Nonaktif' });
-  await invalidate(env, 'JADWAL_KEGIATAN_CACHE');
+  await invalidate(env, `JADWAL_KEGIATAN_CACHE_${sekolahId}`);
 
   return { success: true, message: `Absen "${keg.nama}" ditutup. ${jumlahDitandai} peserta yang belum absen ditandai Tanpa Keterangan.` };
 }
@@ -380,9 +433,10 @@ async function tutupAbsenKegiatan(args, env) {
 // ====================================================================
 
 async function saveJadwalKegiatan(args, env) {
-  const [token, namaKegiatan, tanggal, waktu, toleransi, tipePeserta, daftarNuptkPeserta, lat, lon, radiusMeter] = args;
+  const [token, namaKegiatan, tanggal, waktu, toleransi, tipePeserta, daftarNuptkPeserta, lat, lon, radiusMeter, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return { success: false, message: 'Akses ditolak.' };
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const id = generateShortID('JK');
   const tipe = tipePeserta === 'Terbatas' ? 'Terbatas' : 'Semua GTK';
@@ -392,21 +446,23 @@ async function saveJadwalKegiatan(args, env) {
   }
 
   await sbInsert(env, 'jadwal_kegiatan', {
-    id, nama: namaKegiatan, tanggal, waktu, status: 'Aktif',
+    id, sekolah_id: sekolahId, nama: namaKegiatan, tanggal, waktu, status: 'Aktif',
     toleransi: toleransi ? parseInt(toleransi, 10) : 15, tipe_peserta: tipe,
     daftar_peserta: daftarArr,
     lat: lat !== undefined && lat !== null && lat !== '' ? parseFloat(lat) : null,
     lon: lon !== undefined && lon !== null && lon !== '' ? parseFloat(lon) : null,
     radius: radiusMeter ? parseInt(radiusMeter, 10) : 50
   });
-  await invalidate(env, 'JADWAL_KEGIATAN_CACHE');
+  await invalidate(env, `JADWAL_KEGIATAN_CACHE_${sekolahId}`);
   return { success: true, message: 'Jadwal kegiatan berhasil ditambahkan!' };
 }
 
 async function getJadwalKegiatan(args, env) {
-  const [token] = args;
-  if (!(await requireUser(env, token))) return [];
-  const result = await getJadwalKegiatanCached(env);
+  const [token, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!user) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  const result = await getJadwalKegiatanCached(env, sekolahId);
 
   result.sort((a, b) => {
     if (a.tanggal !== b.tanggal) return a.tanggal < b.tanggal ? 1 : -1;
@@ -424,19 +480,35 @@ async function getJadwalKegiatan(args, env) {
 async function toggleStatusKegiatan(args, env) {
   const [token, idAtauRow, statusSekarang] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return { success: false, message: 'Akses ditolak.' };
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+
+  const rows = await sbSelect(env, 'jadwal_kegiatan', `id=eq.${encodeURIComponent(String(idAtauRow).trim())}&limit=1`);
+  const keg = rows[0];
+  if (!keg) return { success: false, message: 'Kegiatan tidak ditemukan.' };
+  if (user.role !== 'ADMIN_UTAMA' && keg.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Kegiatan ini bukan milik sekolah Anda.' };
+  }
+
   const statusBaru = statusSekarang === 'Aktif' ? 'Nonaktif' : 'Aktif';
   await sbUpdate(env, 'jadwal_kegiatan', 'id', String(idAtauRow).trim(), { status: statusBaru });
-  await invalidate(env, 'JADWAL_KEGIATAN_CACHE');
+  await invalidate(env, `JADWAL_KEGIATAN_CACHE_${keg.sekolah_id}`);
   return { success: true, message: `Status kegiatan berhasil diubah menjadi [${statusBaru}].` };
 }
 
 async function deleteJadwalKegiatan(args, env) {
   const [token, idAtauRow] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return { success: false, message: 'Akses ditolak.' };
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+
+  const rows = await sbSelect(env, 'jadwal_kegiatan', `id=eq.${encodeURIComponent(String(idAtauRow).trim())}&limit=1`);
+  const keg = rows[0];
+  if (!keg) return { success: false, message: 'Kegiatan tidak ditemukan.' };
+  if (user.role !== 'ADMIN_UTAMA' && keg.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Kegiatan ini bukan milik sekolah Anda.' };
+  }
+
   await sbDelete(env, 'jadwal_kegiatan', 'id', String(idAtauRow).trim());
-  await invalidate(env, 'JADWAL_KEGIATAN_CACHE');
+  await invalidate(env, `JADWAL_KEGIATAN_CACHE_${keg.sekolah_id}`);
   return { success: true, message: 'Jadwal kegiatan berhasil dihapus.' };
 }
 
@@ -445,9 +517,10 @@ async function deleteJadwalKegiatan(args, env) {
 // ====================================================================
 
 async function getDashboardData(args, env) {
-  const [token, startDate, endDate] = args;
+  const [token, startDate, endDate, requestedSekolahId] = args;
   const user = await requireUser(env, token);
   if (!user) return null;
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const { dateStr, dayOfWeek } = nowJakarta();
   const mingguIni = getMingguIniSeninJumat();
@@ -464,11 +537,11 @@ async function getDashboardData(args, env) {
   if (dayOfWeek === 0 || dayOfWeek === 6) {
     data.todayStatus = 'Libur Akhir Pekan'; apakahHariLibur = true;
   } else {
-    const statusLibur = await checkApakahHariLibur(env, dateStr);
+    const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
     if (statusLibur) { data.todayStatus = 'Libur: ' + statusLibur; apakahHariLibur = true; }
   }
 
-  const users = await getUsersListCached(env);
+  const users = await getUsersListCached(env, sekolahId);
   data.totalGuru = users.filter((u) => ['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif').length;
 
   let sDate, eDate;
@@ -480,7 +553,7 @@ async function getDashboardData(args, env) {
   const sDateStr = toDateStr(sDate);
   const eDateStr = toDateStr(eDate);
 
-  const sheetMasuk = await sbSelect(env, 'absen_masuk', `tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
+  const sheetMasuk = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
 
   let sudahAbsenHariIni = [];
   let statusGuruHariIni = {};
@@ -491,7 +564,7 @@ async function getDashboardData(args, env) {
     const namaGuru = String(row.nama).trim();
     const nuptkGuru = String(row.nuptk).trim();
 
-    if (['ADMIN', 'PIKET', 'KEPALA_SEKOLAH'].includes(user.role)) {
+    if (isAdminAny(user) || isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) {
       const rowDateObj = new Date(rowDateStr);
       const sDateAdmin = startDate ? new Date(startDate) : new Date(dateStr);
       const eDateAdmin = endDate ? new Date(endDate) : new Date(dateStr);
@@ -554,28 +627,32 @@ async function getDashboardData(args, env) {
 // ====================================================================
 
 async function getSettingsData(args, env) {
-  const [token] = args;
+  const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET')) return {};
-  return getSettingsMap(env);
+  if (!isAdminAny(user) && !isRole(user, 'PIKET')) return {};
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  return getSettingsMap(env, sekolahId);
 }
 
 async function saveSettingsData(args, env) {
-  const [token, config] = args;
+  const [token, config, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return false;
+  if (!isAdminAny(user)) return false;
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   for (const key of Object.keys(config)) {
     if (config[key] !== undefined) {
-      const existingRows = await sbSelect(env, 'settings', `key=eq.${encodeURIComponent(key)}&limit=1`);
+      const existingRows = await sbSelect(env, 'settings', `sekolah_id=eq.${sekolahId}&key=eq.${encodeURIComponent(key)}&limit=1`);
       if (existingRows.length > 0) {
-        await sbUpdate(env, 'settings', 'key', key, { value: String(config[key]) });
+        // Primary key settings sekarang gabungan (sekolah_id, key) - HARUS filter
+        // 2 kolom sekaligus, kalau cuma filter "key" saja bisa salah update ke sekolah lain.
+        await sbUpdateWhere(env, 'settings', { sekolah_id: sekolahId, key }, { value: String(config[key]) });
       } else {
-        await sbInsert(env, 'settings', { key, value: String(config[key]) });
+        await sbInsert(env, 'settings', { sekolah_id: sekolahId, key, value: String(config[key]) });
       }
     }
   }
-  await invalidate(env, 'SETTINGS_CACHE');
+  await invalidate(env, `SETTINGS_CACHE_${sekolahId}`);
   return true;
 }
 
@@ -584,61 +661,83 @@ async function saveSettingsData(args, env) {
 // ====================================================================
 
 async function getUsers(args, env) {
-  const [token] = args;
+  const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return [];
-  const result = await getUsersListCached(env);
+  if (!isAdminAny(user)) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  const result = await getUsersListCached(env, sekolahId);
   return result.map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, email: u.email, role: u.role, status: u.status, kategori: u.kategori || 'Mengajar' }));
 }
 
 async function saveUser(args, env) {
   const [token, userData] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return false;
+  if (!isAdminAny(user)) return false;
+
+  // Admin Sekolah: user baru otomatis masuk sekolahnya sendiri.
+  // Admin Utama: WAJIB sertakan userData.sekolahId (pilih dari dropdown sekolah di form).
+  let sekolahId;
+  if (user.role === 'ADMIN_UTAMA') {
+    if (!userData.sekolahId) return false;
+    sekolahId = userData.sekolahId;
+  } else {
+    sekolahId = user.sekolahId;
+  }
 
   const nuptk = String(userData.nuptk).trim();
   await sbInsert(env, 'users', {
-    nuptk, legacy_id: generateShortID('U'), nama: userData.nama, email: userData.email,
+    nuptk, sekolah_id: sekolahId, legacy_id: generateShortID('U'), nama: userData.nama, email: userData.email,
     password: userData.password, role: userData.role, status: 'Aktif',
     created_at: new Date().toISOString(), kategori: userData.kategori || 'Mengajar'
   });
-  await invalidate(env, 'USERS_CACHE');
+  await invalidate(env, `USERS_CACHE_${sekolahId}`);
   return true;
 }
 
 async function getGuruList(args, env) {
-  const [token] = args;
+  const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET', 'KEPALA_SEKOLAH')) return [];
-  const result = await getUsersListCached(env);
-  return result.filter((u) => String(u.role).trim() !== 'ADMIN')
+  if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  const result = await getUsersListCached(env, sekolahId);
+  return result.filter((u) => !['ADMIN_SEKOLAH', 'ADMIN_UTAMA'].includes(String(u.role).trim()))
     .map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, status: u.status, role: u.role, row: u.nuptk }));
 }
 
 async function getGuruMengajarList(args, env) {
-  const [token] = args;
+  const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET', 'KEPALA_SEKOLAH')) return [];
-  const result = await getUsersListCached(env);
-  return result.filter((u) => (u.kategori || 'Mengajar') === 'Mengajar' && String(u.role).trim() !== 'ADMIN')
+  if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  const result = await getUsersListCached(env, sekolahId);
+  return result.filter((u) => (u.kategori || 'Mengajar') === 'Mengajar' && !['ADMIN_SEKOLAH', 'ADMIN_UTAMA'].includes(String(u.role).trim()))
     .map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, status: u.status, role: u.role, row: u.nuptk }));
 }
 
 async function deleteUser(args, env) {
   const [token, nuptkAtauRow] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return { success: false, message: 'Akses ditolak. Anda bukan Admin.' };
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak. Anda bukan Admin.' };
+
+  const rows = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(String(nuptkAtauRow).trim())}&limit=1`);
+  const target = rows[0];
+  if (!target) return { success: false, message: 'Pendidik tidak ditemukan.' };
+  if (user.role !== 'ADMIN_UTAMA' && target.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Pendidik ini bukan dari sekolah Anda.' };
+  }
+
   await sbDelete(env, 'users', 'nuptk', String(nuptkAtauRow).trim());
-  await invalidate(env, 'USERS_CACHE');
+  await invalidate(env, `USERS_CACHE_${target.sekolah_id}`);
   return { success: true, message: 'Data pendidik berhasil dihapus dari sistem.' };
 }
 
 async function getStafAktifUntukImpal(args, env) {
-  const [token] = args;
+  const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET', 'KEPALA_SEKOLAH')) return [];
-  const users = await getUsersListCached(env);
-  return users.filter((u) => String(u.status).trim() === 'Aktif' && String(u.role).trim() !== 'ADMIN')
+  if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  const users = await getUsersListCached(env, sekolahId);
+  return users.filter((u) => String(u.status).trim() === 'Aktif' && !['ADMIN_SEKOLAH', 'ADMIN_UTAMA'].includes(String(u.role).trim()))
     .map((u) => ({ nuptk: u.nuptk, nama: u.nama, role: u.role, kategori: u.kategori || 'Mengajar' }));
 }
 
@@ -647,32 +746,42 @@ async function getStafAktifUntukImpal(args, env) {
 // ====================================================================
 
 async function saveHariLibur(args, env) {
-  const [token, tglMulai, tglSelesai, keterangan] = args;
+  const [token, tglMulai, tglSelesai, keterangan, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return { success: false, message: 'Akses ditolak.' };
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
   if (new Date(tglMulai) > new Date(tglSelesai)) {
     return { success: false, message: 'Tanggal mulai tidak boleh melebihi tanggal selesai libur!' };
   }
   const id = generateShortID('L');
-  await sbInsert(env, 'libur_nasional', { id, tgl_mulai: tglMulai, tgl_selesai: tglSelesai, keterangan });
-  await invalidate(env, 'LIBUR_CACHE');
+  await sbInsert(env, 'libur_nasional', { id, sekolah_id: sekolahId, tgl_mulai: tglMulai, tgl_selesai: tglSelesai, keterangan });
+  await invalidate(env, `LIBUR_CACHE_${sekolahId}`);
   return { success: true, message: 'Rentang hari libur sekolah berhasil dijadwalkan!' };
 }
 
 async function getLiburList(args, env) {
-  const [token] = args;
+  const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET')) return [];
-  const result = await getLiburListCached(env);
+  if (!isAdminAny(user) && !isRole(user, 'PIKET')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  const result = await getLiburListCached(env, sekolahId);
   return result.map((l) => ({ id: l.id, tglMulai: l.tgl_mulai, tglSelesai: l.tgl_selesai, keterangan: l.keterangan, row: l.id }));
 }
 
 async function deleteHariLibur(args, env) {
   const [token, idAtauRow] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN')) return { success: false, message: 'Akses ditolak.' };
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+
+  const rows = await sbSelect(env, 'libur_nasional', `id=eq.${encodeURIComponent(String(idAtauRow).trim())}&limit=1`);
+  const target = rows[0];
+  if (!target) return { success: false, message: 'Data libur tidak ditemukan.' };
+  if (user.role !== 'ADMIN_UTAMA' && target.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Data ini bukan milik sekolah Anda.' };
+  }
+
   await sbDelete(env, 'libur_nasional', 'id', String(idAtauRow).trim());
-  await invalidate(env, 'LIBUR_CACHE');
+  await invalidate(env, `LIBUR_CACHE_${target.sekolah_id}`);
   return { success: true, message: 'Hari libur berhasil dihapus.' };
 }
 
@@ -681,14 +790,15 @@ async function deleteHariLibur(args, env) {
 // ====================================================================
 
 async function getPayrollReport(args, env) {
-  const [token, startDate, endDate] = args;
+  const [token, startDate, endDate, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const sDateStr = toDateStr(new Date(startDate));
   const eDateStr = toDateStr(new Date(endDate));
 
-  const users = await getUsersListCached(env);
+  const users = await getUsersListCached(env, sekolahId);
   const payrollMap = {};
   users.forEach((u) => {
     if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif') {
@@ -696,7 +806,7 @@ async function getPayrollReport(args, env) {
     }
   });
 
-  const rows = await sbSelect(env, 'absen_masuk', `tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
+  const rows = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
   rows.forEach((row) => {
     const nuptk = String(row.nuptk).trim(), status = String(row.status).trim();
     if (payrollMap[nuptk]) {
@@ -712,9 +822,10 @@ async function getPayrollReport(args, env) {
 }
 
 async function getReport(args, env) {
-  const [token, startDate, endDate, type, filterNuptk] = args;
+  const [token, startDate, endDate, type, filterNuptk, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const config = REPORT_CONFIG[type];
   if (!config) return { headers: [], data: [] };
@@ -722,7 +833,7 @@ async function getReport(args, env) {
   const sDateStr = toDateStr(new Date(startDate));
   const eDateStr = toDateStr(new Date(endDate));
 
-  let query = `${config.dateField}=gte.${sDateStr}&${config.dateField}=lte.${eDateStr}`;
+  let query = `sekolah_id=eq.${sekolahId}&${config.dateField}=gte.${sDateStr}&${config.dateField}=lte.${eDateStr}`;
   if (config.jenisKegiatan) query += `&jenis_kegiatan=eq.${config.jenisKegiatan}`;
   const rows = await sbSelect(env, config.table, query);
 
@@ -753,6 +864,7 @@ async function getRekapJamPelajaranSendiri(args, env) {
   const [token, startDate, endDate] = args;
   const user = await requireUser(env, token);
   if (!user) return null;
+  const sekolahId = user.sekolahId;
 
   const periodeBerjalan = getPeriodeBerjalan();
   let sDate, eDate, periodeLabel;
@@ -763,7 +875,7 @@ async function getRekapJamPelajaranSendiri(args, env) {
     sDate = periodeBerjalan.start; eDate = periodeBerjalan.end; periodeLabel = periodeBerjalan.label;
   }
 
-  const rows = await sbSelect(env, 'rekap_jam_pelajaran', `tanggal=gte.${toDateStr(sDate)}&tanggal=lte.${toDateStr(eDate)}`);
+  const rows = await sbSelect(env, 'rekap_jam_pelajaran', `sekolah_id=eq.${sekolahId}&tanggal=gte.${toDateStr(sDate)}&tanggal=lte.${toDateStr(eDate)}`);
   const counter = { Impal: 0, Terlambat: 0, Dinas: 0, Sakit: 0, Izin: 0, Alpa: 0 };
 
   rows.forEach((row) => {
@@ -785,12 +897,13 @@ async function getRekapJamPelajaranSendiri(args, env) {
 }
 
 async function getPayrollJamPelajaran(args, env) {
-  const [token, startDate, endDate] = args;
+  const [token, startDate, endDate, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
-  const rows = await sbSelect(env, 'rekap_jam_pelajaran', `tanggal=gte.${toDateStr(new Date(startDate))}&tanggal=lte.${toDateStr(new Date(endDate))}`);
-  const users = await getUsersListCached(env);
+  const rows = await sbSelect(env, 'rekap_jam_pelajaran', `sekolah_id=eq.${sekolahId}&tanggal=gte.${toDateStr(new Date(startDate))}&tanggal=lte.${toDateStr(new Date(endDate))}`);
+  const users = await getUsersListCached(env, sekolahId);
   const rekapMap = {};
   users.forEach((u) => {
     if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif') {
@@ -820,15 +933,16 @@ async function getPayrollJamPelajaran(args, env) {
 async function saveRekapJamPelajaran(args, env) {
   const [token, tanggal, nuptkGuru, namaGuru, jamKeArray, status, guruImpalNama, guruImpalNuptk] = args;
   const user = await requireUser(env, token);
-  if (!isRole(user, 'ADMIN', 'PIKET')) return { success: false, message: 'Akses ditolak. Fitur ini khusus Piket/Admin.' };
+  if (!isAdminAny(user) && !isRole(user, 'PIKET')) return { success: false, message: 'Akses ditolak. Fitur ini khusus Piket/Admin.' };
   if (!Array.isArray(jamKeArray) || jamKeArray.length === 0) return { success: false, message: 'Pilih minimal 1 Jam Pelajaran.' };
+  const sekolahId = user.sekolahId;
 
   const timestamp = new Date().toISOString();
   const jamTerurut = jamKeArray.slice().sort((a, b) => Number(a) - Number(b));
 
   for (const jam of jamTerurut) {
     await sbInsert(env, 'rekap_jam_pelajaran', {
-      id: generateShortID('JP'), tanggal, nuptk: nuptkGuru, nama_guru: namaGuru, jam_ke: 'JP ' + jam,
+      id: generateShortID('JP'), sekolah_id: sekolahId, tanggal, nuptk: nuptkGuru, nama_guru: namaGuru, jam_ke: 'JP ' + jam,
       status, guru_impal: guruImpalNama || '-', diinput_oleh: user.nama, timestamp, nuptk_impal: guruImpalNuptk || '-'
     });
   }
@@ -848,11 +962,11 @@ async function simpanTokenFCM(args, env) {
   if (!rows[0]) return { success: false, message: 'User tidak ditemukan di database.' };
 
   await sbUpdate(env, 'users', 'nuptk', user.nuptk, { fcm_token: fcmToken });
-  await invalidate(env, 'USERS_CACHE');
+  await invalidate(env, `USERS_CACHE_${user.sekolahId}`);
   return { success: true, message: 'Token berhasil diupdate.' };
 }
 
-/** Dipanggil dari Cron Trigger (07:20 WIB). Tidak dipanggil dari frontend. */
+/** Dipanggil dari Cron Trigger (07:20 WIB). Jalan untuk SEMUA sekolah sekaligus. */
 export async function cekDanKirimNotifikasiBelumAbsen(env) {
   const { dateStr, dayOfWeek } = nowJakarta();
   if (dayOfWeek === 0 || dayOfWeek === 6) {
@@ -860,70 +974,79 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
     return;
   }
 
-  const statusLibur = await checkApakahHariLibur(env, dateStr);
-  if (statusLibur) {
-    console.log('Hari ini libur: ' + statusLibur + '. Notifikasi dibatalkan.');
-    return;
-  }
+  const daftarSekolah = await sbSelect(env, 'sekolah', "status=eq.Aktif");
 
-  const users = await getUsersListCached(env);
-  const absenHariIni = await sbSelect(env, 'absen_masuk', `tanggal=eq.${dateStr}`);
-  const sudahAbsenNuptk = absenHariIni.map((r) => String(r.nuptk).trim());
-
-  let jumlahDikirim = 0;
-  for (const u of users) {
-    const uRole = String(u.role).trim(), uStatus = String(u.status).trim(), uNuptk = String(u.nuptk).trim();
-    const fcmToken = u.fcm_token;
-    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(uRole) && uStatus === 'Aktif') {
-      if (!sudahAbsenNuptk.includes(uNuptk) && fcmToken) {
-        const judul = 'Pengingat Presensi Masuk ⏱️';
-        const pesan = `Halo ${u.nama}, waktu sudah menunjukkan pukul 07.20 WIB. Mari segera lakukan presensi masuk sebelum terlambat!`;
-        await kirimNotifikasiKeSatuHP(env, fcmToken, judul, pesan);
-        jumlahDikirim++;
-      }
+  for (const sekolah of daftarSekolah) {
+    const sekolahId = sekolah.id;
+    const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
+    if (statusLibur) {
+      console.log(`[${sekolahId}] Hari ini libur: ${statusLibur}. Notifikasi dibatalkan.`);
+      continue;
     }
-  }
-  console.log(`Selesai! Notifikasi pengingat dikirim ke ${jumlahDikirim} GTK yang belum absen.`);
-}
 
-/** Dipanggil dari Cron Trigger (12:00 WIB). Tidak dipanggil dari frontend. */
-export async function autoSetTanpaKeterangan(env) {
-  const settings = await getSettingsMap(env);
-  if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
-    console.log('Sistem Auto Alpa Presensi Masuk dihentikan karena fitur di-Nonaktifkan sementara oleh Admin.');
-    return;
-  }
+    const users = await getUsersListCached(env, sekolahId);
+    const absenHariIni = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
+    const sudahAbsenNuptk = absenHariIni.map((r) => String(r.nuptk).trim());
 
-  const { dateStr, dayOfWeek } = nowJakarta();
-  if (dayOfWeek === 0 || dayOfWeek === 6) return;
-
-  const statusLibur = await checkApakahHariLibur(env, dateStr);
-  if (statusLibur) return;
-
-  const users = await getUsersListCached(env);
-  const absenHariIni = await sbSelect(env, 'absen_masuk', `tanggal=eq.${dateStr}`);
-  const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
-
-  for (const u of users) {
-    const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
-    const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
-
-    if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(userRole) && userStatus === 'Aktif') {
-      if (!sudahAbsenHariIni.includes(userNuptk)) {
-        try {
-          await sbInsert(env, 'absen_masuk', {
-            id: generateShortID('AO'), tanggal: dateStr, nuptk: userNuptk, nama: userNama,
-            jam: '--:--', latitude: '-', longitude: '-', jarak: 'xx m',
-            status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
-          });
-        } catch (err) {
-          // race condition (mis. guru absen manual persis saat cron jalan) - lewati saja
-          if (!String(err.message).includes('duplicate key')) throw err;
+    let jumlahDikirim = 0;
+    for (const u of users) {
+      const uRole = String(u.role).trim(), uStatus = String(u.status).trim(), uNuptk = String(u.nuptk).trim();
+      const fcmToken = u.fcm_token;
+      if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(uRole) && uStatus === 'Aktif') {
+        if (!sudahAbsenNuptk.includes(uNuptk) && fcmToken) {
+          const judul = 'Pengingat Presensi Masuk ⏱️';
+          const pesan = `Halo ${u.nama}, waktu sudah menunjukkan pukul 07.20 WIB. Mari segera lakukan presensi masuk sebelum terlambat!`;
+          await kirimNotifikasiKeSatuHP(env, fcmToken, judul, pesan);
+          jumlahDikirim++;
         }
       }
     }
+    console.log(`[${sekolahId}] Selesai! Notifikasi dikirim ke ${jumlahDikirim} GTK yang belum absen.`);
   }
-  await invalidate(env, 'ABSEN_MASUK_PERIODE_CACHE');
+}
+
+/** Dipanggil dari Cron Trigger (12:00 WIB). Jalan untuk SEMUA sekolah sekaligus. */
+export async function autoSetTanpaKeterangan(env) {
+  const { dateStr, dayOfWeek } = nowJakarta();
+  if (dayOfWeek === 0 || dayOfWeek === 6) return;
+
+  const daftarSekolah = await sbSelect(env, 'sekolah', "status=eq.Aktif");
+
+  for (const sekolah of daftarSekolah) {
+    const sekolahId = sekolah.id;
+    const settings = await getSettingsMap(env, sekolahId);
+    if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
+      console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin.`);
+      continue;
+    }
+
+    const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
+    if (statusLibur) continue;
+
+    const users = await getUsersListCached(env, sekolahId);
+    const absenHariIni = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
+    const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
+
+    for (const u of users) {
+      const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
+      const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
+
+      if (['GURU', 'KEPALA_SEKOLAH', 'PIKET'].includes(userRole) && userStatus === 'Aktif') {
+        if (!sudahAbsenHariIni.includes(userNuptk)) {
+          try {
+            await sbInsert(env, 'absen_masuk', {
+              id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
+              jam: '--:--', latitude: '-', longitude: '-', jarak: 'xx m',
+              status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
+            });
+          } catch (err) {
+            if (!String(err.message).includes('duplicate key')) throw err;
+          }
+        }
+      }
+    }
+    await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
+  }
 }
 
 // ====================================================================
@@ -938,6 +1061,7 @@ export const handlers = {
   loginUser,
   checkSession: checkSessionFn,
   logout: logoutFn,
+  getSekolahList,
   saveAbsenMasuk,
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
