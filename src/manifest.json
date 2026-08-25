@@ -1,0 +1,20 @@
+{
+  "name": "AbsenYuk! - Sistem Presensi",
+  "short_name": "AbsenYuk!",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0d3862",
+  "theme_color": "#0d3862",
+  "icons": [
+    {
+      "src": "absenyuk-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "absenyuk-512.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
