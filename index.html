@@ -342,12 +342,10 @@
     z-index: 2;
     animation: slideUp 0.5s ease;
   }
-  .login-card i.bi-fingerprint {
+  .login-card img {
     display: inline-block;
     animation: floatIcon 3s ease-in-out infinite;
-    background: linear-gradient(135deg, var(--primary-light), var(--accent-color));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 6px 14px rgba(13, 56, 98, 0.25));
   }
   .login-card h3 {
     background: linear-gradient(135deg, var(--primary-dark), var(--primary-light));
@@ -439,7 +437,7 @@
 
 <div class='view-section active' id='login-view'>
   <div class='login-card text-center'>
-    <i class='bi bi-fingerprint' style='font-size: 3rem; color: var(--primary-color);'></i>
+    <img src='absenyuk-192.png' alt='AbsenYuk!' style='width: 90px; height: 90px; object-fit: contain;'/>
     <h3 class='mt-3 mb-4 fw-bold'>AbsenYuk!</h3>
     <form id='form-login' onsubmit='handleLogin(event)'>
       <div class='mb-3 text-start'>
