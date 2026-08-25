@@ -9,8 +9,10 @@
 <meta content='width=device-width, initial-scale=1.0' name='viewport'/>
 <title>AbsenYuk! - Sistem Presensi</title>
 
-<link href='absenyuk.png?v=2' rel='icon' type='image/png'/>
-<link href='absenyuk.png?v=2' rel='apple-touch-icon'/>
+<link href='absenyuk.ico' rel='icon' type='image/x-icon'/>
+<link href='absenyuk-192.png' rel='icon' sizes='192x192' type='image/png'/>
+<link href='absenyuk-192.png' rel='apple-touch-icon'/>
+<link href='manifest.json' rel='manifest'/>
 
 <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'/>
 <link href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css' rel='stylesheet'/>
@@ -460,43 +462,45 @@
 <div class='view-section' id='app-view' style='display: none;'>
   <div class='d-flex flex-column flex-md-row'>
 
-    <div class='sidebar p-0' id='sidebar'>
-      <div class='p-4 text-center border-bottom border-light'>
+    <div class='sidebar p-0 d-flex flex-column' id='sidebar'>
+      <div class='p-4 text-center border-bottom border-light flex-shrink-0'>
         <h4 class='fw-bold mb-0'>AbsenYuk!</h4>
         <small id='user-role-display'>Role</small>
       </div>
 
-      <div id='sekolah-picker-box' style='display: none; padding: 12px 16px;' class='border-bottom border-light'>
+      <div id='sekolah-picker-box' style='display: none; padding: 12px 16px;' class='border-bottom border-light flex-shrink-0'>
         <label for='sekolah-picker-select' class='form-label small text-white-50 mb-1'>Kelola Sekolah</label>
         <select id='sekolah-picker-select' class='form-select form-select-sm' onchange='gantiSekolahAktif(this.value)'>
           <option value=''>-- Pilih Sekolah --</option>
         </select>
       </div>
 
-      <div id='menu-guru' style='display: none;'>
-        <p class='menu-section-label'>Absensi GTK</p>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;dashboard-guru&apos;)'><i class='bi bi-house-door me-2'></i> Dashboard</a>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-masuk&apos;)'><i class='bi bi-geo-alt me-2'></i> Absen Masuk</a>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan&apos;)'><i class='bi bi-calendar-event me-2'></i> Kegiatan Sekolah</a>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-pesantren&apos;)'><i class='bi bi-book me-2'></i> Kegiatan Pesantren</a>
-        <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan-khusus&apos;)'><i class='bi bi-ui-checks me-2'></i> Absen Kegiatan Khusus</a>
+      <div class='flex-grow-1' style='overflow-y: auto; -webkit-overflow-scrolling: touch;'>
+        <div id='menu-guru' style='display: none;'>
+          <p class='menu-section-label'>Absensi GTK</p>
+          <a class='menu-btn' href='#' onclick='switchView(&apos;dashboard-guru&apos;)'><i class='bi bi-house-door me-2'></i> Dashboard</a>
+          <a class='menu-btn' href='#' onclick='switchView(&apos;absen-masuk&apos;)'><i class='bi bi-geo-alt me-2'></i> Absen Masuk</a>
+          <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan&apos;)'><i class='bi bi-calendar-event me-2'></i> Kegiatan Sekolah</a>
+          <a class='menu-btn' href='#' onclick='switchView(&apos;absen-pesantren&apos;)'><i class='bi bi-book me-2'></i> Kegiatan Pesantren</a>
+          <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan-khusus&apos;)'><i class='bi bi-ui-checks me-2'></i> Absen Kegiatan Khusus</a>
+        </div>
+
+        <div id='menu-admin' style='display: none;'>
+          <hr class='menu-section-divider'/>
+          <p class='menu-section-label'>Menu Admin</p>
+          <a class='menu-btn' href='#' id='sub-dashboard-admin' onclick='switchView(&apos;dashboard-admin&apos;)'><i class='bi bi-speedometer2 me-2'></i> Admin Panel</a>
+          <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'></i> Kalender Libur</a>
+          <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'></i> Kelola Kegiatan Khusus</a>
+          <a class='menu-btn' href='#' id='sub-data-guru' onclick='switchView(&apos;data-guru&apos;)'><i class='bi bi-people me-2'></i> Data Guru</a>
+          <a class='menu-btn' href='#' id='sub-jam-pelajaran' onclick='switchView(&apos;rekap-jam-pelajaran&apos;)'><i class='bi bi-journal-x me-2'></i> Rekap Jam Pelajaran</a>
+          <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'></i> Laporan</a>
+          <a class='menu-btn' href='#' id='sub-edit-absen' onclick='switchView(&apos;edit-absen&apos;)'><i class='bi bi-pencil-square me-2'></i> Edit Absen Masuk</a>
+          <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'></i> Rekap Payroll</a>
+          <a class='menu-btn' href='#' id='sub-pengaturan' onclick='switchView(&apos;pengaturan&apos;)'><i class='bi bi-gear me-2'></i> Pengaturan</a>
+        </div>
       </div>
 
-      <div id='menu-admin' style='display: none;'>
-        <hr class='menu-section-divider'/>
-        <p class='menu-section-label'>Menu Admin</p>
-        <a class='menu-btn' href='#' id='sub-dashboard-admin' onclick='switchView(&apos;dashboard-admin&apos;)'><i class='bi bi-speedometer2 me-2'></i> Admin Panel</a>
-        <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'></i> Kalender Libur</a>
-        <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'></i> Kelola Kegiatan Khusus</a>
-        <a class='menu-btn' href='#' id='sub-data-guru' onclick='switchView(&apos;data-guru&apos;)'><i class='bi bi-people me-2'></i> Data Guru</a>
-        <a class='menu-btn' href='#' id='sub-jam-pelajaran' onclick='switchView(&apos;rekap-jam-pelajaran&apos;)'><i class='bi bi-journal-x me-2'></i> Rekap Jam Pelajaran</a>
-        <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'></i> Laporan</a>
-        <a class='menu-btn' href='#' id='sub-edit-absen' onclick='switchView(&apos;edit-absen&apos;)'><i class='bi bi-pencil-square me-2'></i> Edit Absen Masuk</a>
-        <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'></i> Rekap Payroll</a>
-        <a class='menu-btn' href='#' id='sub-pengaturan' onclick='switchView(&apos;pengaturan&apos;)'><i class='bi bi-gear me-2'></i> Pengaturan</a>
-      </div>
-
-      <a class='text-danger mt-5 d-inline-flex align-items-center decoration-none' href='#' onclick='handleLogout()' style='padding: 10px 20px;'>
+      <a class='text-danger d-inline-flex align-items-center decoration-none flex-shrink-0 border-top border-light' href='#' onclick='handleLogout()' style='padding: 14px 20px;'>
         <i class='bi bi-box-arrow-left me-2'></i> <strong>Logout</strong>
       </a>
     </div>
@@ -1395,6 +1399,19 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // Cloud Messaging > Web configuration > Web Push certificates.
   const FIREBASE_VAPID_KEY = "BDh68ZUP0UawqLigvfryXDdzCY-qkb-n8Egl4mkWgWacZzurbmT-Wvb8Mq-VMUNZN2voJIjK1hTvy2qjP9CSCqU";
 
+  // Daftarkan Service Worker SEGERA saat halaman dibuka - TIDAK menunggu
+  // pengguna klik "Aktifkan Notifikasi". Ini WAJIB supaya browser
+  // menganggap situs ini PWA yang bisa di-"Install" penuh (bukan cuma
+  // shortcut biasa) - salah satu syarat wajib Chrome/Edge/dst.
+  // Terpisah dari alur opt-in notifikasi (setupPushNotification) yang
+  // baru memakai token FCM-nya belakangan.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/firebase-messaging-sw.js')
+        .catch((err) => console.warn('Registrasi Service Worker gagal (diabaikan):', err));
+    });
+  }
+
   let pushNotifSudahDisetup = false;
 
   function isIOS() {
@@ -1490,7 +1507,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       }
 
       const messaging = firebase.messaging();
-      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      // Pakai registration yang sudah didaftarkan lebih awal (lihat atas),
+      // jangan register ulang - cukup tunggu sampai siap.
+      const registration = await navigator.serviceWorker.ready;
       const fcmToken = await messaging.getToken({ vapidKey: FIREBASE_VAPID_KEY, serviceWorkerRegistration: registration });
 
       if (fcmToken) {
