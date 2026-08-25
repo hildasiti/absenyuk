@@ -12,9 +12,9 @@
       "type": "image/png"
     },
     {
-      "src": "absenyuk-512.jpg",
+      "src": "absenyuk-512.png",
       "sizes": "512x512",
-      "type": "image/jpeg"
+      "type": "image/png"
     }
   ]
 }
