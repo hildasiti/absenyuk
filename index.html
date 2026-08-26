@@ -823,9 +823,12 @@
 
       <div class='alert alert-secondary py-3 px-3 mb-4' id='blok-otomasi-manual' style='display:none;'>
         <div class='fw-semibold mb-1'><i class='bi bi-lightning-charge-fill'></i> Jalankan Otomasi Sekarang (Manual)</div>
-        <small class='text-muted d-block mb-2'>Untuk menguji atau menyusulkan hari yang otomasinya sempat gagal/belum sempat jalan sesuai jadwal cron - langsung jalankan Auto "Tanpa Keterangan" (Absen Masuk) &amp; Auto "Tidak Absen" (Sholat Dzuhur/Ashar) untuk SEMUA sekolah, hari ini juga.</small>
-        <button class='btn btn-outline-dark btn-sm' onclick='jalankanOtomasiManualUI()' type='button'>
-          <i class='bi bi-play-fill'></i> Jalankan Sekarang
+        <small class='text-muted d-block mb-2'>Untuk menguji atau menyusulkan hari yang otomasinya sempat gagal/belum sempat jalan sesuai jadwal cron - untuk SEMUA sekolah, hari ini juga. Sengaja 2 tombol terpisah (bukan 1 gabungan) supaya request ke database per klik tetap ringan.</small>
+        <button class='btn btn-outline-dark btn-sm me-2' onclick='jalankanOtomasiManualUI(&apos;alpa&apos;)' type='button'>
+          <i class='bi bi-play-fill'></i> Auto Alpa Absen Masuk
+        </button>
+        <button class='btn btn-outline-dark btn-sm' onclick='jalankanOtomasiManualUI(&apos;sholat&apos;)' type='button'>
+          <i class='bi bi-play-fill'></i> Auto Tidak Absen Sholat
         </button>
       </div>
 
@@ -2354,10 +2357,14 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }).saveSettingsData(SESSION_TOKEN, config);
   }
 
-  function jalankanOtomasiManualUI() {
+  function jalankanOtomasiManualUI(jenis) {
+    const cfg = jenis === 'alpa'
+      ? { label: 'Auto "Tanpa Keterangan" (Absen Masuk)', fn: 'jalankanAutoAlpaManual', key: 'absenMasuk', totalKey: 'totalDitandaiAlpa' }
+      : { label: 'Auto "Tidak Absen" (Sholat Dzuhur/Ashar)', fn: 'jalankanAutoSholatManual', key: 'sholat', totalKey: 'totalDitandaiTidakAbsen' };
+
     Swal.fire({
       title: 'Jalankan Otomasi Sekarang?',
-      html: 'Auto "Tanpa Keterangan" (Absen Masuk) dan Auto "Tidak Absen" (Sholat Dzuhur/Ashar) akan dijalankan untuk <strong>SEMUA sekolah</strong>, untuk data hari ini.',
+      html: `${cfg.label} akan dijalankan untuk <strong>SEMUA sekolah</strong>, untuk data hari ini.`,
       icon: 'question', showCancelButton: true, confirmButtonText: 'Ya, Jalankan', cancelButtonText: 'Batal'
     }).then(result => {
       if (!result.isConfirmed) return;
@@ -2366,21 +2373,17 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       google.script.run.withSuccessHandler(res => {
         if (!res.success) { Swal.fire('Gagal', res.message, 'error'); return; }
 
-        const a = res.absenMasuk, s = res.sholat;
-        const adaError = (a.sekolahError && a.sekolahError.length) || (s.sekolahError && s.sekolahError.length);
+        const hasil = res[cfg.key];
+        const adaError = hasil.sekolahError && hasil.sekolahError.length;
 
         let html = `<div class="text-start" style="font-size:0.9rem;">
-          <p><strong>Absen Masuk (Tanpa Keterangan):</strong><br>
-          Total ditandai: <strong>${a.totalDitandaiAlpa}</strong><br>
-          Sekolah diproses: ${a.sekolahDiproses.join(', ') || '-'}<br>
-          Sekolah dilewati: ${a.sekolahDilewati.join(', ') || '-'}</p>
-          <p><strong>Sholat Dzuhur/Ashar (Tidak Absen):</strong><br>
-          Total ditandai: <strong>${s.totalDitandaiTidakAbsen}</strong><br>
-          Sekolah diproses: ${s.sekolahDiproses.join(', ') || '-'}<br>
-          Sekolah dilewati: ${s.sekolahDilewati.join(', ') || '-'}</p>`;
+          <p><strong>${cfg.label}:</strong><br>
+          Total ditandai: <strong>${hasil[cfg.totalKey]}</strong><br>
+          Sekolah diproses: ${hasil.sekolahDiproses.join(', ') || '-'}<br>
+          Sekolah dilewati: ${hasil.sekolahDilewati.join(', ') || '-'}</p>`;
 
         if (adaError) {
-          html += `<p class="text-danger"><strong>Ada error:</strong><br>${[...(a.sekolahError||[]), ...(s.sekolahError||[])].join('<br>')}</p>`;
+          html += `<p class="text-danger"><strong>Ada error:</strong><br>${hasil.sekolahError.join('<br>')}</p>`;
         }
         html += '</div>';
 
@@ -2390,7 +2393,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           html,
           confirmButtonText: 'Tutup'
         }).then(() => refreshDashboard());
-      }).jalankanOtomasiManual(SESSION_TOKEN);
+      })[cfg.fn](SESSION_TOKEN);
     });
   }
 
