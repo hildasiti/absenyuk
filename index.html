@@ -791,6 +791,14 @@
       </div>
       <button class='btn btn-info btn-sm text-white mb-4' onclick='getLokasiSekarang()' type='button'><i class='bi bi-crosshair'></i> Ambil Lokasi Saat Ini</button>
 
+      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-building-fill-check'></i> Lokasi Pesantren <small class='text-muted fw-normal'>(untuk validasi Kegiatan Pesantren)</small></h5>
+      <div class='row'>
+        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Latitude Pesantren</label><input class='form-control' id='set-lat-pesantren' type='text'/></div>
+        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Longitude Pesantren</label><input class='form-control' id='set-lon-pesantren' type='text'/></div>
+        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Radius GPS (Meter)</label><input class='form-control' id='set-rad-pesantren' type='number'/></div>
+      </div>
+      <button class='btn btn-info btn-sm text-white mb-4' onclick='getLokasiSekarangPesantren()' type='button'><i class='bi bi-crosshair'></i> Ambil Lokasi Saat Ini</button>
+
       <div class='mb-3'>
         <label class='form-label fw-semibold text-danger'><i class='bi bi-toggle-on'></i> Status Fitur Auto Alpa Harian</label>
         <select class='form-select border-danger' id='set-auto-alpa' required='required'>
@@ -2156,6 +2164,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('set-lat').value = data.lat_sekolah || '';
       document.getElementById('set-lon').value = data.long_sekolah || '';
       document.getElementById('set-rad').value = data.radius || '';
+      document.getElementById('set-lat-pesantren').value = data.lat_pesantren || '';
+      document.getElementById('set-lon-pesantren').value = data.long_pesantren || '';
+      document.getElementById('set-rad-pesantren').value = data.radius_pesantren || '';
       document.getElementById('set-nama-sekolah').value = data.nama_sekolah || '';
       document.getElementById('set-alamat-sekolah').value = data.alamat_sekolah || '';
       document.getElementById('set-nama-wakasek').value = data.nama_wakasek || '';
@@ -2169,6 +2180,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       jam_masuk: document.getElementById('set-jam').value, toleransi: document.getElementById('set-tol').value,
       lat_sekolah: document.getElementById('set-lat').value, long_sekolah: document.getElementById('set-lon').value,
       radius: document.getElementById('set-rad').value,
+      lat_pesantren: document.getElementById('set-lat-pesantren').value,
+      long_pesantren: document.getElementById('set-lon-pesantren').value,
+      radius_pesantren: document.getElementById('set-rad-pesantren').value,
       nama_sekolah: document.getElementById('set-nama-sekolah').value,
       alamat_sekolah: document.getElementById('set-alamat-sekolah').value,
       nama_wakasek: document.getElementById('set-nama-wakasek').value,
@@ -2187,6 +2201,13 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     navigator.geolocation.getCurrentPosition(pos => {
       document.getElementById('set-lat').value = pos.coords.latitude;
       document.getElementById('set-lon').value = pos.coords.longitude;
+    });
+  }
+
+  function getLokasiSekarangPesantren() {
+    navigator.geolocation.getCurrentPosition(pos => {
+      document.getElementById('set-lat-pesantren').value = pos.coords.latitude;
+      document.getElementById('set-lon-pesantren').value = pos.coords.longitude;
     });
   }
 
