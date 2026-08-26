@@ -512,15 +512,9 @@
       </div>
 
       <div class='content-section active' id='dashboard-guru'>
-  <div class='alert alert-info shadow-sm d-flex justify-content-between align-items-center flex-wrap gap-2'>
-    <div>
-      <h5>Status Hari Ini: <strong id='status-hari-ini'>Memuat...</strong></h5>
-      <small id='tanggal-hari-ini'></small>
-    </div>
-    <div class='form-check form-switch d-flex align-items-center gap-2 mb-0' id='toggle-notif-box' style='display: none;'>
-      <label class='form-check-label small text-secondary mb-0' for='toggle-notif-guru'>Notifikasi Pengingat</label>
-      <input class='form-check-input' id='toggle-notif-guru' onchange='toggleNotifikasiGuru(this.checked)' role='switch' type='checkbox'/>
-    </div>
+  <div class='alert alert-info shadow-sm'>
+    <h5>Status Hari Ini: <strong id='status-hari-ini'>Memuat...</strong></h5>
+    <small id='tanggal-hari-ini'></small>
   </div>
   
   <!-- TAMBAHAN BARU: Filter Tanggal Mandiri untuk Guru Validasi Absen -->
@@ -1425,67 +1419,36 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // TIDAK PERNAH menunda render halaman - semua proses notifikasi
   // berjalan di belakang layar, kalaupun gagal total aplikasi tetap
   // berjalan normal seperti biasa.
-  function sinkronkanToggleNotifikasi() {
-    const box = document.getElementById('toggle-notif-box');
-    const toggle = document.getElementById('toggle-notif-guru');
-    if (!box || !toggle) return;
-
-    if (FIREBASE_CONFIG.apiKey.indexOf('GANTI_DENGAN') === 0) { box.style.display = 'none'; return; }
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) { box.style.display = 'none'; return; }
-    if (isIOS() && !isStandalonePWA()) { box.style.display = 'none'; return; } // belum bisa dipakai sampai install ke Home Screen
-
-    box.style.display = 'flex';
-    const pilihanTersimpan = localStorage.getItem('push_notif_choice');
-    toggle.checked = (pilihanTersimpan === 'granted' && Notification.permission === 'granted');
-  }
-
+  //
+  // Pendekatan: kalau belum aktif, TANYA LAGI SETIAP HARI (maksimal 1x
+  // per hari per perangkat) sampai guru benar-benar mengaktifkannya -
+  // bukan cuma sekali lalu diam selamanya kalau sempat di-skip/tolak.
   const PESAN_GAGAL_NOTIF = {
     'belum-dikonfigurasi': 'Fitur notifikasi belum diaktifkan oleh Admin.',
     'tidak-didukung': 'Perangkat/browser ini tidak mendukung notifikasi push.',
     'izin-diblokir': 'Notifikasi diblokir. Buka Pengaturan browser/HP > Notifikasi untuk situs ini, lalu izinkan secara manual.',
-    'izin-diabaikan': 'Permintaan izin notifikasi belum dijawab. Coba lagi.',
-    'token-gagal': 'Gagal mendaftarkan perangkat ini untuk notifikasi. Coba lagi beberapa saat.',
-    'simpan-token-gagal': 'Izin sudah diberikan, tapi gagal menyimpan ke server. Coba lagi.',
-    'error-tak-terduga': 'Terjadi kesalahan tak terduga. Coba lagi.'
+    'izin-diabaikan': 'Permintaan izin notifikasi belum dijawab.',
+    'token-gagal': 'Gagal mendaftarkan perangkat ini untuk notifikasi.',
+    'simpan-token-gagal': 'Izin sudah diberikan, tapi gagal menyimpan ke server.',
+    'error-tak-terduga': 'Terjadi kesalahan tak terduga.'
   };
-
-  function toggleNotifikasiGuru(nyalakan) {
-    const toggle = document.getElementById('toggle-notif-guru');
-    if (nyalakan) {
-      localStorage.setItem('push_notif_choice', 'granted');
-      pushNotifSudahDisetup = false; // paksa setup ulang walau sebelumnya sempat jalan
-      if (toggle) toggle.disabled = true; // cegah klik dobel selagi proses
-      setupPushNotification().then((hasil) => {
-        if (toggle) toggle.disabled = false;
-        if (!hasil.success) {
-          localStorage.setItem('push_notif_choice', 'declined');
-          Swal.fire('Notifikasi Belum Aktif', PESAN_GAGAL_NOTIF[hasil.reason] || 'Gagal mengaktifkan notifikasi.', 'warning');
-        }
-        sinkronkanToggleNotifikasi();
-      });
-    } else {
-      localStorage.setItem('push_notif_choice', 'declined');
-      // Hapus token di server juga - supaya pengingat otomatis (cron) tidak
-      // ikut mengirim ke perangkat ini lagi walau izin browser masih aktif.
-      google.script.run
-        .withSuccessHandler(() => {})
-        .withFailureHandler((err) => console.warn('Gagal hapus token FCM:', err.message))
-        .simpanTokenFCM(SESSION_TOKEN, null);
-    }
-  }
 
   function maybeOfferPushNotification() {
     try {
       if (FIREBASE_CONFIG.apiKey.indexOf('GANTI_DENGAN') === 0) return; // belum dikonfigurasi
       if (!('Notification' in window) || !('serviceWorker' in navigator)) return; // browser tidak dukung sama sekali
 
-      const pilihanTersimpan = localStorage.getItem('push_notif_choice');
+      const sudahAktif = localStorage.getItem('push_notif_choice') === 'granted' && Notification.permission === 'granted';
+      if (sudahAktif) { setupPushNotification(); return; } // sudah aktif - setup diam-diam, tidak perlu tanya
+
+      const hariIni = new Date().toISOString().slice(0, 10);
+      const terakhirDitanya = localStorage.getItem('push_notif_last_asked');
+      if (terakhirDitanya === hariIni) return; // sudah ditanya hari ini, jangan ganggu lagi
 
       // iOS Safari HANYA bisa push notification kalau sudah di-"Add to Home Screen".
-      // Kalau belum, jangan tanya - cuma kasih info sekali, jangan ganggu terus.
       if (isIOS() && !isStandalonePWA()) {
-        if (!pilihanTersimpan && typeof Swal !== 'undefined') {
-          localStorage.setItem('push_notif_choice', 'ios_belum_install');
+        if (typeof Swal !== 'undefined') {
+          localStorage.setItem('push_notif_last_asked', hariIni);
           setTimeout(() => {
             Swal.fire({
               icon: 'info',
@@ -1498,26 +1461,27 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         return;
       }
 
-      if (pilihanTersimpan === 'declined') return; // sudah pernah nolak, jangan tanya lagi
-      if (pilihanTersimpan === 'granted') { setupPushNotification(); return; } // sudah pernah setuju, langsung setup diam-diam
-
-      // Belum pernah ditanya - tanya dulu, jangan langsung minta izin browser.
       if (typeof Swal === 'undefined') return;
       setTimeout(() => {
         Swal.fire({
           icon: 'question',
           title: 'Aktifkan Notifikasi?',
-          text: 'Dapatkan pengingat kalau lupa presensi masuk. Bisa dimatikan kapan saja lewat pengaturan browser.',
+          text: 'Dapatkan pengingat kalau lupa presensi masuk. Kalau dilewati, akan ditanya lagi besok.',
           showCancelButton: true,
           confirmButtonText: 'Aktifkan',
           cancelButtonText: 'Nanti saja'
         }).then((result) => {
+          localStorage.setItem('push_notif_last_asked', hariIni);
           if (result.isConfirmed) {
             localStorage.setItem('push_notif_choice', 'granted');
-            setupPushNotification().then(() => sinkronkanToggleNotifikasi());
+            setupPushNotification().then((hasil) => {
+              if (!hasil.success) {
+                localStorage.setItem('push_notif_choice', 'declined');
+                Swal.fire('Notifikasi Belum Aktif', PESAN_GAGAL_NOTIF[hasil.reason] || 'Gagal mengaktifkan notifikasi. Akan ditanya lagi besok.', 'warning');
+              }
+            });
           } else {
             localStorage.setItem('push_notif_choice', 'declined');
-            sinkronkanToggleNotifikasi();
           }
         });
       }, 1500);
@@ -1633,7 +1597,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }, 400);
 
     maybeOfferPushNotification();
-    sinkronkanToggleNotifikasi();
     document.getElementById('user-name-display').innerText = USER_DATA.nama;
     document.getElementById('user-role-display').innerText = USER_DATA.role +
       (USER_DATA.role !== 'ADMIN_UTAMA' && USER_DATA.sekolahNama ? ' • ' + USER_DATA.sekolahNama : '');
