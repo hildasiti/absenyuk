@@ -592,7 +592,7 @@
     <form onsubmit='submitKegiatan(event, &apos;Sekolah&apos;)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Jenis Kegiatan Sekolah</label>
-        <select class='form-select' id='ak-jenis' onchange='checkLockKegiatan(&apos;ak&apos;)' required='required'>
+        <select class='form-select' id='ak-jenis' onchange='updateStatusOptionsAK(); checkLockKegiatan(&apos;ak&apos;)' required='required'>
           <option value='BRIEFING_TAWASUL'>Briefing &amp; Tawasul</option>
           <option value='PENDAMPINGAN_DHUHA'>Pendampingan Dhuha</option>
           <option value='SHOLAT_DZUHUR'>Pendampingan Sholat Dzuhur</option>
@@ -1802,7 +1802,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'kalender-libur') loadLiburList();
     if(id === 'kelola-kegiatan') loadJadwalKegiatanList();
     if(id === 'absen-kegiatan-khusus') loadKegiatanDropdown();
-    if(id === 'absen-kegiatan') checkLockKegiatan('ak');
+    if(id === 'absen-kegiatan') { updateStatusOptionsAK(); checkLockKegiatan('ak'); }
     if(id === 'absen-pesantren') {
       const tglField = document.getElementById('ap-tanggal');
       if (tglField && !tglField.value) tglField.value = new Date().toISOString().split('T')[0];
@@ -2072,6 +2072,39 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     'ak': '<i class="bi bi-send-check-fill me-2"></i> Kirim Laporan Kegiatan Sekolah',
     'ap': '<i class="bi bi-geo-alt-fill me-2"></i> Kirim Laporan Kehadiran Pesantren (Validasi GPS)'
   };
+
+  // Sholat Dzuhur & Ashar pakai daftar opsi status yang berbeda (Berjamaah/Munfarid/Bertugas/...)
+  // dibanding kegiatan sekolah lain (Briefing, Dhuha) yang cukup Hadir/Izin/Sakit -
+  // supaya tidak perlu bikin menu absen sholat terpisah, cukup satu dropdown status yang berubah
+  // mengikuti pilihan Jenis Kegiatan.
+  const OPSI_STATUS_SHOLAT = [
+    ['Berjamaah', 'Berjamaah'],
+    ['Munfarid', 'Munfarid'],
+    ['Bertugas', 'Bertugas'],
+    ['Izin Terkonfirmasi', 'Izin Terkonfirmasi'],
+    ['Sakit', 'Sakit']
+  ];
+  const OPSI_STATUS_UMUM = [
+    ['Hadir', 'Hadir'],
+    ['Izin Terkonfirmasi', 'Izin Terkonfirmasi'],
+    ['Sakit', 'Sakit']
+  ];
+
+  function updateStatusOptionsAK() {
+    const jenisSelect = document.getElementById('ak-jenis');
+    const statusSelect = document.getElementById('ak-status');
+    if (!jenisSelect || !statusSelect) return;
+
+    const isSholat = jenisSelect.value === 'SHOLAT_DZUHUR' || jenisSelect.value === 'SHOLAT_ASHAR';
+    const opsiBaru = isSholat ? OPSI_STATUS_SHOLAT : OPSI_STATUS_UMUM;
+
+    // Kalau pilihan status yang sedang aktif masih ada di daftar opsi baru, pertahankan -
+    // supaya tidak reset ke pilihan pertama kalau tidak perlu (mis. tetap di "Sakit"
+    // walau baru saja ganti dari Briefing ke Sholat Dzuhur).
+    const nilaiSaatIni = statusSelect.value;
+    statusSelect.innerHTML = opsiBaru.map(([v, label]) => `<option value='${v}'>${label}</option>`).join('');
+    if (opsiBaru.some(([v]) => v === nilaiSaatIni)) statusSelect.value = nilaiSaatIni;
+  }
 
   function checkLockKegiatan(prefix) {
     const jenisSelect = document.getElementById(prefix + '-jenis');
