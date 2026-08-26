@@ -159,6 +159,36 @@ async function getSekolahList(args, env) {
 // ABSEN MASUK
 // ====================================================================
 
+/**
+ * Dipakai frontend untuk menampilkan jarak GPS REALTIME (sebelum submit) di form
+ * Absen Masuk & Absen Kepesantrenan - supaya guru bisa tahu posisinya sudah cukup
+ * dekat atau belum, tanpa harus coba-coba submit dulu (terutama berguna kalau
+ * sinyal GPS di area pesantren kurang stabil/presisi).
+ * Sengaja dibuka untuk SEMUA role yang login (bukan cuma admin), karena titik
+ * koordinat & radius bukan data rahasia - guru memang harus tahu di mana titiknya
+ * supaya bisa mendekat.
+ */
+async function getLokasiAbsenTarget(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { success: false, message: 'Sesi habis, silakan login ulang.' };
+
+  const settings = await getSettingsMap(env, user.sekolahId);
+  return {
+    success: true,
+    sekolah: {
+      lat: settings.lat_sekolah ? parseFloat(settings.lat_sekolah) : null,
+      lon: settings.long_sekolah ? parseFloat(settings.long_sekolah) : null,
+      radius: parseInt(settings.radius || 50, 10)
+    },
+    pesantren: {
+      lat: settings.lat_pesantren ? parseFloat(settings.lat_pesantren) : null,
+      lon: settings.long_pesantren ? parseFloat(settings.long_pesantren) : null,
+      radius: parseInt(settings.radius_pesantren || 100, 10)
+    }
+  };
+}
+
 async function saveAbsenMasuk(args, env) {
   const [token, status, keterangan, lat, lon] = args;
   const user = await requireUser(env, token);
@@ -192,7 +222,13 @@ async function saveAbsenMasuk(args, env) {
   const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
   const jarakMeter = hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(settings.lat_sekolah), parseFloat(settings.long_sekolah));
 
-  if (status === 'Hadir') {
+  // "Hadir & Tawasul" dianggap identik dengan "Hadir" untuk keperluan validasi GPS,
+  // keterlambatan, dan status final yang tersimpan di tabel absen_masuk (supaya rekap
+  // payroll/kehadiran yang sudah ada tidak perlu tahu soal Tawasul sama sekali - tetap
+  // Hadir/Terlambat seperti biasa). Bedanya cuma: ada efek samping mencatat kehadiran
+  // Briefing & Tawasul di bawah, menggantikan absen manual terpisah yang dulu ada.
+  const ikutTawasul = status === 'Hadir & Tawasul';
+  if (status === 'Hadir' || ikutTawasul) {
     if (jarakMeter > parseInt(settings.radius || 50, 10)) {
       return { success: false, message: `Posisi Anda berada di luar radius sekolah (${jarakMeter} meter). Silakan mendekat ke area sekolah.` };
     }
@@ -217,6 +253,23 @@ async function saveAbsenMasuk(args, env) {
   }
   await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
 
+  if (ikutTawasul) {
+    // Catat juga sebagai kehadiran Briefing & Tawasul (jenis kegiatan yang sama dengan
+    // yang dulu diisi manual lewat menu Kegiatan Sekolah) - supaya laporan Briefing &
+    // Tawasul tetap jalan tanpa guru perlu absen 2x. Kalau gagal (mis. race condition
+    // duplicate key), jangan sampai membatalkan presensi masuk yang sudah tersimpan -
+    // presensi masuk tetap prioritas utama.
+    try {
+      await sbInsert(env, 'kegiatan_umum', {
+        id: generateShortID('K'), sekolah_id: sekolahId, jenis_kegiatan: 'BRIEFING_TAWASUL', tanggal: dateStr,
+        nuptk: user.nuptk, nama: user.nama, kegiatan: 'BRIEFING_TAWASUL', status: 'Hadir',
+        catatan: 'Otomatis tercatat dari Presensi Masuk (Hadir & Tawasul).', timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      if (!String(err.message).includes('duplicate key')) console.error('Gagal mencatat kehadiran Briefing & Tawasul otomatis:', err.message);
+    }
+  }
+
   let pesanSukses = `Presensi berhasil disimpan pada pukul ${jamLaporStr} WIB.`;
   switch (finalStatus) {
     case 'Hadir': pesanSukses += ' Terimakasih Telah Tepat Waktu. Semoga Allah Lancarkan Kegiatan hari ini!'; break;
@@ -226,6 +279,7 @@ async function saveAbsenMasuk(args, env) {
     case 'Tugas Luar': pesanSukses += ' Selamat melaksanakan tugas di luar sekolah!'; break;
     default: pesanSukses += ' Data Anda telah terekam di sistem.';
   }
+  if (ikutTawasul) pesanSukses += ' Kehadiran Briefing & Tawasul juga otomatis tercatat.';
   return { success: true, message: pesanSukses };
 }
 
@@ -1048,48 +1102,188 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
   }
 }
 
-/** Dipanggil dari Cron Trigger (12:00 WIB). Jalan untuk SEMUA sekolah sekaligus. */
+/**
+ * Dipanggil dari Cron Trigger (12:00 WIB), atau manual lewat tombol Admin Utama
+ * (jalankanOtomasiManual). Jalan untuk SEMUA sekolah sekaligus.
+ *
+ * Mengembalikan ringkasan hasil {sekolahDiproses, sekolahDilewati, sekolahError,
+ * totalDitandaiAlpa} - dulu fungsi ini tidak mengembalikan apa-apa (void), jadi
+ * kalau ada error di satu sekolah, seluruh proses berhenti diam-diam tanpa jejak
+ * (cuma keliatan di log Cloudflare, yang sering tidak dicek). Sekarang tiap sekolah
+ * dibungkus try/catch sendiri-sendiri (1 sekolah error tidak menghentikan sekolah
+ * lain), dan hasilnya bisa langsung dilihat kalau dipanggil manual dari Pengaturan.
+ */
 export async function autoSetTanpaKeterangan(env) {
   const { dateStr, dayOfWeek } = nowJakarta();
-  if (dayOfWeek === 0 || dayOfWeek === 6) return;
+  const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], totalDitandaiAlpa: 0 };
+
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    console.log('[autoSetTanpaKeterangan] Akhir pekan, dilewati untuk semua sekolah.');
+    return ringkasan;
+  }
 
   const daftarSekolah = await sbSelect(env, 'sekolah', "status=eq.Aktif");
+  console.log(`[autoSetTanpaKeterangan] Ditemukan ${daftarSekolah.length} sekolah berstatus Aktif untuk diproses (tanggal ${dateStr}).`);
 
   for (const sekolah of daftarSekolah) {
     const sekolahId = sekolah.id;
-    const settings = await getSettingsMap(env, sekolahId);
-    if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
-      console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin.`);
-      continue;
-    }
+    try {
+      const settings = await getSettingsMap(env, sekolahId);
+      if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
+        console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin.`);
+        ringkasan.sekolahDilewati.push(`${sekolahId} (auto alpa nonaktif)`);
+        continue;
+      }
 
-    const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
-    if (statusLibur) continue;
+      const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
+      if (statusLibur) {
+        ringkasan.sekolahDilewati.push(`${sekolahId} (libur: ${statusLibur})`);
+        continue;
+      }
 
-    const users = await getUsersListCached(env, sekolahId);
-    const absenHariIni = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
-    const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
+      const users = await getUsersListCached(env, sekolahId);
+      const absenHariIni = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
+      const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
 
-    for (const u of users) {
-      const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
-      const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
+      let ditandaiDiSekolahIni = 0;
+      for (const u of users) {
+        const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
+        const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
 
-      if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
-        if (!sudahAbsenHariIni.includes(userNuptk)) {
-          try {
-            await sbInsert(env, 'absen_masuk', {
-              id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
-              jam: '--:--', latitude: '-', longitude: '-', jarak: 'xx m',
-              status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
-            });
-          } catch (err) {
-            if (!String(err.message).includes('duplicate key')) throw err;
+        if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
+          if (!sudahAbsenHariIni.includes(userNuptk)) {
+            try {
+              await sbInsert(env, 'absen_masuk', {
+                id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
+                jam: '--:--', latitude: '-', longitude: '-', jarak: 'xx m',
+                status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
+              });
+              ditandaiDiSekolahIni++;
+            } catch (err) {
+              if (!String(err.message).includes('duplicate key')) throw err;
+            }
           }
         }
       }
+      await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
+      console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} guru ditandai Tanpa Keterangan.`);
+      ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai)`);
+      ringkasan.totalDitandaiAlpa += ditandaiDiSekolahIni;
+    } catch (err) {
+      // Sekolah ini gagal (mis. error koneksi Supabase, data settings korup, dll) -
+      // dicatat, lalu LANJUT ke sekolah berikutnya, bukan berhenti total.
+      console.error(`[${sekolahId}] GAGAL auto alpa:`, err.message);
+      ringkasan.sekolahError.push(`${sekolahId}: ${err.message}`);
     }
-    await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
   }
+  return ringkasan;
+}
+
+/**
+ * Dipanggil dari Cron Trigger (1x sehari, jam 21:00 WIB - setelah waktu Dzuhur MAUPUN
+ * Ashar pasti sudah lewat), atau manual lewat tombol Admin Utama (jalankanOtomasiManual).
+ * Guru yang tidak pernah mengisi presensi Pendampingan Sholat Dzuhur dan/atau Ashar hari
+ * itu (lewat menu Kegiatan Sekolah) akan otomatis ditandai "Tidak Absen" untuk sesi yang
+ * terlewat - dulu kalau tidak absen datanya cuma kosong/tidak ada baris sama sekali di
+ * kegiatan_umum, jadi tidak kelihatan di laporan sebagai bahan evaluasi. Sekarang selalu
+ * ada baris eksplisit "Tidak Absen" untuk sesi yang benar-benar terlewat.
+ *
+ * Sengaja dicek Dzuhur DAN Ashar dalam 1 pemanggilan jam 21:00 WIB (bukan 2 cron terpisah
+ * persis setelah tiap sesi) - lebih sederhana dan cukup aman karena jam 21:00 WIB kedua
+ * sesi pasti sudah lewat jauh.
+ *
+ * Memakai toggle Admin yang sama dengan Auto Alpa Absen Masuk (settings.status_auto_alpa) -
+ * supaya tidak perlu tambah menu Pengaturan baru; kalau nanti perlu tombol on/off terpisah
+ * khusus otomasi sholat, tinggal ganti ke key settings baru di sini + tambah field di
+ * form Pengaturan.
+ */
+export async function autoSetTidakAbsenSholat(env) {
+  const JENIS_DICEK = ['SHOLAT_DZUHUR', 'SHOLAT_ASHAR'];
+  const { dateStr, dayOfWeek } = nowJakarta();
+  const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], totalDitandaiTidakAbsen: 0 };
+
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    console.log('[autoSetTidakAbsenSholat] Akhir pekan, dilewati untuk semua sekolah.');
+    return ringkasan;
+  }
+
+  const daftarSekolah = await sbSelect(env, 'sekolah', "status=eq.Aktif");
+  console.log(`[autoSetTidakAbsenSholat] Ditemukan ${daftarSekolah.length} sekolah berstatus Aktif untuk diproses (tanggal ${dateStr}).`);
+
+  for (const sekolah of daftarSekolah) {
+    const sekolahId = sekolah.id;
+    try {
+      const settings = await getSettingsMap(env, sekolahId);
+      if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
+        console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin, auto Tidak Absen Sholat dilewati.`);
+        ringkasan.sekolahDilewati.push(`${sekolahId} (auto alpa nonaktif)`);
+        continue;
+      }
+
+      const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
+      if (statusLibur) {
+        ringkasan.sekolahDilewati.push(`${sekolahId} (libur: ${statusLibur})`);
+        continue;
+      }
+
+      const users = await getUsersListCached(env, sekolahId);
+      let ditandaiDiSekolahIni = 0;
+
+      for (const jenisKegiatan of JENIS_DICEK) {
+        const sudahAbsenHariIni = await sbSelect(env, 'kegiatan_umum', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}&jenis_kegiatan=eq.${jenisKegiatan}`);
+        const sudahAbsenNuptk = sudahAbsenHariIni.map((r) => String(r.nuptk).trim());
+
+        for (const u of users) {
+          const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
+          const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
+
+          if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
+            if (!sudahAbsenNuptk.includes(userNuptk)) {
+              try {
+                await sbInsert(env, 'kegiatan_umum', {
+                  id: generateShortID('KO'), sekolah_id: sekolahId, jenis_kegiatan: jenisKegiatan, tanggal: dateStr,
+                  nuptk: userNuptk, nama: userNama, kegiatan: jenisKegiatan, status: 'Tidak Absen',
+                  catatan: 'Otomatis oleh sistem - tidak melakukan presensi sampai batas waktu.', timestamp: new Date().toISOString()
+                });
+                ditandaiDiSekolahIni++;
+              } catch (err) {
+                if (!String(err.message).includes('duplicate key')) throw err;
+              }
+            }
+          }
+        }
+      }
+      console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} baris Tidak Absen (Dzuhur+Ashar) ditambahkan.`);
+      ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai)`);
+      ringkasan.totalDitandaiTidakAbsen += ditandaiDiSekolahIni;
+    } catch (err) {
+      console.error(`[${sekolahId}] GAGAL auto Tidak Absen Sholat:`, err.message);
+      ringkasan.sekolahError.push(`${sekolahId}: ${err.message}`);
+    }
+  }
+  return ringkasan;
+}
+
+/**
+ * Trigger manual (bukan dari Cron) untuk Admin Utama - menjalankan otomasi Auto Alpa
+ * Absen Masuk + Auto Tidak Absen Sholat SEKARANG JUGA, lalu mengembalikan ringkasan
+ * hasil apa adanya (termasuk pesan error asli kalau ada yang gagal). Berguna untuk:
+ * 1) Menguji apakah otomasi jalan dengan benar tanpa perlu menunggu jam cron.
+ * 2) Menyusulkan/memperbaiki hari yang otomasinya sempat gagal/tidak jalan.
+ */
+async function jalankanOtomasiManual(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!isRole(user, 'ADMIN_UTAMA')) return { success: false, message: 'Hanya Admin Utama yang boleh menjalankan ini.' };
+
+  const hasilAlpa = await autoSetTanpaKeterangan(env);
+  const hasilSholat = await autoSetTidakAbsenSholat(env);
+
+  return {
+    success: true,
+    absenMasuk: hasilAlpa,
+    sholat: hasilSholat
+  };
 }
 
 // ====================================================================
@@ -1105,6 +1299,7 @@ export const handlers = {
   checkSession: checkSessionFn,
   logout: logoutFn,
   getSekolahList,
+  getLokasiAbsenTarget,
   saveAbsenMasuk,
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
@@ -1119,6 +1314,7 @@ export const handlers = {
   getDashboardData,
   getSettingsData,
   saveSettingsData,
+  jalankanOtomasiManual,
   getUsers,
   saveUser,
   updateUser,
