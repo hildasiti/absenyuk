@@ -1103,7 +1103,7 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
 }
 
 /**
- * Dipanggil dari Cron Trigger (12:00 WIB), atau manual lewat tombol Admin Utama
+ * Dipanggil dari Cron Trigger (12:20 WIB, Senin-Jumat), atau manual lewat tombol Admin Utama
  * (jalankanOtomasiManual). Jalan untuk SEMUA sekolah sekaligus.
  *
  * Mengembalikan ringkasan hasil {sekolahDiproses, sekolahDilewati, sekolahError,

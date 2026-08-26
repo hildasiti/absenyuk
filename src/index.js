@@ -71,14 +71,14 @@ export default {
   // event.cron berisi expression cron yang cocok, dipakai untuk membedakan
   // beberapa jadwal berbeda yang jalan di Worker yang sama.
   async scheduled(event, env, ctx) {
-    if (event.cron === '20 0 * * *') {
-      // 07:20 WIB = 00:20 UTC - pengingat belum absen
+    if (event.cron === '20 0 * * 1-5') {
+      // 07:20 WIB, Senin-Jumat - pengingat belum absen
       ctx.waitUntil(cekDanKirimNotifikasiBelumAbsen(env));
-    } else if (event.cron === '0 5 * * *') {
-      // 12:00 WIB = 05:00 UTC - auto set Tanpa Keterangan (Absen Masuk)
+    } else if (event.cron === '20 5 * * 1-5') {
+      // 12:20 WIB, Senin-Jumat - auto set Tanpa Keterangan (Absen Masuk)
       ctx.waitUntil(autoSetTanpaKeterangan(env));
-    } else if (event.cron === '0 14 * * *') {
-      // 21:00 WIB = 14:00 UTC - auto set "Tidak Absen" untuk Sholat Dzuhur & Ashar
+    } else if (event.cron === '0 14 * * 1-5') {
+      // 21:00 WIB, Senin-Jumat - auto set "Tidak Absen" untuk Sholat Dzuhur & Ashar
       // sekaligus (jam ini dipilih supaya kedua sesi sudah pasti lewat).
       ctx.waitUntil(autoSetTidakAbsenSholat(env));
     }
