@@ -925,7 +925,7 @@
     <div class='card p-4 shadow-sm mb-4 border-0 border-start border-primary border-4'>
         <h5 class='mb-3 text-secondary fw-bold'>Tambah Akun Guru Baru</h5>
         <form class='row g-2' onsubmit='submitNewUser(event)'>
-            <div class='col-md-3'><input class='form-control' id='u-nuptk' placeholder='NUPTK / Username' required='required' type='text'/></div>
+            <div class='col-md-2'><input class='form-control' id='u-nuptk' placeholder='NUPTK / Username' required='required' type='text'/></div>
             <div class='col-md-3'><input class='form-control' id='u-nama' placeholder='Nama Lengkap' required='required' type='text'/></div>
             <div class='col-md-2'><input class='form-control' id='u-pass' placeholder='Password' required='required' type='password'/></div>
             <div class='col-md-2'>
@@ -936,7 +936,13 @@
                     <option value='ADMIN_SEKOLAH' id='opsi-role-admin-sekolah' style='display:none;'>Role: ADMIN SEKOLAH</option>
                 </select>
             </div>
-            <div class='col-md-2'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
+            <div class='col-md-2'>
+                <select class='form-select' id='u-kategori' required='required' title='Kategori Kepegawaian'>
+                    <option selected='selected' value='Mengajar'>Kategori: Mengajar</option>
+                    <option value='Tidak Mengajar'>Kategori: Tidak Mengajar</option>
+                </select>
+            </div>
+            <div class='col-md-1'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
         </form>
     </div>
 
@@ -2258,7 +2264,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         nuptk: document.getElementById('u-nuptk').value,
         nama: document.getElementById('u-nama').value,
         email: '-', password: document.getElementById('u-pass').value,
-        role: document.getElementById('u-role').value
+        role: document.getElementById('u-role').value,
+        kategori: document.getElementById('u-kategori').value
     };
     if (USER_DATA.role === 'ADMIN_UTAMA') {
       if (!CURRENT_SEKOLAH_ID) { Swal.fire('Pilih Sekolah Dulu', 'Pilih sekolah di pojok kiri atas sebelum menambah akun.', 'warning'); return; }
