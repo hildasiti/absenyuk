@@ -38,6 +38,26 @@ export async function sbSelect(env, table, queryString = '') {
   return res.json();
 }
 
+/**
+ * Insert BANYAK baris sekaligus dalam 1 request HTTP (PostgREST mendukung body
+ * berupa array). Dipakai khusus di fungsi-fungsi otomasi (auto alpa, auto tidak
+ * absen) yang bisa memproses puluhan/ratusan baris sekaligus - insert satu-satu
+ * dalam loop gampang menabrak limit "Too many subrequests by single Worker
+ * invocation" di Cloudflare Workers (tiap fetch() ke Supabase dihitung 1 subrequest).
+ * Return array baris yang berhasil dibuat.
+ */
+export async function sbInsertMany(env, table, dataArray) {
+  if (!dataArray.length) return [];
+  const url = `${env.SUPABASE_URL}/rest/v1/${table}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: baseHeaders(env, { Prefer: 'return=representation' }),
+    body: JSON.stringify(dataArray)
+  });
+  if (!res.ok) throw new Error(`Supabase BULK INSERT ${table} gagal (${res.status}): ${await res.text()}`);
+  return res.json();
+}
+
 /** Insert baris baru. Return baris yang baru dibuat. */
 export async function sbInsert(env, table, data) {
   const url = `${env.SUPABASE_URL}/rest/v1/${table}`;

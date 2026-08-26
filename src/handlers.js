@@ -1,4 +1,4 @@
-import { sbSelect, sbInsert, sbUpdate, sbUpdateWhere, sbDelete } from './supabase.js';
+import { sbSelect, sbInsert, sbInsertMany, sbUpdate, sbUpdateWhere, sbDelete } from './supabase.js';
 import { createSession, getSession, destroySession } from './session.js';
 import { verifyAndMigratePassword } from './auth.js';
 import { getSettingsMap } from './settings.js';
@@ -1104,7 +1104,7 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
 
 /**
  * Dipanggil dari Cron Trigger (12:20 WIB, Senin-Jumat), atau manual lewat tombol Admin Utama
- * (jalankanOtomasiManual). Jalan untuk SEMUA sekolah sekaligus.
+ * (jalankanAutoAlpaManual). Jalan untuk SEMUA sekolah sekaligus.
  *
  * Mengembalikan ringkasan hasil {sekolahDiproses, sekolahDilewati, sekolahError,
  * totalDitandaiAlpa} - dulu fungsi ini tidak mengembalikan apa-apa (void), jadi
@@ -1145,22 +1145,46 @@ export async function autoSetTanpaKeterangan(env) {
       const absenHariIni = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
       const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
 
-      let ditandaiDiSekolahIni = 0;
+      // Kumpulkan dulu semua baris yang perlu ditambahkan, baru kirim 1x lewat bulk
+      // insert (bukan 1 request HTTP per guru) - supaya tidak menabrak limit
+      // "Too many subrequests by single Worker invocation" di Cloudflare kalau
+      // jumlah guru banyak. NB: nilai jarak 'xx m' (placeholder lama) diganti '0 m' -
+      // format "<angka> m" ini yang valid untuk kolom jarak, sama seperti presensi
+      // normal (bukan teks bebas "xx m" yang bikin Supabase menolak dengan error
+      // "invalid input syntax for type numeric").
+      const calonBaris = [];
       for (const u of users) {
         const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
         const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
 
         if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
           if (!sudahAbsenHariIni.includes(userNuptk)) {
+            calonBaris.push({
+              id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
+              jam: '--:--', latitude: '-', longitude: '-', jarak: '0 m',
+              status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
+            });
+          }
+        }
+      }
+
+      let ditandaiDiSekolahIni = 0;
+      if (calonBaris.length) {
+        try {
+          const hasil = await sbInsertMany(env, 'absen_masuk', calonBaris);
+          ditandaiDiSekolahIni = hasil.length;
+        } catch (err) {
+          // Bulk insert gagal total (mis. race condition ada 1 guru yang barusan
+          // absen manual di detik yang sama, bikin duplicate key untuk 1 baris saja
+          // dan menggagalkan seluruh batch) - fallback ke insert satu-satu KHUSUS
+          // untuk sekolah ini saja, supaya baris yang valid tetap tersimpan.
+          console.error(`[${sekolahId}] Bulk insert gagal, fallback ke insert satu-satu:`, err.message);
+          for (const baris of calonBaris) {
             try {
-              await sbInsert(env, 'absen_masuk', {
-                id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
-                jam: '--:--', latitude: '-', longitude: '-', jarak: 'xx m',
-                status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
-              });
+              await sbInsert(env, 'absen_masuk', baris);
               ditandaiDiSekolahIni++;
-            } catch (err) {
-              if (!String(err.message).includes('duplicate key')) throw err;
+            } catch (err2) {
+              if (!String(err2.message).includes('duplicate key')) console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}):`, err2.message);
             }
           }
         }
@@ -1181,7 +1205,7 @@ export async function autoSetTanpaKeterangan(env) {
 
 /**
  * Dipanggil dari Cron Trigger (1x sehari, jam 21:00 WIB - setelah waktu Dzuhur MAUPUN
- * Ashar pasti sudah lewat), atau manual lewat tombol Admin Utama (jalankanOtomasiManual).
+ * Ashar pasti sudah lewat), atau manual lewat tombol Admin Utama (jalankanAutoSholatManual).
  * Guru yang tidak pernah mengisi presensi Pendampingan Sholat Dzuhur dan/atau Ashar hari
  * itu (lewat menu Kegiatan Sekolah) akan otomatis ditandai "Tidak Absen" untuk sesi yang
  * terlewat - dulu kalau tidak absen datanya cuma kosong/tidak ada baris sama sekali di
@@ -1227,8 +1251,12 @@ export async function autoSetTidakAbsenSholat(env) {
       }
 
       const users = await getUsersListCached(env, sekolahId);
-      let ditandaiDiSekolahIni = 0;
 
+      // Kumpulkan dulu SEMUA baris yang perlu ditambahkan (Dzuhur + Ashar sekaligus,
+      // lintas semua guru) baru kirim lewat bulk insert 1x per sekolah - bukan 1
+      // request HTTP per (guru x sesi) dalam loop, supaya tidak menabrak limit
+      // "Too many subrequests by single Worker invocation" di Cloudflare.
+      const calonBaris = [];
       for (const jenisKegiatan of JENIS_DICEK) {
         const sudahAbsenHariIni = await sbSelect(env, 'kegiatan_umum', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}&jenis_kegiatan=eq.${jenisKegiatan}`);
         const sudahAbsenNuptk = sudahAbsenHariIni.map((r) => String(r.nuptk).trim());
@@ -1239,16 +1267,29 @@ export async function autoSetTidakAbsenSholat(env) {
 
           if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
             if (!sudahAbsenNuptk.includes(userNuptk)) {
-              try {
-                await sbInsert(env, 'kegiatan_umum', {
-                  id: generateShortID('KO'), sekolah_id: sekolahId, jenis_kegiatan: jenisKegiatan, tanggal: dateStr,
-                  nuptk: userNuptk, nama: userNama, kegiatan: jenisKegiatan, status: 'Tidak Absen',
-                  catatan: 'Otomatis oleh sistem - tidak melakukan presensi sampai batas waktu.', timestamp: new Date().toISOString()
-                });
-                ditandaiDiSekolahIni++;
-              } catch (err) {
-                if (!String(err.message).includes('duplicate key')) throw err;
-              }
+              calonBaris.push({
+                id: generateShortID('KO'), sekolah_id: sekolahId, jenis_kegiatan: jenisKegiatan, tanggal: dateStr,
+                nuptk: userNuptk, nama: userNama, kegiatan: jenisKegiatan, status: 'Tidak Absen',
+                catatan: 'Otomatis oleh sistem - tidak melakukan presensi sampai batas waktu.', timestamp: new Date().toISOString()
+              });
+            }
+          }
+        }
+      }
+
+      let ditandaiDiSekolahIni = 0;
+      if (calonBaris.length) {
+        try {
+          const hasil = await sbInsertMany(env, 'kegiatan_umum', calonBaris);
+          ditandaiDiSekolahIni = hasil.length;
+        } catch (err) {
+          console.error(`[${sekolahId}] Bulk insert gagal, fallback ke insert satu-satu:`, err.message);
+          for (const baris of calonBaris) {
+            try {
+              await sbInsert(env, 'kegiatan_umum', baris);
+              ditandaiDiSekolahIni++;
+            } catch (err2) {
+              if (!String(err2.message).includes('duplicate key')) console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}, ${baris.jenis_kegiatan}):`, err2.message);
             }
           }
         }
@@ -1271,19 +1312,36 @@ export async function autoSetTidakAbsenSholat(env) {
  * 1) Menguji apakah otomasi jalan dengan benar tanpa perlu menunggu jam cron.
  * 2) Menyusulkan/memperbaiki hari yang otomasinya sempat gagal/tidak jalan.
  */
-async function jalankanOtomasiManual(args, env) {
+/**
+ * Trigger manual (bukan dari Cron) untuk Admin Utama - menjalankan HANYA Auto Alpa
+ * Absen Masuk sekarang juga, lalu mengembalikan ringkasan hasil apa adanya.
+ *
+ * Sengaja dipisah dari otomasi Sholat (bukan digabung dalam 1 fungsi/1 eksekusi
+ * Worker seperti sebelumnya) - supaya jumlah request ke Supabase per eksekusi tetap
+ * kecil dan tidak menabrak limit "Too many subrequests by single Worker invocation",
+ * sama seperti cara Cron Trigger asli menjalankan tiap otomasi di jadwal terpisah.
+ */
+async function jalankanAutoAlpaManual(args, env) {
   const [token] = args;
   const user = await requireUser(env, token);
   if (!isRole(user, 'ADMIN_UTAMA')) return { success: false, message: 'Hanya Admin Utama yang boleh menjalankan ini.' };
 
-  const hasilAlpa = await autoSetTanpaKeterangan(env);
-  const hasilSholat = await autoSetTidakAbsenSholat(env);
+  const hasil = await autoSetTanpaKeterangan(env);
+  return { success: true, absenMasuk: hasil };
+}
 
-  return {
-    success: true,
-    absenMasuk: hasilAlpa,
-    sholat: hasilSholat
-  };
+/**
+ * Sama seperti jalankanAutoAlpaManual() di atas, tapi untuk Auto "Tidak Absen"
+ * Sholat Dzuhur/Ashar. Lihat catatan di jalankanAutoAlpaManual() soal kenapa
+ * dipisah jadi 2 handler, bukan 1 gabungan.
+ */
+async function jalankanAutoSholatManual(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!isRole(user, 'ADMIN_UTAMA')) return { success: false, message: 'Hanya Admin Utama yang boleh menjalankan ini.' };
+
+  const hasil = await autoSetTidakAbsenSholat(env);
+  return { success: true, sholat: hasil };
 }
 
 // ====================================================================
@@ -1314,7 +1372,8 @@ export const handlers = {
   getDashboardData,
   getSettingsData,
   saveSettingsData,
-  jalankanOtomasiManual,
+  jalankanAutoAlpaManual,
+  jalankanAutoSholatManual,
   getUsers,
   saveUser,
   updateUser,
