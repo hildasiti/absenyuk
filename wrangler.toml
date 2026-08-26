@@ -16,6 +16,7 @@ id = "614e992ccfd643b8ac628d0de257937b"
 # Cron Triggers - jadwal otomatis notifikasi & auto-alpa.
 # Waktu dalam UTC (WIB = UTC+7):
 #   "20 0 * * *" -> 07:20 WIB setiap hari - pengingat belum absen (FCM)
-#   "0 5 * * *"  -> 12:00 WIB setiap hari - auto set "Tanpa Keterangan"
+#   "0 5 * * *"  -> 12:00 WIB setiap hari - auto set "Tanpa Keterangan" (Absen Masuk)
+#   "0 14 * * *" -> 21:00 WIB setiap hari - auto set "Tidak Absen" Sholat Dzuhur & Ashar sekaligus
 [triggers]
-crons = ["20 0 * * *", "0 5 * * *"]
+crons = ["20 0 * * *", "0 5 * * *", "0 14 * * *"]
