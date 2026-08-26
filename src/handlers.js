@@ -1152,12 +1152,14 @@ export async function autoSetTanpaKeterangan(env) {
       // format "<angka> m" ini yang valid untuk kolom jarak, sama seperti presensi
       // normal (bukan teks bebas "xx m" yang bikin Supabase menolak dengan error
       // "invalid input syntax for type numeric").
+      let jumlahEligible = 0; // masuk kriteria role+status aktif (calon "wajib absen")
       const calonBaris = [];
       for (const u of users) {
         const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
         const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
 
         if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
+          jumlahEligible++;
           if (!sudahAbsenHariIni.includes(userNuptk)) {
             calonBaris.push({
               id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
@@ -1167,6 +1169,12 @@ export async function autoSetTanpaKeterangan(env) {
           }
         }
       }
+      // Rincian debug ini SENGAJA selalu disertakan (bukan cuma pas error) - supaya
+      // kalau "Total ditandai" ternyata 0 padahal harusnya tidak, bisa langsung
+      // ketahuan di tahap mana penyebabnya tanpa perlu buka log Cloudflare:
+      // total user di tabel 'users' utk sekolah ini, berapa yang lolos filter
+      // role+status Aktif, dan berapa yang sistem anggap sudah absen hari ini.
+      const debugInfo = `total user: ${users.length}, eligible (role+aktif): ${jumlahEligible}, sudah ada baris hari ini: ${sudahAbsenHariIni.length}`;
 
       let ditandaiDiSekolahIni = 0;
       if (calonBaris.length) {
@@ -1190,8 +1198,8 @@ export async function autoSetTanpaKeterangan(env) {
         }
       }
       await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
-      console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} guru ditandai Tanpa Keterangan.`);
-      ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai)`);
+      console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} guru ditandai Tanpa Keterangan. (${debugInfo})`);
+      ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai — ${debugInfo})`);
       ringkasan.totalDitandaiAlpa += ditandaiDiSekolahIni;
     } catch (err) {
       // Sekolah ini gagal (mis. error koneksi Supabase, data settings korup, dll) -
@@ -1278,24 +1286,32 @@ export async function autoSetTidakAbsenSholat(env) {
       }
 
       let ditandaiDiSekolahIni = 0;
+      // Berhasil-insert per jenis DIHITUNG DARI HASIL SUNGGUH-SUNGGUH (bukan dari
+      // calonBaris sebelum insert) - supaya kalau ternyata cuma sebagian yang benar-
+      // benar tersimpan (mis. sebagian gagal di fallback per-baris), rinciannya tetap
+      // akurat, bukan optimis mengasumsikan semua kandidat pasti berhasil.
+      const berhasilPerJenis = { SHOLAT_DZUHUR: 0, SHOLAT_ASHAR: 0 };
       if (calonBaris.length) {
         try {
           const hasil = await sbInsertMany(env, 'kegiatan_umum', calonBaris);
           ditandaiDiSekolahIni = hasil.length;
+          hasil.forEach((r) => { if (berhasilPerJenis[r.jenis_kegiatan] !== undefined) berhasilPerJenis[r.jenis_kegiatan]++; });
         } catch (err) {
           console.error(`[${sekolahId}] Bulk insert gagal, fallback ke insert satu-satu:`, err.message);
           for (const baris of calonBaris) {
             try {
               await sbInsert(env, 'kegiatan_umum', baris);
               ditandaiDiSekolahIni++;
+              if (berhasilPerJenis[baris.jenis_kegiatan] !== undefined) berhasilPerJenis[baris.jenis_kegiatan]++;
             } catch (err2) {
               if (!String(err2.message).includes('duplicate key')) console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}, ${baris.jenis_kegiatan}):`, err2.message);
             }
           }
         }
       }
-      console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} baris Tidak Absen (Dzuhur+Ashar) ditambahkan.`);
-      ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai)`);
+      const rincianJenis = `Dzuhur: ${berhasilPerJenis.SHOLAT_DZUHUR}, Ashar: ${berhasilPerJenis.SHOLAT_ASHAR}`;
+      console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} baris Tidak Absen ditambahkan (${rincianJenis}).`);
+      ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai — ${rincianJenis})`);
       ringkasan.totalDitandaiTidakAbsen += ditandaiDiSekolahIni;
     } catch (err) {
       console.error(`[${sekolahId}] GAGAL auto Tidak Absen Sholat:`, err.message);
