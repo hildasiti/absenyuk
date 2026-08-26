@@ -14,9 +14,13 @@ id = "614e992ccfd643b8ac628d0de257937b"
 # bukan di file ini, supaya tidak ikut ter-commit ke Git.
 
 # Cron Triggers - jadwal otomatis notifikasi & auto-alpa.
+# Field ke-5 (hari) = "1-5" -> Senin s.d. Jumat saja (weekend tidak perlu trigger sama
+# sekali, karena memang bukan hari kerja). Pengecekan hari libur NASIONAL/khusus sekolah
+# tetap dilakukan di dalam kode (checkApakahHariLibur), karena itu tanggal dinamis yang
+# tidak bisa diwakili lewat cron expression statis.
 # Waktu dalam UTC (WIB = UTC+7):
-#   "20 0 * * *" -> 07:20 WIB setiap hari - pengingat belum absen (FCM)
-#   "0 5 * * *"  -> 12:00 WIB setiap hari - auto set "Tanpa Keterangan" (Absen Masuk)
-#   "0 14 * * *" -> 21:00 WIB setiap hari - auto set "Tidak Absen" Sholat Dzuhur & Ashar sekaligus
+#   "20 0 * * 1-5" -> 07:20 WIB, Senin-Jumat - pengingat belum absen (FCM)
+#   "20 5 * * 1-5" -> 12:20 WIB, Senin-Jumat - auto set "Tanpa Keterangan" (Absen Masuk)
+#   "0 14 * * 1-5" -> 21:00 WIB, Senin-Jumat - auto set "Tidak Absen" Sholat Dzuhur & Ashar sekaligus
 [triggers]
-crons = ["20 0 * * *", "0 5 * * *", "0 14 * * *"]
+crons = ["20 0 * * 1-5", "20 5 * * 1-5", "0 14 * * 1-5"]
