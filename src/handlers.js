@@ -54,10 +54,16 @@ async function getJadwalKegiatanCached(env, sekolahId) {
   return cached(env, `JADWAL_KEGIATAN_CACHE_${sekolahId}`, 60, () => sbSelect(env, 'jadwal_kegiatan', `sekolah_id=eq.${sekolahId}`));
 }
 
-// Konfigurasi jenis laporan/kegiatan (8 jenis majelis/kegiatan rutin yang identik strukturnya).
+// Konfigurasi jenis laporan/kegiatan (9 jenis majelis/kegiatan rutin yang identik strukturnya).
+// CATATAN: Qini Nasional sengaja dipecah jadi 2 "jenis kegiatan" terpisah (Subuh & Malam) -
+// BUKAN 1 jenis dengan 2x absen per hari - supaya kunci anti-absen-ganda (yang selama ini
+// bekerja per kombinasi jenis_kegiatan + tanggal) otomatis mengizinkan 1x absen Subuh DAN
+// 1x absen Malam di tanggal yang sama (Jumat, Sabtu), tapi tetap menolak absen ganda di
+// sesi yang sama. Total 4 hari kegiatan (Kamis-Ahad) x sesi yang relevan = 6 kali absen:
+// Kamis malam, Jumat subuh, Jumat malam, Sabtu subuh, Sabtu malam, Ahad subuh.
 const KEGIATAN_IDENTIK = [
   'BRIEFING_TAWASUL', 'PENDAMPINGAN_DHUHA', 'SHOLAT_DZUHUR', 'SHOLAT_ASHAR',
-  'DZIKIR_MAKHSUS', 'PENGAJIAN_AHAD', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL'
+  'DZIKIR_MAKHSUS', 'PENGAJIAN_AHAD', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'
 ];
 
 const REPORT_CONFIG = {
