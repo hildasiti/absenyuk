@@ -14,13 +14,19 @@ id = "614e992ccfd643b8ac628d0de257937b"
 # bukan di file ini, supaya tidak ikut ter-commit ke Git.
 
 # Cron Triggers - jadwal otomatis notifikasi & auto-alpa.
-# Field ke-5 (hari) = "1-5" -> Senin s.d. Jumat saja (weekend tidak perlu trigger sama
-# sekali, karena memang bukan hari kerja). Pengecekan hari libur NASIONAL/khusus sekolah
-# tetap dilakukan di dalam kode (checkApakahHariLibur), karena itu tanggal dinamis yang
-# tidak bisa diwakili lewat cron expression statis.
+# CATATAN PENTING: field ke-5 (hari) sengaja dibiarkan "*" (jalan tiap hari), BUKAN
+# dibatasi "1-5" (Senin-Jumat) di level cron. Dashboard Cloudflare menampilkan label
+# hari yang tidak konsisten dengan standar cron Unix biasa (0=Minggu...6=Sabtu) saat
+# dicoba pakai "1-5" - untuk menghindari risiko cron benar-benar jalan di hari yang
+# salah, pembatasan Senin-Jumat SEPENUHNYA diserahkan ke pengecekan di dalam kode
+# (nowJakarta().dayOfWeek di date.js, sudah pasti benar karena pakai Intl API standar) -
+# tiap fungsi (cekDanKirimNotifikasiBelumAbsen, autoSetTanpaKeterangan,
+# autoSetTidakAbsenSholat) langsung return kalau hari ini Sabtu/Minggu. Worker tetap
+# jalan tiap hari termasuk weekend, cuma langsung berhenti tanpa melakukan apa-apa -
+# sedikit invocation ekstra yang sia-sia, tapi jauh lebih aman daripada salah hari.
 # Waktu dalam UTC (WIB = UTC+7):
-#   "20 0 * * 1-5" -> 07:20 WIB, Senin-Jumat - pengingat belum absen (FCM)
-#   "20 5 * * 1-5" -> 12:20 WIB, Senin-Jumat - auto set "Tanpa Keterangan" (Absen Masuk)
-#   "0 14 * * 1-5" -> 21:00 WIB, Senin-Jumat - auto set "Tidak Absen" Sholat Dzuhur & Ashar sekaligus
+#   "20 0 * * *" -> 07:20 WIB - pengingat belum absen (FCM); di-skip di kode kalau weekend/libur
+#   "20 5 * * *" -> 12:20 WIB - auto set "Tanpa Keterangan" (Absen Masuk); di-skip di kode kalau weekend/libur
+#   "0 14 * * *" -> 21:00 WIB - auto set "Tidak Absen" Sholat Dzuhur & Ashar; di-skip di kode kalau weekend/libur
 [triggers]
-crons = ["20 0 * * 1-5", "20 5 * * 1-5", "0 14 * * 1-5"]
+crons = ["20 0 * * *", "20 5 * * *", "0 14 * * *"]
