@@ -563,10 +563,14 @@
 <div class='content-section' id='absen-masuk'>
   <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
     <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-geo-alt-fill text-primary'></i> Presensi Masuk Sekolah</h5>
+    <div class='alert alert-secondary py-2 px-3 mb-3' id='am-jarak-live' style='font-size: 0.85rem;'>
+      <i class='bi bi-broadcast'></i> Mengaktifkan GPS realtime...
+    </div>
     <form id='form-absen-masuk' onsubmit='submitAbsenMasuk(event)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Status Kehadiran</label>
         <select class='form-select' id='am-status' required='required'>
+          <option value='Hadir &amp; Tawasul'>Hadir &amp; Tawasul</option>
           <option value='Hadir'>Hadir di Sekolah</option>
           <option value='Sakit'>Sakit</option>
           <option value='Izin'>Izin</option>
@@ -593,11 +597,11 @@
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Jenis Kegiatan Sekolah</label>
         <select class='form-select' id='ak-jenis' onchange='updateStatusOptionsAK(); checkLockKegiatan(&apos;ak&apos;)' required='required'>
-          <option value='BRIEFING_TAWASUL'>Briefing &amp; Tawasul</option>
           <option value='PENDAMPINGAN_DHUHA'>Pendampingan Dhuha</option>
           <option value='SHOLAT_DZUHUR'>Pendampingan Sholat Dzuhur</option>
           <option value='SHOLAT_ASHAR'>Pendampingan Sholat Ashar</option>
         </select>
+        <small class='text-muted d-block mt-1'>Briefing &amp; Tawasul kini otomatis tercatat lewat menu <strong>Absen Masuk</strong> (pilih "Hadir &amp; Tawasul"), tidak perlu diisi terpisah di sini lagi.</small>
       </div>
       <div class='alert alert-success py-2 px-3 mb-3' id='ak-lock-info' style='display: none; font-size: 0.85rem;'></div>
       <div class='mb-3'>
@@ -620,6 +624,9 @@
 <div class='content-section' id='absen-pesantren'>
   <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
     <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-moon-stars-fill text-primary'></i> Kehadiran Kepesantrenan</h5>
+    <div class='alert alert-secondary py-2 px-3 mb-3' id='ap-jarak-live' style='font-size: 0.85rem;'>
+      <i class='bi bi-broadcast'></i> Mengaktifkan GPS realtime...
+    </div>
     <form onsubmit='submitKegiatan(event, &apos;Pesantren&apos;)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Kegiatan Kepesantrenan</label>
@@ -812,6 +819,14 @@
           <option value='Nonaktif'>Nonaktifkan (Abaikan Kunci Otomatis)</option>
         </select>
         <small class='text-muted'>*Pilih &#39;Nonaktif&#39; jika hari ini ada kegiatan sekolah siang hari agar guru tidak otomatis ter-Alpa pada jam 12 siang.</small>
+      </div>
+
+      <div class='alert alert-secondary py-3 px-3 mb-4' id='blok-otomasi-manual' style='display:none;'>
+        <div class='fw-semibold mb-1'><i class='bi bi-lightning-charge-fill'></i> Jalankan Otomasi Sekarang (Manual)</div>
+        <small class='text-muted d-block mb-2'>Untuk menguji atau menyusulkan hari yang otomasinya sempat gagal/belum sempat jalan sesuai jadwal cron - langsung jalankan Auto "Tanpa Keterangan" (Absen Masuk) &amp; Auto "Tidak Absen" (Sholat Dzuhur/Ashar) untuk SEMUA sekolah, hari ini juga.</small>
+        <button class='btn btn-outline-dark btn-sm' onclick='jalankanOtomasiManualUI()' type='button'>
+          <i class='bi bi-play-fill'></i> Jalankan Sekarang
+        </button>
       </div>
 
       <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-building'></i> Identitas Kop &amp; Tanda Tangan Laporan</h5>
@@ -1805,6 +1820,11 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       closeSidebar();
     }
 
+    // Live GPS cuma relevan selagi form Absen Masuk / Absen Pesantren terbuka -
+    // hentikan dulu setiap kali pindah menu supaya tidak nguras baterai/GPS di
+    // background saat guru sedang di menu lain.
+    hentikanLiveGPS();
+
     if(id === 'data-guru') loadGuruList();
     if(id === 'laporan') loadGuruForReport();
     if(id === 'edit-absen') initEditAbsenView();
@@ -1812,10 +1832,12 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'kelola-kegiatan') loadJadwalKegiatanList();
     if(id === 'absen-kegiatan-khusus') loadKegiatanDropdown();
     if(id === 'absen-kegiatan') { updateStatusOptionsAK(); checkLockKegiatan('ak'); }
+    if(id === 'absen-masuk') muatDanMulaiLiveGPS('sekolah');
     if(id === 'absen-pesantren') {
       const tglField = document.getElementById('ap-tanggal');
       if (tglField && !tglField.value) tglField.value = new Date().toISOString().split('T')[0];
       checkLockKegiatan('ap');
+      muatDanMulaiLiveGPS('pesantren');
     }
     if(id === 'rekap-jam-pelajaran') loadGuruDropdownJamPelajaran();
     if(id === 'pengaturan') loadSettings();
@@ -2032,6 +2054,91 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }).getDashboardData(SESSION_TOKEN, startDate, endDate);
   }
 
+  // ====================================================================
+  // JARAK GPS REALTIME (Absen Masuk & Absen Kepesantrenan)
+  // ====================================================================
+  // Titik target (lat/lon/radius sekolah & pesantren) di-cache sekali per sesi
+  // login (jarang berubah), lalu navigator.geolocation.watchPosition() dipakai
+  // supaya jarak ke titik tsb ter-update terus selagi guru menggeser posisi -
+  // ini murni bantuan visual sebelum submit; validasi jarak yang SEBENARNYA
+  // tetap dihitung ulang di server saat submit (tidak bisa dipalsukan dari sini).
+  let LOKASI_TARGET_CACHE = null;
+  let GPS_WATCH_ID = null;
+
+  /** Rumus Haversine, sama persis dengan hitungRadiusGPS() di backend (libur.js). */
+  function hitungJarakMeter(lat1, lon1, lat2, lon2) {
+    const R = 6371e3;
+    const p1 = (lat1 * Math.PI) / 180;
+    const p2 = (lat2 * Math.PI) / 180;
+    const dp = ((lat2 - lat1) * Math.PI) / 180;
+    const dl = ((lon2 - lon1) * Math.PI) / 180;
+    const a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c);
+  }
+
+  function hentikanLiveGPS() {
+    if (GPS_WATCH_ID !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(GPS_WATCH_ID);
+      GPS_WATCH_ID = null;
+    }
+  }
+
+  function renderJarakLive(elId, jarak, radius, akurasi) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const dalamRadius = jarak <= radius;
+    el.className = 'alert py-2 px-3 mb-3 ' + (dalamRadius ? 'alert-success' : 'alert-warning');
+    el.style.fontSize = '0.85rem';
+    el.innerHTML = `<i class="bi bi-${dalamRadius ? 'check-circle-fill' : 'exclamation-triangle-fill'}"></i> `
+      + `Jarak Anda ke titik: <strong>${jarak} meter</strong> (radius diizinkan: ${radius} meter)`
+      + (dalamRadius ? ' - sudah dalam jangkauan.' : ' - masih di luar jangkauan, silakan mendekat.')
+      + (akurasi ? ` <span class="text-muted">(akurasi GPS ±${Math.round(akurasi)}m)</span>` : '');
+  }
+
+  function mulaiLiveGPS(elId, target) {
+    hentikanLiveGPS();
+    const el = document.getElementById(elId);
+    if (!el) return;
+
+    if (target.lat === null || target.lon === null) {
+      el.className = 'alert alert-warning py-2 px-3 mb-3';
+      el.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Titik koordinat belum diatur oleh Admin.';
+      return;
+    }
+    if (!navigator.geolocation) {
+      el.className = 'alert alert-warning py-2 px-3 mb-3';
+      el.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Browser tidak mendukung GPS.';
+      return;
+    }
+
+    GPS_WATCH_ID = navigator.geolocation.watchPosition(
+      pos => {
+        const jarak = hitungJarakMeter(pos.coords.latitude, pos.coords.longitude, target.lat, target.lon);
+        renderJarakLive(elId, jarak, target.radius, pos.coords.accuracy);
+      },
+      err => {
+        el.className = 'alert alert-danger py-2 px-3 mb-3';
+        el.innerHTML = '<i class="bi bi-x-circle-fill"></i> Gagal membaca lokasi GPS. Pastikan izin lokasi browser Anda aktif.';
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
+    );
+  }
+
+  /** Ambil titik target dari server (sekali, di-cache), lalu mulai live tracking untuk form terkait. */
+  function muatDanMulaiLiveGPS(formTujuan) {
+    const elId = formTujuan === 'sekolah' ? 'am-jarak-live' : 'ap-jarak-live';
+    if (LOKASI_TARGET_CACHE) {
+      mulaiLiveGPS(elId, LOKASI_TARGET_CACHE[formTujuan]);
+      return;
+    }
+    google.script.run.withSuccessHandler(res => {
+      if (!res.success) return;
+      LOKASI_TARGET_CACHE = { sekolah: res.sekolah, pesantren: res.pesantren };
+      mulaiLiveGPS(elId, LOKASI_TARGET_CACHE[formTujuan]);
+    }).getLokasiAbsenTarget(SESSION_TOKEN);
+  }
+
   function submitAbsenMasuk(e) {
     e.preventDefault();
     const st = document.getElementById('am-status').value;
@@ -2205,6 +2312,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   }
 
   function loadSettings() {
+    const blokOtomasi = document.getElementById('blok-otomasi-manual');
+    if (blokOtomasi) blokOtomasi.style.display = (USER_DATA.role === 'ADMIN_UTAMA') ? 'block' : 'none';
+
     google.script.run.withSuccessHandler(data => {
       document.getElementById('set-jam').value = data.jam_masuk || '';
       document.getElementById('set-tol').value = data.toleransi || '';
@@ -2242,6 +2352,46 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         loadSettings();
       }
     }).saveSettingsData(SESSION_TOKEN, config);
+  }
+
+  function jalankanOtomasiManualUI() {
+    Swal.fire({
+      title: 'Jalankan Otomasi Sekarang?',
+      html: 'Auto "Tanpa Keterangan" (Absen Masuk) dan Auto "Tidak Absen" (Sholat Dzuhur/Ashar) akan dijalankan untuk <strong>SEMUA sekolah</strong>, untuk data hari ini.',
+      icon: 'question', showCancelButton: true, confirmButtonText: 'Ya, Jalankan', cancelButtonText: 'Batal'
+    }).then(result => {
+      if (!result.isConfirmed) return;
+      Swal.fire({title: 'Menjalankan otomasi...', text: 'Mohon tunggu, ini bisa beberapa detik.', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+
+      google.script.run.withSuccessHandler(res => {
+        if (!res.success) { Swal.fire('Gagal', res.message, 'error'); return; }
+
+        const a = res.absenMasuk, s = res.sholat;
+        const adaError = (a.sekolahError && a.sekolahError.length) || (s.sekolahError && s.sekolahError.length);
+
+        let html = `<div class="text-start" style="font-size:0.9rem;">
+          <p><strong>Absen Masuk (Tanpa Keterangan):</strong><br>
+          Total ditandai: <strong>${a.totalDitandaiAlpa}</strong><br>
+          Sekolah diproses: ${a.sekolahDiproses.join(', ') || '-'}<br>
+          Sekolah dilewati: ${a.sekolahDilewati.join(', ') || '-'}</p>
+          <p><strong>Sholat Dzuhur/Ashar (Tidak Absen):</strong><br>
+          Total ditandai: <strong>${s.totalDitandaiTidakAbsen}</strong><br>
+          Sekolah diproses: ${s.sekolahDiproses.join(', ') || '-'}<br>
+          Sekolah dilewati: ${s.sekolahDilewati.join(', ') || '-'}</p>`;
+
+        if (adaError) {
+          html += `<p class="text-danger"><strong>Ada error:</strong><br>${[...(a.sekolahError||[]), ...(s.sekolahError||[])].join('<br>')}</p>`;
+        }
+        html += '</div>';
+
+        Swal.fire({
+          icon: adaError ? 'warning' : 'success',
+          title: adaError ? 'Selesai, dengan beberapa error' : 'Otomasi Selesai',
+          html,
+          confirmButtonText: 'Tutup'
+        }).then(() => refreshDashboard());
+      }).jalankanOtomasiManual(SESSION_TOKEN);
+    });
   }
 
   function getLokasiSekarang() {
