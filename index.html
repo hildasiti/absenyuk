@@ -1445,6 +1445,11 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       const terakhirDitanya = localStorage.getItem('push_notif_last_asked');
       if (terakhirDitanya === hariIni) return; // sudah ditanya hari ini, jangan ganggu lagi
 
+      // Cuma tanya di hari Senin - biar tidak mengganggu tiap hari, tapi
+      // tetap ada kesempatan berkala buat yang belum aktifkan.
+      const isSenin = new Date().getDay() === 1; // 0=Minggu, 1=Senin, ...
+      if (!isSenin) return;
+
       // iOS Safari HANYA bisa push notification kalau sudah di-"Add to Home Screen".
       if (isIOS() && !isStandalonePWA()) {
         if (typeof Swal !== 'undefined') {
@@ -1466,7 +1471,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         Swal.fire({
           icon: 'question',
           title: 'Aktifkan Notifikasi?',
-          text: 'Dapatkan pengingat kalau lupa presensi masuk. Kalau dilewati, akan ditanya lagi besok.',
+          text: 'Dapatkan pengingat kalau lupa presensi masuk. Kalau dilewati, akan ditanya lagi Senin depan.',
           showCancelButton: true,
           confirmButtonText: 'Aktifkan',
           cancelButtonText: 'Nanti saja'
@@ -1477,7 +1482,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             setupPushNotification().then((hasil) => {
               if (!hasil.success) {
                 localStorage.setItem('push_notif_choice', 'declined');
-                Swal.fire('Notifikasi Belum Aktif', PESAN_GAGAL_NOTIF[hasil.reason] || 'Gagal mengaktifkan notifikasi. Akan ditanya lagi besok.', 'warning');
+                Swal.fire('Notifikasi Belum Aktif', PESAN_GAGAL_NOTIF[hasil.reason] || 'Gagal mengaktifkan notifikasi. Akan ditanya lagi Senin depan.', 'warning');
               }
             });
           } else {
