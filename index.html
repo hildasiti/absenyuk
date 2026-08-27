@@ -569,7 +569,7 @@
     <form id='form-absen-masuk' onsubmit='submitAbsenMasuk(event)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Status Kehadiran</label>
-        <select class='form-select' id='am-status' required='required'>
+        <select class='form-select' id='am-status' onchange='handleStatusAbsenMasukChange(this.value)' required='required'>
           <option value='Hadir &amp; Tawasul'>Hadir &amp; Tawasul</option>
           <option value='Hadir'>Hadir di Sekolah</option>
           <option value='Sakit'>Sakit</option>
@@ -1791,6 +1791,32 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if (counter) counter.innerText = el.value.length + '/50';
   }
 
+  // Awalan otomatis "Tawasul" di kolom Keterangan saat guru pilih status
+  // "Hadir & Tawasul" - guru tetap bisa menambahkan keterangan sendiri
+  // SETELAH awalan ini. Kalau guru ganti status ke pilihan lain lagi,
+  // awalan ini otomatis dilepas lagi, sisanya (tulisan guru sendiri) tetap ada.
+  const PREFIX_TAWASUL = 'Tawasul';
+
+  function handleStatusAbsenMasukChange(statusBaru) {
+    const ket = document.getElementById('am-ket');
+    if (!ket) return;
+    const nilaiSekarang = ket.value;
+
+    if (statusBaru === 'Hadir & Tawasul') {
+      if (nilaiSekarang.indexOf(PREFIX_TAWASUL) !== 0) {
+        const sisaTulisanGuru = nilaiSekarang.trim();
+        ket.value = sisaTulisanGuru ? `${PREFIX_TAWASUL} - ${sisaTulisanGuru}` : PREFIX_TAWASUL;
+      }
+    } else {
+      if (nilaiSekarang.indexOf(PREFIX_TAWASUL) === 0) {
+        let sisa = nilaiSekarang.slice(PREFIX_TAWASUL.length);
+        sisa = sisa.replace(/^\s*-\s*/, ''); // buang " - " pemisahnya juga
+        ket.value = sisa;
+      }
+    }
+    updateCharCount(ket, 'am-ket-count');
+  }
+
   function openSidebar() {
     document.getElementById('sidebar').classList.add('show-mobile');
     const bd = document.getElementById('sidebarBackdrop');
@@ -1858,7 +1884,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'kelola-kegiatan') loadJadwalKegiatanList();
     if(id === 'absen-kegiatan-khusus') loadKegiatanDropdown();
     if(id === 'absen-kegiatan') { updateStatusOptionsAK(); checkLockKegiatan('ak'); }
-    if(id === 'absen-masuk') muatDanMulaiLiveGPS('sekolah');
+    if(id === 'absen-masuk') { muatDanMulaiLiveGPS('sekolah'); handleStatusAbsenMasukChange(document.getElementById('am-status').value); }
     if(id === 'absen-pesantren') {
       const tglField = document.getElementById('ap-tanggal');
       if (tglField && !tglField.value) tglField.value = new Date().toISOString().split('T')[0];
@@ -2192,6 +2218,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
               }).then((result) => {
                 if (result.isConfirmed) {
                   e.target.reset();
+                  handleStatusAbsenMasukChange(document.getElementById('am-status').value);
                   refreshDashboard();
                 }
               });
