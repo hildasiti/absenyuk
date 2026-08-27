@@ -2374,7 +2374,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         if (!res.success) { Swal.fire('Gagal', res.message, 'error'); return; }
 
         const hasil = res[cfg.key];
-        const adaError = hasil.sekolahError && hasil.sekolahError.length;
+        const adaSekolahError = hasil.sekolahError && hasil.sekolahError.length;
+        const adaGagalDetail = hasil.gagalDetail && hasil.gagalDetail.length;
+        const adaError = adaSekolahError || adaGagalDetail;
 
         let html = `<div class="text-start" style="font-size:0.9rem;">
           <p><strong>${cfg.label}:</strong><br>
@@ -2382,8 +2384,11 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           Sekolah diproses: ${hasil.sekolahDiproses.join(', ') || '-'}<br>
           Sekolah dilewati: ${hasil.sekolahDilewati.join(', ') || '-'}</p>`;
 
-        if (adaError) {
-          html += `<p class="text-danger"><strong>Ada error:</strong><br>${hasil.sekolahError.join('<br>')}</p>`;
+        if (adaSekolahError) {
+          html += `<p class="text-danger"><strong>Ada error (level sekolah):</strong><br>${hasil.sekolahError.join('<br>')}</p>`;
+        }
+        if (adaGagalDetail) {
+          html += `<p class="text-danger"><strong>Ada baris gagal disimpan:</strong><br>${hasil.gagalDetail.join('<br>')}</p>`;
         }
         html += '</div>';
 
