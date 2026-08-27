@@ -821,6 +821,29 @@
         <small class='text-muted'>*Pilih &#39;Nonaktif&#39; jika hari ini ada kegiatan sekolah siang hari agar guru tidak otomatis ter-Alpa pada jam 12.20 siang.</small>
       </div>
 
+      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-clock-history'></i> Jadwal Khusus Sekolah <small class='text-muted fw-normal'>(untuk sekolah dgn jam masuk berbeda, mis. MDT/DTA siang hari)</small></h5>
+      <div class='row'>
+        <div class='col-md-4 mb-3'>
+          <label class='form-label fw-semibold'>Jam Batas Auto Tanpa Keterangan</label>
+          <input class='form-control' id='set-jam-cutoff-alpa' placeholder='12:20' type='time'/>
+          <small class='text-muted'>Guru yang belum absen masuk setelah jam ini otomatis ditandai Tanpa Keterangan. Default 12:20 - ganti mis. jadi 17:00 untuk sekolah yang masuk siang hari.</small>
+        </div>
+        <div class='col-md-4 mb-3'>
+          <label class='form-label fw-semibold'>Wajib Absen Sholat Dzuhur?</label>
+          <select class='form-select' id='set-wajib-dzuhur'>
+            <option value='Aktif'>Aktif (wajib &amp; kena auto Tidak Absen)</option>
+            <option value='Nonaktif'>Nonaktif (tidak berlaku di sekolah ini)</option>
+          </select>
+        </div>
+        <div class='col-md-4 mb-3'>
+          <label class='form-label fw-semibold'>Wajib Absen Sholat Ashar?</label>
+          <select class='form-select' id='set-wajib-ashar'>
+            <option value='Aktif'>Aktif (wajib &amp; kena auto Tidak Absen)</option>
+            <option value='Nonaktif'>Nonaktif (tidak berlaku di sekolah ini)</option>
+          </select>
+        </div>
+      </div>
+
       <div class='alert alert-secondary py-3 px-3 mb-4' id='blok-otomasi-manual' style='display:none;'>
         <div class='fw-semibold mb-1'><i class='bi bi-lightning-charge-fill'></i> Jalankan Otomasi Sekarang (Manual)</div>
         <small class='text-muted d-block mb-2'>Untuk menguji atau menyusulkan hari yang otomasinya sempat gagal/belum sempat jalan sesuai jadwal cron - untuk SEMUA sekolah, hari ini juga. Sengaja 2 tombol terpisah (bukan 1 gabungan) supaya request ke database per klik tetap ringan.</small>
@@ -2331,6 +2354,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('set-alamat-sekolah').value = data.alamat_sekolah || '';
       document.getElementById('set-nama-wakasek').value = data.nama_wakasek || '';
       document.getElementById('set-auto-alpa').value = data.status_auto_alpa || 'Aktif';
+      document.getElementById('set-jam-cutoff-alpa').value = data.jam_cutoff_alpa || '12:20';
+      document.getElementById('set-wajib-dzuhur').value = data.wajib_absen_dzuhur || 'Aktif';
+      document.getElementById('set-wajib-ashar').value = data.wajib_absen_ashar || 'Aktif';
     }).getSettingsData(SESSION_TOKEN);
   }
 
@@ -2346,7 +2372,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       nama_sekolah: document.getElementById('set-nama-sekolah').value,
       alamat_sekolah: document.getElementById('set-alamat-sekolah').value,
       nama_wakasek: document.getElementById('set-nama-wakasek').value,
-      status_auto_alpa: document.getElementById('set-auto-alpa').value
+      status_auto_alpa: document.getElementById('set-auto-alpa').value,
+      jam_cutoff_alpa: document.getElementById('set-jam-cutoff-alpa').value || '12:20',
+      wajib_absen_dzuhur: document.getElementById('set-wajib-dzuhur').value,
+      wajib_absen_ashar: document.getElementById('set-wajib-ashar').value
     };
     Swal.fire({title:'Menyimpan...', didOpen:()=>{Swal.showLoading()}});
     google.script.run.withSuccessHandler(res => {
