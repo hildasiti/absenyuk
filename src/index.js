@@ -76,12 +76,16 @@ export default {
       // dilakukan DI DALAM cekDanKirimNotifikasiBelumAbsen(), bukan di cron - lihat
       // catatan lengkap soal ini di wrangler.toml).
       ctx.waitUntil(cekDanKirimNotifikasiBelumAbsen(env));
-    } else if (event.cron === '20 5 * * *') {
-      // 12:20 WIB - auto set Tanpa Keterangan (Absen Masuk)
+    } else if (event.cron === '20 5 * * *' || event.cron === '0 10 * * *') {
+      // 12:20 WIB & 17:00 WIB - auto set Tanpa Keterangan (Absen Masuk). Dipanggil
+      // 2x sehari karena beda sekolah bisa beda jam cutoff-nya sendiri
+      // (settings.jam_cutoff_alpa) - fungsinya sendiri yang menentukan sekolah mana
+      // yang sudah waktunya diproses di jam berapa (lihat catatan di wrangler.toml).
       ctx.waitUntil(autoSetTanpaKeterangan(env));
     } else if (event.cron === '0 14 * * *') {
       // 21:00 WIB - auto set "Tidak Absen" untuk Sholat Dzuhur & Ashar sekaligus
-      // (jam ini dipilih supaya kedua sesi sudah pasti lewat).
+      // (jam ini dipilih supaya kedua sesi sudah pasti lewat, termasuk untuk
+      // sekolah dgn jam masuk siang seperti MDT/DTA).
       ctx.waitUntil(autoSetTidakAbsenSholat(env));
     }
   }

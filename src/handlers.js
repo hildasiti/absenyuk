@@ -1114,7 +1114,7 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
  * lain), dan hasilnya bisa langsung dilihat kalau dipanggil manual dari Pengaturan.
  */
 export async function autoSetTanpaKeterangan(env) {
-  const { dateStr, dayOfWeek } = nowJakarta();
+  const { dateStr, dayOfWeek, timeStr } = nowJakarta();
   const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], gagalDetail: [], totalDitandaiAlpa: 0 };
 
   if (dayOfWeek === 0 || dayOfWeek === 6) {
@@ -1132,6 +1132,20 @@ export async function autoSetTanpaKeterangan(env) {
       if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
         console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin.`);
         ringkasan.sekolahDilewati.push(`${sekolahId} (auto alpa nonaktif)`);
+        continue;
+      }
+
+      // Jam batas auto-alpa BISA BEDA per sekolah (mis. MDT/DTA yang masuk siang hari,
+      // bukan pagi seperti sekolah reguler) - diatur lewat settings.jam_cutoff_alpa
+      // (default '12:20' kalau belum pernah diisi admin, supaya sekolah lama yang belum
+      // sempat set field ini tetap jalan seperti biasa). Fungsi ini dipanggil oleh 2 cron
+      // sekaligus (12:20 & 17:00 WIB - lihat wrangler.toml), tiap sekolah cuma benar-benar
+      // diproses begitu waktu SEKARANG sudah melewati jam batasnya sendiri. Aman dipanggil
+      // berkali-kali sehari untuk sekolah yang sama - begitu sekali berhasil ditandai,
+      // kandidatnya otomatis jadi 0 di pemanggilan berikutnya (sudah ada baris hari ini).
+      const jamCutoff = settings.jam_cutoff_alpa || '12:20';
+      if (timeStr < jamCutoff) {
+        ringkasan.sekolahDilewati.push(`${sekolahId} (belum lewat jam cutoff ${jamCutoff}, sekarang ${timeStr})`);
         continue;
       }
 
@@ -1234,7 +1248,7 @@ export async function autoSetTanpaKeterangan(env) {
  * form Pengaturan.
  */
 export async function autoSetTidakAbsenSholat(env) {
-  const JENIS_DICEK = ['SHOLAT_DZUHUR', 'SHOLAT_ASHAR'];
+  const SEMUA_JENIS = ['SHOLAT_DZUHUR', 'SHOLAT_ASHAR'];
   const { dateStr, dayOfWeek } = nowJakarta();
   const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], gagalDetail: [], totalDitandaiTidakAbsen: 0 };
 
@@ -1253,6 +1267,20 @@ export async function autoSetTidakAbsenSholat(env) {
       if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
         console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin, auto Tidak Absen Sholat dilewati.`);
         ringkasan.sekolahDilewati.push(`${sekolahId} (auto alpa nonaktif)`);
+        continue;
+      }
+
+      // Tidak semua sekolah punya jadwal Dzuhur/Ashar yang sama - mis. sekolah dengan
+      // jam masuk siang (DTA/MDT, mulai belajar setelah Dzuhur) tidak punya kewajiban
+      // Pendampingan Dzuhur sama sekali. Diatur lewat settings.wajib_absen_dzuhur /
+      // wajib_absen_ashar ('Aktif' default kalau belum pernah diisi admin, supaya
+      // sekolah lama yang belum sempat set field ini tetap jalan seperti biasa).
+      const JENIS_DICEK = SEMUA_JENIS.filter((jenis) => {
+        const key = jenis === 'SHOLAT_DZUHUR' ? 'wajib_absen_dzuhur' : 'wajib_absen_ashar';
+        return (settings[key] || 'Aktif') !== 'Nonaktif';
+      });
+      if (JENIS_DICEK.length === 0) {
+        ringkasan.sekolahDilewati.push(`${sekolahId} (Dzuhur & Ashar dinonaktifkan utk sekolah ini)`);
         continue;
       }
 
