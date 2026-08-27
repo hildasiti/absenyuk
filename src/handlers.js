@@ -242,7 +242,7 @@ async function saveAbsenMasuk(args, env) {
   try {
     await sbInsert(env, 'absen_masuk', {
       id: generateShortID('AB'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: user.nuptk, nama: user.nama,
-      jam: jamLaporStr, latitude: String(lat), longitude: String(lon), jarak: jarakMeter + ' m',
+      jam: jamLaporStr, latitude: String(lat), longitude: String(lon), jarak: jarakMeter,
       status: finalStatus, keterangan: keterangan || '-', maps_link: mapsLink
     });
   } catch (err) {
@@ -423,13 +423,13 @@ async function saveAbsenKegiatanKhusus(args, env) {
   }
 
   const jarakTercatat = (lat && lon && latKegiatan !== '' && lonKegiatan !== '')
-    ? String(Math.round(hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(latKegiatan), parseFloat(lonKegiatan))))
-    : '-';
+    ? Math.round(hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(latKegiatan), parseFloat(lonKegiatan)))
+    : null;
 
   await sbInsert(env, 'absen_kegiatan_khusus', {
     id: generateShortID('AK'), sekolah_id: sekolahId, tanggal_lapor: dateStr, waktu_lapor: jamLaporStr, nuptk: user.nuptk,
     nama: user.nama, nama_kegiatan: namaKegiatanStr, status_kehadiran: finalStatus,
-    catatan: catatan || '', latitude: lat || '-', longitude: lon || '-', jarak: jarakTercatat
+    catatan: catatan || '', latitude: lat || null, longitude: lon || null, jarak: jarakTercatat
   });
 
   return { success: true, message: `Absensi disimpan pada pukul ${jamLaporStr} WIB.` };
@@ -475,7 +475,7 @@ async function tutupAbsenKegiatan(args, env) {
         await sbInsert(env, 'absen_kegiatan_khusus', {
           id: generateShortID('AK'), sekolah_id: sekolahId, tanggal_lapor: tanggalKeg, waktu_lapor: jamSekarangStr, nuptk: userNuptk,
           nama: u.nama, nama_kegiatan: keg.nama, status_kehadiran: 'Tanpa Keterangan',
-          catatan: 'Tidak Absen (Absen Ditutup Admin)', latitude: '-', longitude: '-', jarak: '-'
+          catatan: 'Tidak Absen (Absen Ditutup Admin)', latitude: null, longitude: null, jarak: null
         });
         jumlahDitandai++;
       }
@@ -1115,7 +1115,7 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
  */
 export async function autoSetTanpaKeterangan(env) {
   const { dateStr, dayOfWeek } = nowJakarta();
-  const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], totalDitandaiAlpa: 0 };
+  const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], gagalDetail: [], totalDitandaiAlpa: 0 };
 
   if (dayOfWeek === 0 || dayOfWeek === 6) {
     console.log('[autoSetTanpaKeterangan] Akhir pekan, dilewati untuk semua sekolah.');
@@ -1148,10 +1148,11 @@ export async function autoSetTanpaKeterangan(env) {
       // Kumpulkan dulu semua baris yang perlu ditambahkan, baru kirim 1x lewat bulk
       // insert (bukan 1 request HTTP per guru) - supaya tidak menabrak limit
       // "Too many subrequests by single Worker invocation" di Cloudflare kalau
-      // jumlah guru banyak. NB: nilai jarak 'xx m' (placeholder lama) diganti '0 m' -
-      // format "<angka> m" ini yang valid untuk kolom jarak, sama seperti presensi
-      // normal (bukan teks bebas "xx m" yang bikin Supabase menolak dengan error
-      // "invalid input syntax for type numeric").
+      // jumlah guru banyak. NB: latitude/longitude/jarak dikirim null (bukan teks
+      // placeholder seperti '-' atau '0 m') - kolom-kolom ini bertipe numeric di
+      // Supabase (terbukti dari log error "invalid input syntax for type numeric"),
+      // jadi teks apapun selain angka murni akan selalu ditolak. null valid karena
+      // memang tidak ada GPS sungguhan untuk baris "Tanpa Keterangan" otomatis ini.
       let jumlahEligible = 0; // masuk kriteria role+status aktif (calon "wajib absen")
       const calonBaris = [];
       for (const u of users) {
@@ -1163,7 +1164,7 @@ export async function autoSetTanpaKeterangan(env) {
           if (!sudahAbsenHariIni.includes(userNuptk)) {
             calonBaris.push({
               id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
-              jam: '--:--', latitude: '-', longitude: '-', jarak: '0 m',
+              jam: '--:--', latitude: null, longitude: null, jarak: null,
               status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
             });
           }
@@ -1192,7 +1193,10 @@ export async function autoSetTanpaKeterangan(env) {
               await sbInsert(env, 'absen_masuk', baris);
               ditandaiDiSekolahIni++;
             } catch (err2) {
-              if (!String(err2.message).includes('duplicate key')) console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}):`, err2.message);
+              if (!String(err2.message).includes('duplicate key')) {
+                console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}):`, err2.message);
+                if (ringkasan.gagalDetail.length < 5) ringkasan.gagalDetail.push(`${sekolahId} (${baris.nuptk}): ${err2.message}`);
+              }
             }
           }
         }
@@ -1232,7 +1236,7 @@ export async function autoSetTanpaKeterangan(env) {
 export async function autoSetTidakAbsenSholat(env) {
   const JENIS_DICEK = ['SHOLAT_DZUHUR', 'SHOLAT_ASHAR'];
   const { dateStr, dayOfWeek } = nowJakarta();
-  const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], totalDitandaiTidakAbsen: 0 };
+  const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], gagalDetail: [], totalDitandaiTidakAbsen: 0 };
 
   if (dayOfWeek === 0 || dayOfWeek === 6) {
     console.log('[autoSetTidakAbsenSholat] Akhir pekan, dilewati untuk semua sekolah.');
@@ -1304,7 +1308,10 @@ export async function autoSetTidakAbsenSholat(env) {
               ditandaiDiSekolahIni++;
               if (berhasilPerJenis[baris.jenis_kegiatan] !== undefined) berhasilPerJenis[baris.jenis_kegiatan]++;
             } catch (err2) {
-              if (!String(err2.message).includes('duplicate key')) console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}, ${baris.jenis_kegiatan}):`, err2.message);
+              if (!String(err2.message).includes('duplicate key')) {
+                console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}, ${baris.jenis_kegiatan}):`, err2.message);
+                if (ringkasan.gagalDetail.length < 5) ringkasan.gagalDetail.push(`${sekolahId} (${baris.nuptk}, ${baris.jenis_kegiatan}): ${err2.message}`);
+              }
             }
           }
         }
