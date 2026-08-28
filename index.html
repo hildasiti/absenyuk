@@ -2486,11 +2486,13 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       data.sekolahId = CURRENT_SEKOLAH_ID;
     }
     google.script.run.withSuccessHandler(res => {
-        if (res) {
-          Swal.fire('Berhasil', 'Akun baru ditambahkan', 'success'); e.target.reset(); loadGuruList(); refreshDashboard();
+        if (res && res.success) {
+          Swal.fire('Berhasil', res.message || 'Akun baru ditambahkan', 'success'); e.target.reset(); loadGuruList(); refreshDashboard();
         } else {
-          Swal.fire('Gagal', 'Akun gagal ditambahkan. Periksa kembali data yang diisi.', 'error');
+          Swal.fire('Gagal', (res && res.message) || 'Akun gagal ditambahkan. Periksa kembali data yang diisi.', 'error');
         }
+    }).withFailureHandler(err => {
+        Swal.fire('Gagal', err.message || 'Terjadi kesalahan tak terduga. Coba lagi.', 'error');
     }).saveUser(SESSION_TOKEN, data);
   }
 
