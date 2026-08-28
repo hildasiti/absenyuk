@@ -95,7 +95,7 @@ KEGIATAN_IDENTIK.forEach((nama) => {
   };
 });
 
-const STATUS_ABSEN_VALID = ['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Tugas Luar', 'Tanpa Keterangan'];
+const STATUS_ABSEN_VALID = ['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Tugas Luar', 'Tanpa Keterangan', 'Cuti'];
 
 // ====================================================================
 // AUTH
@@ -956,7 +956,110 @@ async function saveCutiGuru(args, env) {
     status, keterangan: keterangan || '-', created_at: new Date().toISOString()
   });
   await invalidate(env, `CUTI_CACHE_${sekolahId}`);
-  return { success: true, message: `${status} untuk ${nama} berhasil dicatat.` };
+
+  // Backfill RETROAKTIF: supaya Laporan langsung menampilkan status Cuti/Sakit di
+  // rentang ini (bukan cuma "dikecualikan diam-diam" dari auto-alpa ke depan), dan
+  // supaya bisa mengakomodir cuti yang sudah berjalan SEBELUM dicatat di sini (mis.
+  // sudah cuti 2 minggu sebelum pindah ke aplikasi ini - tinggal catat sekali dengan
+  // tgl_mulai di masa lalu, sistem yang mengisi baris-baris hari kerja yang terlewat).
+  // Cuma hari kerja (Senin-Jumat) & bukan hari libur sekolah yang diisi. Baris yang
+  // SUDAH ADA dengan status kehadiran SUNGGUHAN (Hadir/Izin/dst) TIDAK ditimpa -
+  // cuma baris 'Tanpa Keterangan' yang salah (guru sebenarnya cuti/sakit, bukan
+  // alpa) yang dikoreksi jadi status yang benar.
+  const ringkasanBackfill = { absenMasukDitambah: 0, absenMasukDikoreksi: 0, sholatDitambah: 0 };
+  try {
+    const settings = await getSettingsMap(env, sekolahId);
+    const liburList = await getLiburListCached(env, sekolahId);
+    const tanggalKerja = [];
+    let cur = new Date(tglMulai + 'T00:00:00Z');
+    const end = new Date(tglSelesai + 'T00:00:00Z');
+    while (cur <= end) {
+      const dow = cur.getUTCDay();
+      const dTime = cur.getTime();
+      const dstr = cur.toISOString().slice(0, 10);
+      const isLibur = liburList.some((l) => dTime >= new Date(l.tgl_mulai).getTime() && dTime <= new Date(l.tgl_selesai).getTime());
+      if (dow !== 0 && dow !== 6 && !isLibur) tanggalKerja.push(dstr);
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    if (tanggalKerja.length > 0) {
+      // --- Absen Masuk ---
+      const existingAbsen = await sbSelect(env, 'absen_masuk',
+        `sekolah_id=eq.${sekolahId}&nuptk=eq.${encodeURIComponent(nuptk)}&tanggal=gte.${tglMulai}&tanggal=lte.${tglSelesai}`);
+      const existingAbsenMap = {};
+      existingAbsen.forEach((r) => { existingAbsenMap[r.tanggal] = r; });
+
+      const barisAbsenBaru = [];
+      for (const tgl of tanggalKerja) {
+        const existing = existingAbsenMap[tgl];
+        if (!existing) {
+          barisAbsenBaru.push({
+            id: generateShortID('AC'), sekolah_id: sekolahId, tanggal: tgl, nuptk, nama,
+            jam: '--:--', latitude: null, longitude: null, jarak: null,
+            status, keterangan: keterangan || status, maps_link: '-'
+          });
+        } else if (existing.status === 'Tanpa Keterangan') {
+          try {
+            await sbUpdate(env, 'absen_masuk', 'id', existing.id, { status, keterangan: keterangan || status });
+            ringkasanBackfill.absenMasukDikoreksi++;
+          } catch (e) { /* tidak fatal, lanjutkan tanggal lain */ }
+        }
+      }
+      if (barisAbsenBaru.length) {
+        try {
+          const hasil = await sbInsertMany(env, 'absen_masuk', barisAbsenBaru);
+          ringkasanBackfill.absenMasukDitambah = hasil.length;
+        } catch (e) {
+          for (const b of barisAbsenBaru) {
+            try { await sbInsert(env, 'absen_masuk', b); ringkasanBackfill.absenMasukDitambah++; } catch (e2) { /* skip */ }
+          }
+        }
+      }
+      await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
+
+      // --- Sholat Dzuhur/Ashar (kalau wajib di sekolah ini) ---
+      const jenisWajib = ['SHOLAT_DZUHUR', 'SHOLAT_ASHAR'].filter((j) => {
+        const key = j === 'SHOLAT_DZUHUR' ? 'wajib_absen_dzuhur' : 'wajib_absen_ashar';
+        return (settings[key] || 'Aktif') !== 'Nonaktif';
+      });
+      const barisSholatBaru = [];
+      for (const jenis of jenisWajib) {
+        const existingSholat = await sbSelect(env, 'kegiatan_umum',
+          `sekolah_id=eq.${sekolahId}&nuptk=eq.${encodeURIComponent(nuptk)}&jenis_kegiatan=eq.${jenis}&tanggal=gte.${tglMulai}&tanggal=lte.${tglSelesai}`);
+        const existingSet = new Set(existingSholat.map((r) => r.tanggal));
+        for (const tgl of tanggalKerja) {
+          if (!existingSet.has(tgl)) {
+            barisSholatBaru.push({
+              id: generateShortID('KC'), sekolah_id: sekolahId, jenis_kegiatan: jenis, tanggal: tgl,
+              nuptk, nama, kegiatan: jenis, status, catatan: keterangan || status, timestamp: new Date().toISOString()
+            });
+          }
+        }
+      }
+      if (barisSholatBaru.length) {
+        try {
+          const hasil = await sbInsertMany(env, 'kegiatan_umum', barisSholatBaru);
+          ringkasanBackfill.sholatDitambah = hasil.length;
+        } catch (e) {
+          for (const b of barisSholatBaru) {
+            try { await sbInsert(env, 'kegiatan_umum', b); ringkasanBackfill.sholatDitambah++; } catch (e2) { /* skip */ }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Backfill gagal (mis. error jaringan ke Supabase) TIDAK membatalkan catatan
+    // cuti_guru yang sudah tersimpan di atas - itu tetap jadi sumber kebenaran utama
+    // untuk pengecualian auto-alpa ke depan, backfill cuma pelengkap tampilan laporan.
+    console.error('[saveCutiGuru] Gagal backfill retroaktif:', err.message);
+  }
+
+  return {
+    success: true,
+    message: `${status} untuk ${nama} berhasil dicatat. `
+      + `Absen Masuk: ${ringkasanBackfill.absenMasukDitambah} hari ditambahkan, ${ringkasanBackfill.absenMasukDikoreksi} dikoreksi dari Tanpa Keterangan. `
+      + `Sholat: ${ringkasanBackfill.sholatDitambah} baris ditambahkan.`
+  };
 }
 
 async function getCutiList(args, env) {
