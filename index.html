@@ -488,6 +488,7 @@
           <p class='menu-section-label'>Menu Admin</p>
           <a class='menu-btn' href='#' id='sub-dashboard-admin' onclick='switchView(&apos;dashboard-admin&apos;)'><i class='bi bi-speedometer2 me-2'></i> Admin Panel</a>
           <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'></i> Kalender Libur</a>
+          <a class='menu-btn' href='#' id='sub-cuti-guru' onclick='switchView(&apos;cuti-guru&apos;)'><i class='bi bi-person-x-fill me-2'></i> Cuti / Sakit Guru</a>
           <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'></i> Kelola Kegiatan Khusus</a>
           <a class='menu-btn' href='#' id='sub-data-guru' onclick='switchView(&apos;data-guru&apos;)'><i class='bi bi-people me-2'></i> Data Guru</a>
           <a class='menu-btn' href='#' id='sub-jam-pelajaran' onclick='switchView(&apos;rekap-jam-pelajaran&apos;)'><i class='bi bi-journal-x me-2'></i> Rekap Jam Pelajaran</a>
@@ -1107,7 +1108,64 @@
   </div>
 </div>
 
-<!-- KELOLA KEGIATAN KHUSUS (ADMIN) -->
+<!-- CUTI / SAKIT GURU (ADMIN) -->
+<div class='content-section' id='cuti-guru' style='display: none;'>
+  <div class='card p-4 shadow-sm mb-4 border-0 border-start border-danger border-4'>
+    <h5 class='mb-3 text-secondary fw-bold'>Catat Cuti / Sakit Jangka Panjang</h5>
+    <p class='text-muted small mb-3'>Pengajuan tetap manual di luar sistem (lisan/surat) - form ini murni PENCATATAN oleh admin, bukan alur pengajuan/persetujuan. Selama rentang tanggal ini, guru terkait otomatis dikecualikan dari auto "Tanpa Keterangan" (Absen Masuk) dan auto "Tidak Absen" (Sholat Dzuhur/Ashar).</p>
+    <form class='row g-2' onsubmit='submitCutiGuru(event)'>
+      <div class='col-md-3'>
+        <label class='form-label text-muted small mb-1'>Guru</label>
+        <select class='form-select' id='cuti-guru-pilih' required='required'>
+          <option value=''>-- Pilih Guru --</option>
+        </select>
+      </div>
+      <div class='col-md-2'>
+        <label class='form-label text-muted small mb-1'>Status</label>
+        <select class='form-select' id='cuti-status' required='required'>
+          <option value='Cuti'>Cuti</option>
+          <option value='Sakit'>Sakit</option>
+        </select>
+      </div>
+      <div class='col-md-2'>
+        <label class='form-label text-muted small mb-1'>Mulai</label>
+        <input class='form-control' id='cuti-tanggal-mulai' required='required' type='date'/>
+      </div>
+      <div class='col-md-2'>
+        <label class='form-label text-muted small mb-1'>Selesai</label>
+        <input class='form-control' id='cuti-tanggal-selesai' required='required' type='date'/>
+      </div>
+      <div class='col-md-3'>
+        <label class='form-label text-muted small mb-1'>Keterangan (opsional)</label>
+        <input class='form-control' id='cuti-ket' placeholder='Contoh: Cuti melahirkan' type='text'/>
+      </div>
+      <div class='col-12 d-flex justify-content-end'>
+        <button class='btn btn-primary' type='submit'><i class='bi bi-calendar-plus'></i> Simpan Catatan</button>
+      </div>
+    </form>
+  </div>
+
+  <div class='card p-4 shadow-sm'>
+    <h5 class='text-secondary fw-bold mb-3'>Daftar Cuti / Sakit Guru</h5>
+    <div class='table-responsive'>
+      <table class='table table-hover align-middle text-center'>
+        <thead class='table-light'>
+          <tr>
+            <th width='5%'>No</th>
+            <th width='20%'>Nama Guru</th>
+            <th width='10%'>Status</th>
+            <th width='25%'>Rentang Tanggal</th>
+            <th class='text-start' width='25%'>Keterangan</th>
+            <th width='15%'>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id='tbody-cuti-guru'>
+          <tr><td class='text-center text-muted' colspan='6'>Memuat data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 <div class='content-section' id='kelola-kegiatan' style='display: none;'>
   <div class='card p-4 shadow-sm mb-4 border-0 border-start border-info border-4'>
     <h5 class='mb-3 text-secondary fw-bold'>Buat Jadwal Kegiatan Khusus Baru</h5>
@@ -1282,7 +1340,7 @@ var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
 var FUNGSI_BUTUH_SEKOLAH_ID = [
   'getDashboardData', 'getAbsenMasukUntukEdit', 'saveJadwalKegiatan', 'getJadwalKegiatan',
   'getSettingsData', 'saveSettingsData', 'getUsers', 'saveHariLibur', 'getLiburList',
-  'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
+  'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
   'getGuruMengajarList', 'getStafAktifUntukImpal'
 ];
 
@@ -1687,6 +1745,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       // Semua menu Admin tersedia, tapi WAJIB pilih sekolah dulu.
       document.getElementById('menu-admin').style.display = 'block';
       document.getElementById('sub-kalender-libur').style.display = 'block';
+      document.getElementById('sub-cuti-guru').style.display = 'block';
       document.getElementById('sub-kelola-kegiatan').style.display = 'block';
       document.getElementById('sub-data-guru').style.display = 'block';
       document.getElementById('sub-pengaturan').style.display = 'block';
@@ -1706,6 +1765,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('menu-admin').style.display = 'block';
       // Reset eksplisit semua submenu ke terlihat - jaga-jaga ada sisa state dari role lain di sesi yang sama
       document.getElementById('sub-kalender-libur').style.display = 'block';
+      document.getElementById('sub-cuti-guru').style.display = 'block';
       document.getElementById('sub-kelola-kegiatan').style.display = 'block';
       document.getElementById('sub-data-guru').style.display = 'block';
       document.getElementById('sub-pengaturan').style.display = 'block';
@@ -1720,6 +1780,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('menu-admin').style.display = 'block';
 
       document.getElementById('sub-kalender-libur').style.display = 'none';
+      document.getElementById('sub-cuti-guru').style.display = 'none';
       document.getElementById('sub-kelola-kegiatan').style.display = 'none';
       document.getElementById('sub-data-guru').style.display = 'none';
       document.getElementById('sub-pengaturan').style.display = 'none';
@@ -1862,6 +1923,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       'edit-absen': 'Edit Absen Masuk',
       'rekap-payroll': 'Rekapitulasi Absensi Pendidik (Payroll)',
       'kalender-libur': 'Aturan Kalender Libur Sekolah',
+      'cuti-guru': 'Cuti / Sakit Guru',
       'kelola-kegiatan': 'Kelola Kegiatan Khusus',
       'absen-kegiatan-khusus': 'Absen Kegiatan Khusus',
       'rekap-jam-pelajaran': 'Input Rekap Ketidakhadiran Jam Pelajaran'
@@ -1881,6 +1943,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'laporan') loadGuruForReport();
     if(id === 'edit-absen') initEditAbsenView();
     if(id === 'kalender-libur') loadLiburList();
+    if(id === 'cuti-guru') { loadCutiGuruList(); loadDropdownGuruUntukCuti(); }
     if(id === 'kelola-kegiatan') loadJadwalKegiatanList();
     if(id === 'absen-kegiatan-khusus') loadKegiatanDropdown();
     if(id === 'absen-kegiatan') { updateStatusOptionsAK(); checkLockKegiatan('ak'); }
@@ -3445,6 +3508,96 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         google.script.run.withSuccessHandler(res => {
           Swal.fire('Terhapus', res.message, 'success'); loadLiburList();
         }).deleteHariLibur(SESSION_TOKEN, row);
+      }
+    });
+  }
+
+  // ====================================================================
+  // CUTI / SAKIT GURU (input manual admin, murni pencatatan - bukan alur
+  // pengajuan/approval). Mirip pola Kalender Libur di atas, cuma per-guru.
+  // ====================================================================
+
+  function loadDropdownGuruUntukCuti() {
+    const sel = document.getElementById('cuti-guru-pilih');
+    if (!sel) return;
+    google.script.run.withSuccessHandler(list => {
+      // Sengaja pakai getStafAktifUntukImpal (SEMUA staf aktif, mengajar maupun
+      // tidak) - bukan getGuruMengajarList - karena cuti/sakit bisa kena siapa saja.
+      let opts = '<option value="">-- Pilih Guru --</option>';
+      list.forEach(u => {
+        const labelRole = (u.role && u.role !== 'GURU') ? ` (${String(u.role).replace('_', ' ')})` : '';
+        opts += `<option value="${u.nuptk}|${u.nama}">${u.nama}${labelRole}</option>`;
+      });
+      sel.innerHTML = opts;
+    }).getStafAktifUntukImpal(SESSION_TOKEN);
+  }
+
+  function submitCutiGuru(e) {
+    e.preventDefault();
+    const pilihan = document.getElementById('cuti-guru-pilih').value;
+    if (!pilihan) { Swal.fire('Guru Belum Dipilih', 'Pilih guru terlebih dahulu.', 'warning'); return; }
+    const [nuptk, nama] = pilihan.split('|');
+    const status = document.getElementById('cuti-status').value;
+    const tglMulai = document.getElementById('cuti-tanggal-mulai').value;
+    const tglSelesai = document.getElementById('cuti-tanggal-selesai').value;
+    const ket = document.getElementById('cuti-ket').value;
+
+    Swal.fire({title:'Menyimpan catatan...', allowOutsideClick:false, didOpen:()=>{Swal.showLoading()}});
+    google.script.run.withSuccessHandler(res => {
+      if(res.success) {
+        Swal.fire('Berhasil', res.message, 'success');
+        e.target.reset(); loadCutiGuruList();
+      } else {
+        Swal.fire('Gagal', res.message, 'error');
+      }
+    }).saveCutiGuru(SESSION_TOKEN, nuptk, nama, tglMulai, tglSelesai, status, ket);
+  }
+
+  function loadCutiGuruList() {
+    const tbody = document.getElementById('tbody-cuti-guru');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3"><div class="spinner-border text-danger spinner-border-sm"></div> Memuat data...</td></tr>';
+    google.script.run.withSuccessHandler(res => {
+      let html = '';
+      if(res.length === 0) {
+        html = '<tr><td colspan="6" class="text-center text-muted py-3">Belum ada catatan cuti/sakit.</td></tr>';
+      } else {
+        const hariIni = new Date().toISOString().slice(0, 10);
+        res.forEach((c, index) => {
+          const sedangBerlaku = hariIni >= c.tglMulai && hariIni <= c.tglSelesai;
+          const badgeStatus = c.status === 'Sakit' ? 'bg-warning text-dark' : 'bg-info text-dark';
+          html += `
+            <tr class="${sedangBerlaku ? 'table-warning' : ''}">
+              <td>${index + 1}</td>
+              <td class="text-start">${c.nama}${sedangBerlaku ? ' <span class="badge bg-danger">Sedang berlaku</span>' : ''}</td>
+              <td><span class="badge ${badgeStatus}">${c.status}</span></td>
+              <td><span class="badge bg-secondary">${c.tglMulai}</span> s.d. <span class="badge bg-secondary">${c.tglSelesai}</span></td>
+              <td class="text-start">${c.keterangan || '-'}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger" onclick="hapusCutiGuru('${c.row}')">
+                  <i class="bi bi-trash"></i> Hapus
+                </button>
+              </td>
+            </tr>
+          `;
+        });
+      }
+      tbody.innerHTML = html;
+    }).getCutiList(SESSION_TOKEN);
+  }
+
+  function hapusCutiGuru(row) {
+    Swal.fire({
+      title: 'Hapus Catatan Ini?',
+      text: 'Guru ybs akan kembali normal kena auto Tanpa Keterangan/Tidak Absen seperti biasa untuk rentang tanggal ini.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      confirmButtonText: 'Ya, Hapus'
+    }).then(result => {
+      if(result.isConfirmed) {
+        google.script.run.withSuccessHandler(res => {
+          Swal.fire('Terhapus', res.message, 'success'); loadCutiGuruList();
+        }).deleteCutiGuru(SESSION_TOKEN, row);
       }
     });
   }
