@@ -905,6 +905,92 @@ async function deleteHariLibur(args, env) {
 }
 
 // ====================================================================
+// CUTI / SAKIT GURU (jangka panjang, input manual admin - bukan alur
+// pengajuan+approval, cukup pencatatan) - selama rentang tanggal ini,
+// guru ybs DIKECUALIKAN dari auto "Tanpa Keterangan" (Absen Masuk) dan
+// auto "Tidak Absen" (Sholat Dzuhur/Ashar). Lihat pemakaiannya di
+// getGuruCutiAktifHariIni(), dipanggil dari autoSetTanpaKeterangan() dan
+// autoSetTidakAbsenSholat().
+// ====================================================================
+
+const STATUS_CUTI_VALID = ['Cuti', 'Sakit'];
+
+async function getCutiGuruCached(env, sekolahId) {
+  return cached(env, `CUTI_CACHE_${sekolahId}`, 300, () => sbSelect(env, 'cuti_guru', `sekolah_id=eq.${sekolahId}`));
+}
+
+/**
+ * Return map { nuptk: 'Cuti'|'Sakit' } untuk guru yang rentang cutinya mencakup
+ * tanggal target - dipakai fungsi otomasi untuk skip guru ybs, BUKAN untuk
+ * ditampilkan di UI (untuk itu pakai getCutiList).
+ */
+async function getGuruCutiAktifHariIni(env, sekolahId, targetDateStr) {
+  const daftarCuti = await getCutiGuruCached(env, sekolahId);
+  const targetTime = new Date(targetDateStr).getTime();
+  const map = {};
+  daftarCuti.forEach((c) => {
+    const startTime = new Date(c.tgl_mulai).getTime();
+    const endTime = new Date(c.tgl_selesai).getTime();
+    if (targetTime >= startTime && targetTime <= endTime) {
+      map[String(c.nuptk).trim()] = c.status;
+    }
+  });
+  return map;
+}
+
+async function saveCutiGuru(args, env) {
+  const [token, nuptk, nama, tglMulai, tglSelesai, status, keterangan, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+
+  if (!nuptk) return { success: false, message: 'Guru wajib dipilih.' };
+  if (!STATUS_CUTI_VALID.includes(status)) return { success: false, message: 'Status tidak dikenal: ' + status };
+  if (new Date(tglMulai) > new Date(tglSelesai)) {
+    return { success: false, message: 'Tanggal mulai tidak boleh melebihi tanggal selesai.' };
+  }
+
+  const id = generateShortID('C');
+  await sbInsert(env, 'cuti_guru', {
+    id, sekolah_id: sekolahId, nuptk, nama, tgl_mulai: tglMulai, tgl_selesai: tglSelesai,
+    status, keterangan: keterangan || '-', created_at: new Date().toISOString()
+  });
+  await invalidate(env, `CUTI_CACHE_${sekolahId}`);
+  return { success: true, message: `${status} untuk ${nama} berhasil dicatat.` };
+}
+
+async function getCutiList(args, env) {
+  const [token, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  const result = await getCutiGuruCached(env, sekolahId);
+  return result
+    .sort((a, b) => (a.tgl_mulai < b.tgl_mulai ? 1 : -1)) // terbaru dulu
+    .map((c) => ({
+      id: c.id, nuptk: c.nuptk, nama: c.nama, tglMulai: c.tgl_mulai, tglSelesai: c.tgl_selesai,
+      status: c.status, keterangan: c.keterangan, row: c.id
+    }));
+}
+
+async function deleteCutiGuru(args, env) {
+  const [token, idAtauRow] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+
+  const rows = await sbSelect(env, 'cuti_guru', `id=eq.${encodeURIComponent(String(idAtauRow).trim())}&limit=1`);
+  const target = rows[0];
+  if (!target) return { success: false, message: 'Data cuti tidak ditemukan.' };
+  if (user.role !== 'ADMIN_UTAMA' && target.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Data ini bukan milik sekolah Anda.' };
+  }
+
+  await sbDelete(env, 'cuti_guru', 'id', String(idAtauRow).trim());
+  await invalidate(env, `CUTI_CACHE_${target.sekolah_id}`);
+  return { success: true, message: 'Catatan cuti/sakit berhasil dihapus.' };
+}
+
+// ====================================================================
 // LAPORAN / PAYROLL
 // ====================================================================
 
@@ -1180,6 +1266,10 @@ export async function autoSetTanpaKeterangan(env) {
       const users = await getUsersListCached(env, sekolahId);
       const absenHariIni = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
       const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
+      // Guru yang sedang dalam rentang Cuti/Sakit (dicatat manual admin lewat menu
+      // Cuti/Sakit Guru) DIKECUALIKAN dari auto Tanpa Keterangan - lihat
+      // getGuruCutiAktifHariIni().
+      const guruCutiMap = await getGuruCutiAktifHariIni(env, sekolahId, dateStr);
 
       // Kumpulkan dulu semua baris yang perlu ditambahkan, baru kirim 1x lewat bulk
       // insert (bukan 1 request HTTP per guru) - supaya tidak menabrak limit
@@ -1190,6 +1280,7 @@ export async function autoSetTanpaKeterangan(env) {
       // jadi teks apapun selain angka murni akan selalu ditolak. null valid karena
       // memang tidak ada GPS sungguhan untuk baris "Tanpa Keterangan" otomatis ini.
       let jumlahEligible = 0; // masuk kriteria role+status aktif (calon "wajib absen")
+      let jumlahSedangCuti = 0;
       const calonBaris = [];
       for (const u of users) {
         const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
@@ -1197,6 +1288,10 @@ export async function autoSetTanpaKeterangan(env) {
 
         if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
           jumlahEligible++;
+          if (guruCutiMap[userNuptk]) {
+            jumlahSedangCuti++;
+            continue;
+          }
           if (!sudahAbsenHariIni.includes(userNuptk)) {
             calonBaris.push({
               id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
@@ -1210,8 +1305,9 @@ export async function autoSetTanpaKeterangan(env) {
       // kalau "Total ditandai" ternyata 0 padahal harusnya tidak, bisa langsung
       // ketahuan di tahap mana penyebabnya tanpa perlu buka log Cloudflare:
       // total user di tabel 'users' utk sekolah ini, berapa yang lolos filter
-      // role+status Aktif, dan berapa yang sistem anggap sudah absen hari ini.
-      const debugInfo = `total user: ${users.length}, eligible (role+aktif): ${jumlahEligible}, sudah ada baris hari ini: ${sudahAbsenHariIni.length}`;
+      // role+status Aktif, berapa yang sedang cuti/sakit (dikecualikan), dan berapa
+      // yang sistem anggap sudah absen hari ini.
+      const debugInfo = `total user: ${users.length}, eligible (role+aktif): ${jumlahEligible}, sedang cuti/sakit: ${jumlahSedangCuti}, sudah ada baris hari ini: ${sudahAbsenHariIni.length}`;
 
       let ditandaiDiSekolahIni = 0;
       if (calonBaris.length) {
@@ -1313,6 +1409,9 @@ export async function autoSetTidakAbsenSholat(env) {
       }
 
       const users = await getUsersListCached(env, sekolahId);
+      // Guru yang sedang dalam rentang Cuti/Sakit (dicatat manual admin lewat menu
+      // Cuti/Sakit Guru) DIKECUALIKAN dari auto Tidak Absen Sholat juga.
+      const guruCutiMap = await getGuruCutiAktifHariIni(env, sekolahId, dateStr);
 
       // Kumpulkan dulu SEMUA baris yang perlu ditambahkan (Dzuhur + Ashar sekaligus,
       // lintas semua guru) baru kirim lewat bulk insert 1x per sekolah - bukan 1
@@ -1328,6 +1427,7 @@ export async function autoSetTidakAbsenSholat(env) {
           const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
 
           if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
+            if (guruCutiMap[userNuptk]) continue;
             if (!sudahAbsenNuptk.includes(userNuptk)) {
               calonBaris.push({
                 id: generateShortID('KO'), sekolah_id: sekolahId, jenis_kegiatan: jenisKegiatan, tanggal: dateStr,
@@ -1457,6 +1557,9 @@ export const handlers = {
   saveHariLibur,
   getLiburList,
   deleteHariLibur,
+  saveCutiGuru,
+  getCutiList,
+  deleteCutiGuru,
   getPayrollReport,
   getReport,
   getRekapJamPelajaranSendiri,
