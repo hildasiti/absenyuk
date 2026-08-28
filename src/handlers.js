@@ -732,30 +732,46 @@ async function getUsers(args, env) {
 async function saveUser(args, env) {
   const [token, userData] = args;
   const user = await requireUser(env, token);
-  if (!isAdminAny(user)) return false;
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
 
   // Cuma Admin Utama yang boleh bikin akun ADMIN_SEKOLAH baru.
-  if (userData.role === 'ADMIN_SEKOLAH' && user.role !== 'ADMIN_UTAMA') return false;
-  if (userData.role === 'ADMIN_UTAMA') return false; // tidak ada UI untuk ini, sengaja diblokir dari sisi backend juga
+  if (userData.role === 'ADMIN_SEKOLAH' && user.role !== 'ADMIN_UTAMA') {
+    return { success: false, message: 'Akses ditolak. Hanya Admin Utama yang bisa membuat akun Admin Sekolah.' };
+  }
+  if (userData.role === 'ADMIN_UTAMA') return { success: false, message: 'Akses ditolak.' }; // tidak ada UI untuk ini, sengaja diblokir dari sisi backend juga
 
   // Admin Sekolah: user baru otomatis masuk sekolahnya sendiri.
   // Admin Utama: WAJIB sertakan userData.sekolahId (pilih dari dropdown sekolah di form).
   let sekolahId;
   if (user.role === 'ADMIN_UTAMA') {
-    if (!userData.sekolahId) return false;
+    if (!userData.sekolahId) return { success: false, message: 'Pilih sekolah dulu sebelum menambah akun.' };
     sekolahId = userData.sekolahId;
   } else {
     sekolahId = user.sekolahId;
   }
 
   const nuptk = String(userData.nuptk).trim();
-  await sbInsert(env, 'users', {
-    nuptk, sekolah_id: sekolahId, legacy_id: generateShortID('U'), nama: userData.nama, email: userData.email,
-    password: userData.password, role: userData.role, status: 'Aktif',
-    created_at: new Date().toISOString(), kategori: userData.kategori || 'Mengajar'
-  });
+  if (!nuptk) return { success: false, message: 'NUPTK/Username tidak boleh kosong.' };
+
+  try {
+    await sbInsert(env, 'users', {
+      nuptk, sekolah_id: sekolahId, legacy_id: generateShortID('U'), nama: userData.nama, email: userData.email,
+      password: userData.password, role: userData.role, status: 'Aktif',
+      created_at: new Date().toISOString(), kategori: userData.kategori || 'Mengajar'
+    });
+  } catch (err) {
+    // NUPTK/Username adalah primary key GLOBAL (dipakai bersama di semua sekolah,
+    // sesuai kesepakatan awal multi-tenant) - jadi tabrakan bisa terjadi walau
+    // guru yang namanya sama itu ada di SEKOLAH LAIN, bukan cuma di sekolah sendiri.
+    // Duplicate key dari Postgres/PostgREST selalu mengandung teks ini di pesannya.
+    if (String(err.message).includes('duplicate key')) {
+      return { success: false, message: `NUPTK/Username "${nuptk}" sudah dipakai (kemungkinan oleh guru di sekolah lain, karena NUPTK/Username harus unik di seluruh sistem). Gunakan NUPTK/Username lain, misalnya tambahkan inisial sekolah di belakangnya.` };
+    }
+    throw err; // error lain yang tak terduga tetap dilempar apa adanya, biar kelihatan di log
+  }
+
   await invalidate(env, `USERS_CACHE_${sekolahId}`);
-  return true;
+  return { success: true, message: 'Akun baru berhasil ditambahkan.' };
 }
 
 async function updateUser(args, env) {
