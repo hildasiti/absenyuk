@@ -2758,7 +2758,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   }
 
   function bukaEditAbsenModal(row) {
-    const statusOptions = ['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Tugas Luar', 'Tanpa Keterangan'];
+    const statusOptions = ['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Tugas Luar', 'Cuti', 'Tanpa Keterangan'];
     let optionsHtml = statusOptions.map(s => `<option value="${s}" ${s === row.status ? 'selected' : ''}>${s}</option>`).join('');
 
     Swal.fire({
@@ -2825,6 +2825,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       { key: 'Sakit', icon: 'bi-plus-circle-fill', color: 'info' },
       { key: 'Izin', icon: 'bi-info-circle-fill', color: 'secondary' },
       { key: 'Tugas Luar', icon: 'bi-briefcase-fill', color: 'primary' },
+      { key: 'Cuti', icon: 'bi-airplane-fill', color: 'dark' },
       { key: 'Tanpa Keterangan', icon: 'bi-x-circle-fill', color: 'danger' }
     ];
     let cardsHtml = items.map(function(it) {
@@ -2869,7 +2870,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       headHtml += '</tr>';
       document.getElementById('tr-head').innerHTML = headHtml;
       
-      let counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Tanpa Keterangan': 0 };
+      let counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Cuti': 0, 'Tanpa Keterangan': 0 };
       let totalData = res.data ? res.data.length : 0;
       
       const jumlahKolomAktif = res.headers.filter(h => !kolomDilarang.includes(h.toLowerCase())).length + 1;
@@ -2939,7 +2940,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       let customHeaders = ["No."].concat(LAST_REPORT_DATA.headers);
       excelRows.push(customHeaders);
       
-      let counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Tanpa Keterangan': 0 };
+      let counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Cuti': 0, 'Tanpa Keterangan': 0 };
 
       LAST_REPORT_DATA.data.forEach((row, idx) => {
         let rowValues = [idx + 1];
@@ -3012,7 +3013,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       const tanggalAkhir = document.getElementById('rep-end').value;
 
       let judulRekap = (filterGuruValue === 'ALL') ? `Rekap "${namaKategoriSelected}" - Semua Guru` : `Rekap "${namaKategoriSelected}" - Guru: ${namaGuruSelected}`;
-      let counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Tanpa Keterangan': 0 };
+      let counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Cuti': 0, 'Tanpa Keterangan': 0 };
       
       LAST_REPORT_DATA.data.forEach(row => {
         let statusRaw = row['Status'] || row['Status Kehadiran'] || row['STATUS'] || '';
