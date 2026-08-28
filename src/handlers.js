@@ -820,7 +820,10 @@ async function getGuruMengajarList(args, env) {
   if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
   const result = await getUsersListCached(env, sekolahId);
-  return result.filter((u) => (u.kategori || 'Mengajar') === 'Mengajar' && !['ADMIN_SEKOLAH', 'ADMIN_UTAMA'].includes(String(u.role).trim()))
+  // ADMIN_UTAMA dikecualikan (bukan staf spesifik 1 sekolah), tapi ADMIN_SEKOLAH TETAP
+  // disertakan kalau kategori-nya Mengajar - admin sekolah bisa saja juga punya jadwal
+  // mengajar sendiri, jadi wajar muncul di daftar "guru tidak hadir" jam pelajaran.
+  return result.filter((u) => (u.kategori || 'Mengajar') === 'Mengajar' && String(u.role).trim() !== 'ADMIN_UTAMA')
     .map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, status: u.status, role: u.role, row: u.nuptk }));
 }
 
@@ -850,7 +853,10 @@ async function getStafAktifUntukImpal(args, env) {
   if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
   const users = await getUsersListCached(env, sekolahId);
-  return users.filter((u) => String(u.status).trim() === 'Aktif' && !['ADMIN_SEKOLAH', 'ADMIN_UTAMA'].includes(String(u.role).trim()))
+  // Daftar impal/pengganti sengaja mencakup SEMUA staf aktif (mengajar maupun tidak
+  // mengajar) - termasuk ADMIN_SEKOLAH, karena siapapun bisa diminta jadi pengganti
+  // dadakan. Cuma ADMIN_UTAMA yang dikecualikan (bukan staf spesifik 1 sekolah).
+  return users.filter((u) => String(u.status).trim() === 'Aktif' && String(u.role).trim() !== 'ADMIN_UTAMA')
     .map((u) => ({ nuptk: u.nuptk, nama: u.nama, role: u.role, kategori: u.kategori || 'Mengajar' }));
 }
 
