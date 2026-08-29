@@ -481,6 +481,7 @@
           <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan&apos;)'><i class='bi bi-calendar-event me-2'></i> Kegiatan Sekolah</a>
           <a class='menu-btn' href='#' onclick='switchView(&apos;absen-pesantren&apos;)'><i class='bi bi-book me-2'></i> Kegiatan Pesantren</a>
           <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan-khusus&apos;)'><i class='bi bi-ui-checks me-2'></i> Absen Kegiatan Khusus</a>
+          <a class='menu-btn' href='#' id='sub-ganti-password' style='display:none;' onclick='switchView(&apos;ganti-password&apos;)'><i class='bi bi-key-fill me-2'></i> Ganti Password</a>
         </div>
 
         <div id='menu-admin' style='display: none;'>
@@ -689,6 +690,31 @@
       </div>
       <button class='btn btn-primary w-100 fw-bold shadow-sm' style='background-color: var(--primary-color);' type='submit'>
         <i class='bi bi-send-check-fill me-2'></i> Kirim Presensi Kegiatan Khusus
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- GANTI PASSWORD (GURU/KEPALA_SEKOLAH/PIKET) -->
+<div class='content-section' id='ganti-password' style='display: none;'>
+  <div class='card p-4 shadow-sm border-0 border-start border-primary border-4' style='max-width: 480px;'>
+    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-key-fill text-primary'></i> Ganti Password</h5>
+    <form id='form-ganti-password' onsubmit='submitGantiPassword(event)'>
+      <div class='mb-3'>
+        <label class='form-label fw-semibold'>Password Saat Ini</label>
+        <input class='form-control' id='gp-password-lama' required='required' type='password'/>
+      </div>
+      <div class='mb-3'>
+        <label class='form-label fw-semibold'>Password Baru</label>
+        <input class='form-control' id='gp-password-baru-1' minlength='6' required='required' type='password'/>
+        <small class='text-muted'>Minimal 6 karakter.</small>
+      </div>
+      <div class='mb-3'>
+        <label class='form-label fw-semibold'>Konfirmasi Password Baru</label>
+        <input class='form-control' id='gp-password-baru-2' minlength='6' required='required' type='password'/>
+      </div>
+      <button class='btn btn-primary w-100 fw-bold shadow-sm' style='background-color: var(--primary-color);' type='submit'>
+        <i class='bi bi-check-circle-fill me-2'></i> Simpan Password Baru
       </button>
     </form>
   </div>
@@ -1763,6 +1789,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       // seperti guru - BUKAN akun terpisah yang cuma bisa mengelola.
       document.getElementById('menu-guru').style.display = 'block';
       document.getElementById('menu-admin').style.display = 'block';
+      // Ganti Password sengaja TIDAK tersedia untuk Admin Sekolah (juga Admin Utama,
+      // yang bahkan tidak menampilkan menu-guru sama sekali) - request ganti password
+      // mereka tetap lewat jalur manual di luar aplikasi.
+      document.getElementById('sub-ganti-password').style.display = 'none';
       // Reset eksplisit semua submenu ke terlihat - jaga-jaga ada sisa state dari role lain di sesi yang sama
       document.getElementById('sub-kalender-libur').style.display = 'block';
       document.getElementById('sub-cuti-guru').style.display = 'block';
@@ -1778,6 +1808,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       // Piket & Kepala Sekolah: bisa absen seperti guru, DAN dapat akses terbatas Admin Panel
       document.getElementById('menu-guru').style.display = 'block';
       document.getElementById('menu-admin').style.display = 'block';
+      document.getElementById('sub-ganti-password').style.display = 'block';
 
       document.getElementById('sub-kalender-libur').style.display = 'none';
       document.getElementById('sub-cuti-guru').style.display = 'none';
@@ -1797,6 +1828,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       switchView('absen-masuk'); // halaman pertama = Absen Masuk, bukan Dashboard
     } else {
       document.getElementById('menu-guru').style.display = 'block';
+      document.getElementById('sub-ganti-password').style.display = 'block';
       switchView('absen-masuk'); // halaman pertama = Absen Masuk, bukan Dashboard
     }
     // Tetap sinkron data dashboard di latar belakang (dibutuhkan untuk kunci status
@@ -1832,6 +1864,35 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         }
       }
     });
+  }
+
+  function submitGantiPassword(e) {
+    e.preventDefault();
+    const passwordLama = document.getElementById('gp-password-lama').value;
+    const passwordBaru1 = document.getElementById('gp-password-baru-1').value;
+    const passwordBaru2 = document.getElementById('gp-password-baru-2').value;
+
+    // Validasi kecocokan password baru dicek DULU di frontend supaya user langsung
+    // dapat feedback instan tanpa nunggu roundtrip ke server - backend TETAP
+    // memvalidasi ulang semua ini juga (jangan pernah percaya validasi frontend saja).
+    if (passwordBaru1 !== passwordBaru2) {
+      Swal.fire('Password Belum Sesuai', 'Password baru dan konfirmasi password baru tidak sama. Silakan periksa kembali.', 'warning');
+      return;
+    }
+    if (passwordBaru1.length < 6) {
+      Swal.fire('Password Terlalu Pendek', 'Password baru minimal 6 karakter.', 'warning');
+      return;
+    }
+
+    Swal.fire({title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+    google.script.run.withSuccessHandler(res => {
+      if (res.success) {
+        Swal.fire('Berhasil', res.message, 'success');
+        document.getElementById('form-ganti-password').reset();
+      } else {
+        Swal.fire('Gagal', res.message, 'error');
+      }
+    }).changePassword(SESSION_TOKEN, passwordLama, passwordBaru1, passwordBaru2);
   }
 
   function prosesResetTampilan() {
@@ -1924,6 +1985,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       'rekap-payroll': 'Rekapitulasi Absensi Pendidik (Payroll)',
       'kalender-libur': 'Aturan Kalender Libur Sekolah',
       'cuti-guru': 'Cuti / Sakit Guru',
+      'ganti-password': 'Ganti Password',
       'kelola-kegiatan': 'Kelola Kegiatan Khusus',
       'absen-kegiatan-khusus': 'Absen Kegiatan Khusus',
       'rekap-jam-pelajaran': 'Input Rekap Ketidakhadiran Jam Pelajaran'
