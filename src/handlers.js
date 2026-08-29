@@ -44,6 +44,23 @@ function resolveSekolahId(user, requestedSekolahId) {
   return user.sekolahId;
 }
 
+/**
+ * Cek apakah suatu hari (0=Minggu...6=Sabtu, sama seperti dayOfWeek dari nowJakarta())
+ * adalah hari libur MINGGUAN RUTIN untuk sekolah ybs - BUKAN hari libur nasional/khusus
+ * (itu urusan checkApakahHariLibur() di libur.js, tanggal spesifik).
+ *
+ * Diatur lewat settings.hari_libur_mingguan (string angka dipisah koma, mis. "0,6").
+ * Default "0,6" (Minggu+Sabtu) kalau admin belum pernah mengisi field ini - supaya
+ * sekolah reguler (SDIT dkk) yang sudah ada dari awal tetap jalan seperti biasa tanpa
+ * perlu setting apa-apa. Sekolah dengan pola beda (mis. MDT/DTA yang cuma libur Ahad)
+ * tinggal isi "0" saja di menu Pengaturan.
+ */
+function isHariLiburMingguan(settings, dayOfWeek) {
+  const raw = String(settings.hari_libur_mingguan || '0,6').trim();
+  const hariLiburSet = raw.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+  return hariLiburSet.includes(dayOfWeek);
+}
+
 async function getUsersListCached(env, sekolahId) {
   return cached(env, `USERS_CACHE_${sekolahId}`, 180, () => sbSelect(env, 'users', `sekolah_id=eq.${sekolahId}`));
 }
@@ -234,9 +251,10 @@ async function saveAbsenMasuk(args, env) {
   const sekolahId = user.sekolahId; // absen selalu untuk sekolah sendiri, tidak ada skenario admin utama absen
 
   const { dateStr, timeStr: jamLaporStr, dayOfWeek } = nowJakarta();
+  const settings = await getSettingsMap(env, sekolahId);
 
   let statusLiburSistem = '';
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
+  if (isHariLiburMingguan(settings, dayOfWeek)) {
     statusLiburSistem = 'Libur Akhir Pekan';
   } else {
     const namaLiburNasional = await checkApakahHariLibur(env, sekolahId, dateStr);
@@ -255,7 +273,6 @@ async function saveAbsenMasuk(args, env) {
     return { success: false, message: 'Gagal memverifikasi koordinat GPS. Pastikan izin lokasi aktif.' };
   }
 
-  const settings = await getSettingsMap(env, sekolahId);
   let finalStatus = status;
   const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
   const jarakMeter = hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(settings.lat_sekolah), parseFloat(settings.long_sekolah));
@@ -632,7 +649,8 @@ async function getDashboardData(args, env) {
   };
 
   let apakahHariLibur = false;
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
+  const settingsDash = await getSettingsMap(env, sekolahId);
+  if (isHariLiburMingguan(settingsDash, dayOfWeek)) {
     data.todayStatus = 'Libur Akhir Pekan'; apakahHariLibur = true;
   } else {
     const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
@@ -1016,7 +1034,7 @@ async function saveCutiGuru(args, env) {
       const dTime = cur.getTime();
       const dstr = cur.toISOString().slice(0, 10);
       const isLibur = liburList.some((l) => dTime >= new Date(l.tgl_mulai).getTime() && dTime <= new Date(l.tgl_selesai).getTime());
-      if (dow !== 0 && dow !== 6 && !isLibur) tanggalKerja.push(dstr);
+      if (!isHariLiburMingguan(settings, dow) && !isLibur) tanggalKerja.push(dstr);
       cur.setUTCDate(cur.getUTCDate() + 1);
     }
 
@@ -1315,15 +1333,16 @@ async function simpanTokenFCM(args, env) {
 /** Dipanggil dari Cron Trigger (07:20 WIB). Jalan untuk SEMUA sekolah sekaligus. */
 export async function cekDanKirimNotifikasiBelumAbsen(env) {
   const { dateStr, dayOfWeek } = nowJakarta();
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    console.log('Akhir pekan, sistem libur.');
-    return;
-  }
 
   const daftarSekolah = await sbSelect(env, 'sekolah', "status=eq.Aktif");
 
   for (const sekolah of daftarSekolah) {
     const sekolahId = sekolah.id;
+    const settings = await getSettingsMap(env, sekolahId);
+    if (isHariLiburMingguan(settings, dayOfWeek)) {
+      console.log(`[${sekolahId}] Hari libur mingguan sekolah ini. Notifikasi dibatalkan.`);
+      continue;
+    }
     const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
     if (statusLibur) {
       console.log(`[${sekolahId}] Hari ini libur: ${statusLibur}. Notifikasi dibatalkan.`);
@@ -1366,11 +1385,6 @@ export async function autoSetTanpaKeterangan(env) {
   const { dateStr, dayOfWeek, timeStr } = nowJakarta();
   const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], gagalDetail: [], totalDitandaiAlpa: 0 };
 
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    console.log('[autoSetTanpaKeterangan] Akhir pekan, dilewati untuk semua sekolah.');
-    return ringkasan;
-  }
-
   const daftarSekolah = await sbSelect(env, 'sekolah', "status=eq.Aktif");
   console.log(`[autoSetTanpaKeterangan] Ditemukan ${daftarSekolah.length} sekolah berstatus Aktif untuk diproses (tanggal ${dateStr}).`);
 
@@ -1381,6 +1395,13 @@ export async function autoSetTanpaKeterangan(env) {
       if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
         console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin.`);
         ringkasan.sekolahDilewati.push(`${sekolahId} (auto alpa nonaktif)`);
+        continue;
+      }
+
+      // Hari libur MINGGUAN bisa beda per sekolah (mis. MDT/DTA cuma libur Ahad,
+      // bukan Sabtu+Ahad seperti sekolah reguler) - lihat isHariLiburMingguan().
+      if (isHariLiburMingguan(settings, dayOfWeek)) {
+        ringkasan.sekolahDilewati.push(`${sekolahId} (hari libur mingguan sekolah ini)`);
         continue;
       }
 
@@ -1511,11 +1532,6 @@ export async function autoSetTidakAbsenSholat(env) {
   const { dateStr, dayOfWeek } = nowJakarta();
   const ringkasan = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], gagalDetail: [], totalDitandaiTidakAbsen: 0 };
 
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    console.log('[autoSetTidakAbsenSholat] Akhir pekan, dilewati untuk semua sekolah.');
-    return ringkasan;
-  }
-
   const daftarSekolah = await sbSelect(env, 'sekolah', "status=eq.Aktif");
   console.log(`[autoSetTidakAbsenSholat] Ditemukan ${daftarSekolah.length} sekolah berstatus Aktif untuk diproses (tanggal ${dateStr}).`);
 
@@ -1526,6 +1542,13 @@ export async function autoSetTidakAbsenSholat(env) {
       if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
         console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin, auto Tidak Absen Sholat dilewati.`);
         ringkasan.sekolahDilewati.push(`${sekolahId} (auto alpa nonaktif)`);
+        continue;
+      }
+
+      // Hari libur MINGGUAN bisa beda per sekolah (mis. MDT/DTA cuma libur Ahad) -
+      // lihat isHariLiburMingguan().
+      if (isHariLiburMingguan(settings, dayOfWeek)) {
+        ringkasan.sekolahDilewati.push(`${sekolahId} (hari libur mingguan sekolah ini)`);
         continue;
       }
 
