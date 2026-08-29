@@ -1201,6 +1201,24 @@ async function getReport(args, env) {
   if (config.jenisKegiatan) query += `&jenis_kegiatan=eq.${config.jenisKegiatan}`;
   const rows = await sbSelect(env, config.table, query);
 
+  // Laporan Absen Masuk: guru yang pilih "Hadir & Tawasul" tersimpan di absen_masuk
+  // dengan status biasa (Hadir/Terlambat) TANPA jejak "Tawasul" apapun di kolom
+  // manapun di tabel itu - supaya rekap payroll tidak perlu tahu soal ini sama
+  // sekali (lihat saveAbsenMasuk()). Jejak keikutsertaan Tawasul-nya cuma ada di
+  // tabel kegiatan_umum (jenis BRIEFING_TAWASUL) sebagai baris terpisah, PERMANEN
+  // dan tidak bisa diubah/dihapus guru dari form Absen Masuk (beda dengan kolom
+  // Keterangan yang teksnya bebas diedit guru). Di sini kedua sumber itu digabung
+  // HANYA untuk tampilan laporan - data asli di kedua tabel tidak diubah sama
+  // sekali, jadi walaupun guru hapus/ubah teks Keterangan-nya, prefix "Ikut
+  // Tawasul" ini tetap muncul benar karena sumbernya baris terpisah tadi,
+  // bukan dari teks yang guru ketik.
+  let tawasulSet = new Set();
+  if (type === 'ABSEN_MASUK') {
+    const tawasulRows = await sbSelect(env, 'kegiatan_umum',
+      `sekolah_id=eq.${sekolahId}&jenis_kegiatan=eq.BRIEFING_TAWASUL&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
+    tawasulSet = new Set(tawasulRows.map((r) => `${String(r.nuptk).trim()}|${r.tanggal}`));
+  }
+
   const filterTarget = String(filterNuptk).trim();
 
   rows.sort((a, b) => {
@@ -1213,9 +1231,14 @@ async function getReport(args, env) {
   const result = [];
   rows.forEach((row) => {
     if (filterTarget !== 'ALL' && String(row.nuptk).trim() !== filterTarget) return;
+    const ikutTawasulRow = type === 'ABSEN_MASUK' && tawasulSet.has(`${String(row.nuptk).trim()}|${row[config.dateField]}`);
     const rowObj = {};
     config.headers.forEach((header, j) => {
       let val = row[config.fields[j]];
+      if (header === 'Keterangan' && ikutTawasulRow) {
+        const asli = (val === undefined || val === null || val === '-') ? '' : String(val).trim();
+        val = asli ? `Ikut Tawasul - ${asli}` : 'Ikut Tawasul';
+      }
       rowObj[header] = val === undefined || val === null ? '' : val;
     });
     result.push(rowObj);
