@@ -978,7 +978,7 @@ async function getRiwayatAktivitas(args, env) {
   return gabungan.slice(0, limit);
 }
 
-
+async function getGuruMengajarList(args, env) {
   const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
