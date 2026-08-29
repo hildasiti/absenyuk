@@ -559,6 +559,29 @@
     <div class='col-6 col-md-4 col-lg-2 jp-hide-nonmengajar'><div class='card card-stat p-3 text-center h-100 bg-white'><h2 class='text-secondary fw-bold' id='stat-jp-izin'>0</h2><span>Izin</span></div></div>
     <div class='col-6 col-md-4 col-lg-2 jp-hide-nonmengajar'><div class='card card-stat p-3 text-center h-100 border-danger text-danger bg-danger-subtle'><h2 class='fw-bold' id='stat-jp-alpa'>0</h2><span>Alpa</span></div></div>
   </div>
+
+  <!-- RIWAYAT AKTIVITAS: gabungan Absen Masuk + Kegiatan Sekolah/Pesantren + Kegiatan
+       Khusus, terbaru dulu. Untuk GURU cuma dirinya sendiri; PIKET/KEPSEK/ADMIN_SEKOLAH
+       seluruh sekolahnya. -->
+  <div class='card p-4 shadow-sm mt-2'>
+    <h6 class='text-secondary fw-bold mb-3'><i class='bi bi-clock-history'></i> Riwayat Aktivitas Terbaru</h6>
+    <div class='table-responsive'>
+      <table class='table table-sm table-hover align-middle'>
+        <thead class='table-light'>
+          <tr>
+            <th>Waktu</th>
+            <th>Nama</th>
+            <th>Jenis</th>
+            <th>Status</th>
+            <th class='text-start'>Keterangan</th>
+          </tr>
+        </thead>
+        <tbody id='tbody-riwayat-guru'>
+          <tr><td class='text-center text-muted py-3' colspan='5'>Memuat riwayat...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- FORM 1: ABSEN MASUK SEKOLAH (MENGGUNAKAN GPS) -->
@@ -811,6 +834,35 @@
         </thead>
         <tbody id='tbody-belum-absen'>
           <tr><td class='text-center text-muted py-2' colspan='3'>Semua guru aktif sudah melakukan presensi.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- RIWAYAT AKTIVITAS: landing view utama Admin Utama sesuai permintaan - tanpa
+       perlu pilih sekolah dulu, tampilkan aktivitas SEMUA sekolah. Kalau Admin Utama
+       sudah memilih sekolah aktif (CURRENT_SEKOLAH_ID), otomatis menyempit ke sekolah
+       itu saja - biar konsisten dengan kartu-kartu lain di halaman ini. Untuk
+       Admin Sekolah, otomatis scope ke sekolahnya sendiri (lihat backend). -->
+  <div class='card p-4 shadow-sm mt-4'>
+    <div class='d-flex justify-content-between align-items-center mb-3'>
+      <h6 class='text-secondary fw-bold mb-0'><i class='bi bi-clock-history'></i> Riwayat Aktivitas Terbaru <span class='text-muted fw-normal' id='riwayat-admin-scope-label'></span></h6>
+      <button class='btn btn-sm btn-outline-primary' onclick='loadRiwayatAktivitas()' title='Segarkan'><i class='bi bi-arrow-clockwise'></i></button>
+    </div>
+    <div class='table-responsive'>
+      <table class='table table-sm table-hover align-middle'>
+        <thead class='table-light'>
+          <tr>
+            <th>Waktu</th>
+            <th>Nama</th>
+            <th id='th-riwayat-sekolah' style='display:none;'>Sekolah</th>
+            <th>Jenis</th>
+            <th>Status</th>
+            <th class='text-start'>Keterangan</th>
+          </tr>
+        </thead>
+        <tbody id='tbody-riwayat-admin'>
+          <tr><td class='text-center text-muted py-3' colspan='6'>Memuat riwayat...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1847,10 +1899,14 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     // Tetap sinkron data dashboard di latar belakang (dibutuhkan untuk kunci status
     // tombol Absen Masuk hari ini), tapi TANPA modal loading & TANPA pindah halaman -
     // dashboard sendiri baru benar-benar dimuat saat menunya diklik (lihat switchView).
-    // Admin Utama dilewati: belum ada "dashboard pribadi" sebelum sekolah dipilih,
-    // dan getDashboardData akan gagal tanpa sekolahId - panggil hideSplash langsung
-    // supaya splash screen tidak macet menunggu response yang tidak akan sukses.
+    // Admin Utama: refreshDashboard() (kartu per-sekolah) DILEWATI karena getDashboardData
+    // butuh sekolah aktif yang belum tentu sudah dipilih - tapi tetap diarahkan ke Admin
+    // Panel sebagai halaman awal (bukan dibiarkan kosong), dan Riwayat Aktivitas TETAP
+    // dimuat terpisah (otomatis menampilkan SEMUA sekolah selama belum pilih satupun -
+    // lihat loadRiwayatAktivitas()).
     if (USER_DATA.role === 'ADMIN_UTAMA') {
+      switchView('dashboard-admin');
+      loadRiwayatAktivitas();
       hideSplash();
     } else {
       refreshDashboard(null, null, false, hideSplash);
@@ -2123,7 +2179,57 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     refreshDashboard(start, end);
   }
 
+  /**
+   * Riwayat Aktivitas: mengisi tbody riwayat di Dashboard guru (tbody-riwayat-guru)
+   * DAN/ATAU di Admin Panel (tbody-riwayat-admin) - keduanya selalu ada di DOM
+   * (cuma salah satu yang terlihat tergantung role via display:none di section-nya),
+   * jadi aman dipanggil sekali untuk kedua kemungkinan, sisanya diabaikan browser.
+   *
+   * Cakupan datanya SEPENUHNYA ditentukan backend berdasarkan role login (lihat
+   * getRiwayatAktivitas di handlers.js) - sekolahId di sini cuma dipakai Admin Utama
+   * untuk MENYEMPITKAN ke sekolah yang lagi aktif dipilih; kalau belum pilih sekolah
+   * (CURRENT_SEKOLAH_ID kosong), backend otomatis menampilkan SEMUA sekolah sekaligus.
+   */
+  function loadRiwayatAktivitas() {
+    const tbodyGuru = document.getElementById('tbody-riwayat-guru');
+    const tbodyAdmin = document.getElementById('tbody-riwayat-admin');
+    if (!tbodyGuru && !tbodyAdmin) return;
+
+    const sekolahIdUntukFilter = (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '';
+    const tampilkanSemuaSekolah = USER_DATA && USER_DATA.role === 'ADMIN_UTAMA' && !sekolahIdUntukFilter;
+
+    const labelScope = document.getElementById('riwayat-admin-scope-label');
+    if (labelScope) labelScope.innerText = tampilkanSemuaSekolah ? '(Semua Sekolah)' : '';
+    const thSekolah = document.getElementById('th-riwayat-sekolah');
+    if (thSekolah) thSekolah.style.display = tampilkanSemuaSekolah ? '' : 'none';
+
+    const warnaBadge = { primary: 'primary', success: 'success', warning: 'warning' };
+
+    function renderBaris(r, sertakanSekolah) {
+      const w = warnaBadge[r.warna] || 'secondary';
+      return `<tr>
+        <td class="text-nowrap"><span class="badge bg-light text-dark border">${r.tanggal}</span> ${r.jam}</td>
+        <td>${r.nama}</td>
+        <td style="${sertakanSekolah ? '' : 'display:none;'}"><span class="badge bg-secondary">${r.sekolahNama || r.sekolahId || '-'}</span></td>
+        <td><span class="badge bg-${w}-subtle text-${w} border border-${w}-subtle"><i class="bi ${r.icon}"></i> ${r.jenis}</span></td>
+        <td>${r.status}</td>
+        <td class="text-start small">${r.keterangan && r.keterangan !== '-' ? r.keterangan : ''}</td>
+      </tr>`;
+    }
+
+    google.script.run.withSuccessHandler(list => {
+      const kosongGuru = '<tr><td class="text-center text-muted py-3" colspan="5">Belum ada aktivitas.</td></tr>';
+      const kosongAdmin = '<tr><td class="text-center text-muted py-3" colspan="6">Belum ada aktivitas.</td></tr>';
+      if (tbodyGuru) tbodyGuru.innerHTML = (list && list.length) ? list.map(r => renderBaris(r, false)).join('') : kosongGuru;
+      if (tbodyAdmin) tbodyAdmin.innerHTML = (list && list.length) ? list.map(r => renderBaris(r, tampilkanSemuaSekolah)).join('') : kosongAdmin;
+    }).withFailureHandler(err => {
+      console.warn('Gagal memuat riwayat aktivitas:', err.message);
+    }).getRiwayatAktivitas(SESSION_TOKEN, sekolahIdUntukFilter, 50);
+  }
+
   function refreshDashboard(startDate = null, endDate = null, showModal = true, onComplete = null) {
+    loadRiwayatAktivitas(); // independen dari getDashboardData - dipanggil terpisah supaya tetap muncul walau kartu lain gagal
+
     if (showModal) {
       Swal.fire({title:'Menyinkronkan Data...', allowOutsideClick:false, didOpen:()=>{Swal.showLoading()}});
     }

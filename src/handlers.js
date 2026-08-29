@@ -870,7 +870,115 @@ async function getGuruList(args, env) {
     .map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, status: u.status, role: u.role, row: u.nuptk }));
 }
 
-async function getGuruMengajarList(args, env) {
+// Label ramah-baca untuk jenis_kegiatan di kegiatan_umum, dipakai khusus di
+// Riwayat Aktivitas (bukan Laporan - Laporan sudah pakai label dari REPORT_CONFIG).
+const LABEL_KEGIATAN_RIWAYAT = {
+  BRIEFING_TAWASUL: 'Briefing & Tawasul',
+  PENDAMPINGAN_DHUHA: 'Pendampingan Dhuha',
+  SHOLAT_DZUHUR: 'Sholat Dzuhur',
+  SHOLAT_ASHAR: 'Sholat Ashar',
+  DZIKIR_MAKHSUS: 'Dzikir Makhsus',
+  PENGAJIAN_AHAD: 'Pengajian Ahad',
+  PENGAJIAN_ARBAIN: 'Pengajian Arbain',
+  QINI_NASIONAL_SUBUH: 'Qini Nasional - Subuh',
+  QINI_NASIONAL_MALAM: 'Qini Nasional - Malam'
+};
+
+/**
+ * Riwayat Aktivitas: gabungan Absen Masuk + Kegiatan Sekolah/Pesantren
+ * (kegiatan_umum) + Kegiatan Khusus jadi SATU daftar kronologis (terbaru dulu).
+ * Cakupan otomatis mengikuti role LOGIN, bukan dari parameter yang dikirim client -
+ * supaya tidak bisa "diakali" client untuk lihat data yang bukan haknya:
+ *   - GURU biasa       : cuma aktivitas dirinya sendiri.
+ *   - PIKET/KEPSEK/ADMIN_SEKOLAH : seluruh aktivitas sekolahnya sendiri.
+ *   - ADMIN_UTAMA       : requestedSekolahId diisi -> sekolah itu saja;
+ *                         requestedSekolahId kosong -> SEMUA sekolah sekaligus
+ *                         (dipakai sebagai tampilan awal setelah login, sebelum
+ *                         admin utama sempat pilih sekolah aktif).
+ */
+async function getRiwayatAktivitas(args, env) {
+  const [token, requestedSekolahId, limitArg] = args;
+  const user = await requireUser(env, token);
+  if (!user) return [];
+
+  const limit = Math.min(parseInt(limitArg, 10) || 50, 100);
+
+  let filterSekolah = '';
+  let filterNuptk = '';
+  if (user.role === 'ADMIN_UTAMA') {
+    if (requestedSekolahId) filterSekolah = `sekolah_id=eq.${encodeURIComponent(requestedSekolahId)}&`;
+    // kalau kosong: sengaja TANPA filter sekolah sama sekali (lihat semua sekolah)
+  } else if (isAdminAny(user) || isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) {
+    filterSekolah = `sekolah_id=eq.${encodeURIComponent(user.sekolahId)}&`;
+  } else {
+    filterSekolah = `sekolah_id=eq.${encodeURIComponent(user.sekolahId)}&`;
+    filterNuptk = `nuptk=eq.${encodeURIComponent(user.nuptk)}&`;
+  }
+
+  // Ambil lebih banyak dari tiap sumber daripada limit final - supaya setelah
+  // digabung+diurutkan ulang lintas 3 tabel, tetap ada cukup data terbaru dari
+  // masing-masing sumber (bukan keburu kepotong duluan sebelum digabung).
+  const ambil = limit;
+
+  const perluDaftarSekolah = user.role === 'ADMIN_UTAMA' && !requestedSekolahId;
+  const [rowsAbsenMasuk, rowsKegiatan, rowsKhusus, daftarSekolah] = await Promise.all([
+    sbSelect(env, 'absen_masuk', `${filterSekolah}${filterNuptk}order=tanggal.desc,jam.desc&limit=${ambil}`),
+    sbSelect(env, 'kegiatan_umum', `${filterSekolah}${filterNuptk}order=tanggal.desc,timestamp.desc&limit=${ambil}`),
+    sbSelect(env, 'absen_kegiatan_khusus', `${filterSekolah}${filterNuptk}order=tanggal_lapor.desc,waktu_lapor.desc&limit=${ambil}`),
+    perluDaftarSekolah ? sbSelect(env, 'sekolah', 'order=nama.asc') : Promise.resolve([])
+  ]);
+
+  const namaSekolahMap = {};
+  daftarSekolah.forEach((s) => { namaSekolahMap[s.id] = s.nama; });
+
+  /** Konversi timestamp ISO (UTC) ke jam WIB "HH:MM" - supaya format 'urut' konsisten
+   *  dengan field 'jam'/'waktu_lapor' dari 2 sumber lain (yang memang disimpan WIB),
+   *  jadi pengurutan gabungan lintas 3 sumber akurat, bukan cuma kebetulan benar. */
+  function jamWibDariTimestamp(ts) {
+    if (!ts) return '00:00';
+    try {
+      const wib = new Date(new Date(ts).getTime() + 7 * 60 * 60 * 1000);
+      return wib.toISOString().substr(11, 5);
+    } catch (e) { return '00:00'; }
+  }
+
+  const gabungan = [];
+  rowsAbsenMasuk.forEach((r) => {
+    const jam = r.jam || '00:00';
+    gabungan.push({
+      jenis: 'Absen Masuk', icon: 'bi-door-open-fill', warna: 'primary',
+      tanggal: r.tanggal, jam,
+      nuptk: r.nuptk, nama: r.nama, sekolahId: r.sekolah_id, sekolahNama: namaSekolahMap[r.sekolah_id] || '',
+      status: r.status, keterangan: r.keterangan,
+      urut: `${r.tanggal} ${jam}`
+    });
+  });
+  rowsKegiatan.forEach((r) => {
+    const jam = jamWibDariTimestamp(r.timestamp);
+    gabungan.push({
+      jenis: LABEL_KEGIATAN_RIWAYAT[r.jenis_kegiatan] || r.jenis_kegiatan, icon: 'bi-calendar-check-fill', warna: 'success',
+      tanggal: r.tanggal, jam,
+      nuptk: r.nuptk, nama: r.nama, sekolahId: r.sekolah_id, sekolahNama: namaSekolahMap[r.sekolah_id] || '',
+      status: r.status, keterangan: r.catatan,
+      urut: `${r.tanggal} ${jam}`
+    });
+  });
+  rowsKhusus.forEach((r) => {
+    const jam = r.waktu_lapor || '00:00';
+    gabungan.push({
+      jenis: r.nama_kegiatan || 'Kegiatan Khusus', icon: 'bi-ui-checks', warna: 'warning',
+      tanggal: r.tanggal_lapor, jam,
+      nuptk: r.nuptk, nama: r.nama, sekolahId: r.sekolah_id, sekolahNama: namaSekolahMap[r.sekolah_id] || '',
+      status: r.status_kehadiran, keterangan: r.catatan,
+      urut: `${r.tanggal_lapor} ${jam}`
+    });
+  });
+
+  gabungan.sort((a, b) => (a.urut < b.urut ? 1 : a.urut > b.urut ? -1 : 0));
+  return gabungan.slice(0, limit);
+}
+
+
   const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
@@ -1740,6 +1848,7 @@ export const handlers = {
   updateUser,
   getGuruList,
   getGuruMengajarList,
+  getRiwayatAktivitas,
   deleteUser,
   getStafAktifUntukImpal,
   saveHariLibur,
