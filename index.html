@@ -869,6 +869,19 @@
             <option value='Nonaktif'>Nonaktif (tidak berlaku di sekolah ini)</option>
           </select>
         </div>
+        <div class='col-12 mb-3'>
+          <label class='form-label fw-semibold'>Hari Libur Mingguan Rutin</label>
+          <div class='d-flex flex-wrap gap-3 border rounded p-2'>
+            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-1' type='checkbox' value='1'/><label class='form-check-label' for='hl-1'>Senin</label></div>
+            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-2' type='checkbox' value='2'/><label class='form-check-label' for='hl-2'>Selasa</label></div>
+            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-3' type='checkbox' value='3'/><label class='form-check-label' for='hl-3'>Rabu</label></div>
+            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-4' type='checkbox' value='4'/><label class='form-check-label' for='hl-4'>Kamis</label></div>
+            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-5' type='checkbox' value='5'/><label class='form-check-label' for='hl-5'>Jumat</label></div>
+            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-6' type='checkbox' value='6'/><label class='form-check-label' for='hl-6'>Sabtu</label></div>
+            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-0' type='checkbox' value='0'/><label class='form-check-label' for='hl-0'>Ahad</label></div>
+          </div>
+          <small class='text-muted'>Hari yang dicentang dianggap libur rutin (Absen Masuk ditolak, tidak kena auto Tanpa Keterangan/Tidak Absen). Default Sabtu+Ahad - untuk sekolah yang cuma libur Ahad saja (mis. MDT/DTA), cukup centang Ahad saja.</small>
+        </div>
       </div>
 
       <div class='alert alert-secondary py-3 px-3 mb-4' id='blok-otomasi-manual' style='display:none;'>
@@ -2509,6 +2522,11 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('set-jam-cutoff-alpa').value = data.jam_cutoff_alpa || '12:20';
       document.getElementById('set-wajib-dzuhur').value = data.wajib_absen_dzuhur || 'Aktif';
       document.getElementById('set-wajib-ashar').value = data.wajib_absen_ashar || 'Aktif';
+
+      const hariLiburArr = String(data.hari_libur_mingguan || '0,6').split(',').map(s => s.trim());
+      document.querySelectorAll('.cek-hari-libur').forEach(cb => {
+        cb.checked = hariLiburArr.includes(cb.value);
+      });
     }).getSettingsData(SESSION_TOKEN);
   }
 
@@ -2527,7 +2545,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       status_auto_alpa: document.getElementById('set-auto-alpa').value,
       jam_cutoff_alpa: document.getElementById('set-jam-cutoff-alpa').value || '12:20',
       wajib_absen_dzuhur: document.getElementById('set-wajib-dzuhur').value,
-      wajib_absen_ashar: document.getElementById('set-wajib-ashar').value
+      wajib_absen_ashar: document.getElementById('set-wajib-ashar').value,
+      hari_libur_mingguan: Array.from(document.querySelectorAll('.cek-hari-libur:checked')).map(cb => cb.value).join(',') || '0,6'
     };
     Swal.fire({title:'Menyimpan...', didOpen:()=>{Swal.showLoading()}});
     google.script.run.withSuccessHandler(res => {
