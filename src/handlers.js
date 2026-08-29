@@ -1,6 +1,6 @@
 import { sbSelect, sbInsert, sbInsertMany, sbUpdate, sbUpdateWhere, sbDelete } from './supabase.js';
 import { createSession, getSession, destroySession } from './session.js';
-import { verifyAndMigratePassword } from './auth.js';
+import { verifyAndMigratePassword, hashPassword } from './auth.js';
 import { getSettingsMap } from './settings.js';
 import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
 import { nowJakarta, getPeriodeBerjalan, getMingguIniSeninJumat, toDateStr } from './date.js';
@@ -141,6 +141,44 @@ async function logoutFn(args, env) {
   const [token] = args;
   await destroySession(env, token);
   return { success: true };
+}
+
+/**
+ * Ganti password mandiri - HANYA untuk role non-admin (GURU, KEPALA_SEKOLAH, PIKET).
+ * Admin Sekolah/Admin Utama sengaja dikecualikan (permintaan ganti password mereka
+ * tetap lewat jalur manual di luar aplikasi, mis. langsung ke Admin Utama/database).
+ * Verifikasi password lama pakai verifyAndMigratePassword() yang sama dengan login -
+ * otomatis menangani akun lama yang passwordnya masih plaintext juga.
+ */
+async function changePassword(args, env) {
+  const [token, currentPassword, newPassword1, newPassword2] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { success: false, message: 'Sesi habis, silakan login ulang.' };
+
+  if (isAdminAny(user)) {
+    return { success: false, message: 'Fitur ganti password mandiri tidak tersedia untuk role Anda.' };
+  }
+  if (!currentPassword || !newPassword1 || !newPassword2) {
+    return { success: false, message: 'Semua kolom wajib diisi.' };
+  }
+  if (newPassword1 !== newPassword2) {
+    return { success: false, message: 'Password baru dan konfirmasi tidak sama. Silakan periksa kembali.' };
+  }
+  if (String(newPassword1).trim().length < 6) {
+    return { success: false, message: 'Password baru minimal 6 karakter.' };
+  }
+
+  const rows = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(user.nuptk)}&limit=1`);
+  const userRow = rows[0];
+  if (!userRow) return { success: false, message: 'Akun tidak ditemukan.' };
+
+  const cocok = await verifyAndMigratePassword(env, userRow, String(currentPassword).trim());
+  if (!cocok) return { success: false, message: 'Password saat ini salah.' };
+
+  const newHash = await hashPassword(String(newPassword1).trim());
+  await sbUpdate(env, 'users', 'nuptk', user.nuptk, { password: newHash });
+
+  return { success: true, message: 'Password berhasil diubah. Gunakan password baru saat login berikutnya.' };
 }
 
 // ====================================================================
@@ -1632,6 +1670,7 @@ export const handlers = {
   loginUser,
   checkSession: checkSessionFn,
   logout: logoutFn,
+  changePassword,
   getSekolahList,
   getLokasiAbsenTarget,
   saveAbsenMasuk,

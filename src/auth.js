@@ -33,3 +33,8 @@ export async function verifyAndMigratePassword(env, userRow, inputPassword) {
   }
   return match;
 }
+
+/** Hash password baru pakai bcrypt - dipakai fitur ganti password mandiri (changePassword di handlers.js). */
+export async function hashPassword(plainPassword) {
+  return bcrypt.hash(plainPassword, 10);
+}
