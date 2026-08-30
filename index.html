@@ -59,6 +59,10 @@
     background: linear-gradient(180deg, var(--primary-color) 0%, var(--primary-dark) 100%);
     color: white;
     width: 260px;
+    flex-shrink: 0; /* JANGAN pernah diperkecil oleh flexbox di layar "tanggung" (tablet,
+                        DevTools terbuka, dll) - tanpa ini sidebar bisa nyaris/benar-benar
+                        hilang di lebar >=768px walau CSS mobile (tombol hamburger) belum
+                        aktif, karena flex-shrink browser defaultnya 1 (boleh menyusut). */
     transition: all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
     z-index: 1040;
     box-shadow: 4px 0 24px rgba(9, 56, 98, 0.18);
@@ -172,7 +176,7 @@
     }
   }
 
-  .main-content { width: 100%; transition: all 0.3s; }
+  .main-content { width: 100%; flex: 1 1 auto; min-width: 0; transition: all 0.3s; }
 
   /* ===== CARDS ===== */
   .card {
