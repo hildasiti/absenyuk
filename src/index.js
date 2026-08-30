@@ -16,8 +16,17 @@
  */
 
 import { handlers, autoSetTanpaKeterangan, cekDanKirimNotifikasiBelumAbsen, autoSetTidakAbsenSholat } from './handlers.js';
+import { getSession } from './session.js';
 
 const ALLOWED_ORIGIN = '*'; // TODO: ganti ke domain GitHub Pages Anda setelah frontend live
+
+// Aksi yang BOLEH dipanggil tanpa sesi valid (belum/baru mau login).
+// Semua aksi LAIN di luar daftar ini WAJIB punya token sesi yang masih
+// hidup di args[0] - kalau tidak, request ditolak SEBELUM sampai ke
+// handler manapun, dengan sinyal yang selalu sama: error 'SESSION_EXPIRED'.
+// Ini titik tunggal supaya frontend tidak perlu menebak-nebak bentuk
+// respons "belum login" dari puluhan fungsi berbeda di handlers.js.
+const AKSI_TANPA_SESI = ['loginUser', 'checkSession'];
 
 function corsHeaders() {
   return {
@@ -57,6 +66,15 @@ export default {
           return json({ success: false, error: 'Fungsi tidak dikenal: ' + fnName }, 404);
         }
 
+        // --- Penjagaan sesi terpusat ---
+        if (!AKSI_TANPA_SESI.includes(fnName)) {
+          const token = args[0];
+          const session = await getSession(env, token);
+          if (!session) {
+            return json({ success: false, error: 'SESSION_EXPIRED' }, 401);
+          }
+        }
+
         const result = await handler(args, env);
         return json({ success: true, data: result });
       } catch (err) {
@@ -72,20 +90,10 @@ export default {
   // beberapa jadwal berbeda yang jalan di Worker yang sama.
   async scheduled(event, env, ctx) {
     if (event.cron === '20 0 * * *') {
-      // 07:20 WIB - pengingat belum absen (pembatasan Senin-Jumat & cek hari libur
-      // dilakukan DI DALAM cekDanKirimNotifikasiBelumAbsen(), bukan di cron - lihat
-      // catatan lengkap soal ini di wrangler.toml).
       ctx.waitUntil(cekDanKirimNotifikasiBelumAbsen(env));
     } else if (event.cron === '20 5 * * *' || event.cron === '0 10 * * *') {
-      // 12:20 WIB & 17:00 WIB - auto set Tanpa Keterangan (Absen Masuk). Dipanggil
-      // 2x sehari karena beda sekolah bisa beda jam cutoff-nya sendiri
-      // (settings.jam_cutoff_alpa) - fungsinya sendiri yang menentukan sekolah mana
-      // yang sudah waktunya diproses di jam berapa (lihat catatan di wrangler.toml).
       ctx.waitUntil(autoSetTanpaKeterangan(env));
     } else if (event.cron === '0 14 * * *') {
-      // 21:00 WIB - auto set "Tidak Absen" untuk Sholat Dzuhur & Ashar sekaligus
-      // (jam ini dipilih supaya kedua sesi sudah pasti lewat, termasuk untuk
-      // sekolah dgn jam masuk siang seperti MDT/DTA).
       ctx.waitUntil(autoSetTidakAbsenSholat(env));
     }
   }

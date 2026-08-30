@@ -1472,6 +1472,14 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .then(function (json) {
               if (json.success) {
                 if (successHandler) successHandler(json.data);
+              } else if (json.error === 'SESSION_EXPIRED') {
+                // Sinyal khusus dari Worker: sesi sudah tidak valid. Ditangani
+                // secara global di sini (bukan lewat failureHandler tiap
+                // pemanggilan, karena kebanyakan pemanggilan di app ini tidak
+                // pernah menempelkan withFailureHandler sama sekali) supaya
+                // TIDAK ADA satupun aksi di aplikasi yang bisa "diam saja"
+                // saat sesi habis - di menu manapun pengguna berada.
+                tanganiSesiHabis();
               } else {
                 console.error('Worker API error [' + propName + ']:', json.error);
                 if (failureHandler) failureHandler(new Error(json.error));
@@ -1485,6 +1493,31 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       }
     });
   }
+
+  // Dibuat 'window.' supaya bisa dipanggil dari script block lain di bawah
+  // (mis. dari checkSession di window.onload kalau suatu saat perlu).
+  // Dijaga pakai flag supaya kalau beberapa pemanggilan API nyaris
+  // bersamaan sama-sama kena sesi habis, cuma 1 alert & 1 reload yang
+  // jalan - bukan numpuk beberapa popup sekaligus.
+  let sedangMenanganiSesiHabis = false;
+  window.tanganiSesiHabis = function tanganiSesiHabis() {
+    if (sedangMenanganiSesiHabis) return;
+    sedangMenanganiSesiHabis = true;
+    localStorage.removeItem('abs_token');
+    Swal.fire({
+      title: 'Sesi Login Habis',
+      text: 'Sesi Anda sudah berakhir. Mengarahkan ke halaman login...',
+      icon: 'warning',
+      timer: 2200,
+      timerProgressBar: true,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      showConfirmButton: false,
+      didOpen: () => { Swal.showLoading(); }
+    }).then(function () {
+      window.location.reload();
+    });
+  };
 
   window.google = window.google || {};
   window.google.script = window.google.script || {};
