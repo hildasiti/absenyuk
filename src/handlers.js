@@ -408,12 +408,32 @@ async function saveKegiatan(args, env) {
   if (!user) return { success: false, message: 'Unauthenticated' };
   const sekolahId = user.sekolahId;
 
+  const { dateStr: todayStr, timeStr: jamSekarang } = nowJakarta();
+  const dateStr = tanggal || todayStr;
+
+  // --- Penguncian waktu khusus Sholat Dzuhur/Ashar: kalau sudah lewat batas
+  // (default 21:00, bisa dikustom per sekolah lewat settings.batas_dzuhur /
+  // settings.batas_ashar), tolak dengan pesan jelas - jangan biarkan tembus
+  // lalu ganjal di constraint database dengan pesan generik.
+  if (sheetName === 'SHOLAT_DZUHUR' || sheetName === 'SHOLAT_ASHAR') {
+    const settings = await getSettingsMap(env, sekolahId);
+    const batas = sheetName === 'SHOLAT_DZUHUR'
+      ? (settings.batas_dzuhur || '21:00')
+      : (settings.batas_ashar || '21:00');
+    if (jamSekarang > batas && dateStr === todayStr) {
+      return {
+        success: false,
+        message: `Batas waktu presensi ${kegiatan} pukul ${batas} WIB sudah lewat. Jika Anda benar hadir, hubungi Admin Sekolah untuk koreksi manual.`
+      };
+    }
+  }
+
   if (status === 'Hadir di Majelis') {
     const settings = await getSettingsMap(env, sekolahId);
     if (lat && lon && settings.lat_pesantren && settings.long_pesantren) {
       const jarak = hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(settings.lat_pesantren), parseFloat(settings.long_pesantren));
-      const batas = parseInt(settings.radius_pesantren || 100, 10);
-      if (jarak > batas) {
+      const batasRadius = parseInt(settings.radius_pesantren || 100, 10);
+      if (jarak > batasRadius) {
         return { success: false, message: `Ditolak! Anda berada di luar area Mesjid Al-Fattah (${jarak} meter dari titik majelis).` };
       }
     } else {
@@ -421,11 +441,17 @@ async function saveKegiatan(args, env) {
     }
   }
 
-  const dateStr = tanggal || nowJakarta().dateStr;
-  await sbInsert(env, 'kegiatan_umum', {
-    id: generateShortID('K'), sekolah_id: sekolahId, jenis_kegiatan: sheetName, tanggal: dateStr, nuptk: user.nuptk, nama: user.nama,
-    kegiatan, status, catatan: catatan || '-', timestamp: new Date().toISOString()
-  });
+  try {
+    await sbInsert(env, 'kegiatan_umum', {
+      id: generateShortID('K'), sekolah_id: sekolahId, jenis_kegiatan: sheetName, tanggal: dateStr, nuptk: user.nuptk, nama: user.nama,
+      kegiatan, status, catatan: catatan || '-', timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    if (String(err.message).includes('duplicate key')) {
+      return { success: false, message: `Anda sudah tercatat untuk "${kegiatan}" hari ini (kemungkinan otomatis ditandai Tidak Absen oleh sistem). Hubungi Admin jika ini keliru.` };
+    }
+    throw err;
+  }
   return { success: true, message: 'Data kehadiran majelis berhasil disimpan.' };
 }
 
