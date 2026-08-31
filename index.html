@@ -1143,7 +1143,6 @@
       <thead class='table-secondary font-weight-bold' id='payroll-thead'>
         <tr>
           <th>No</th>
-          <th>Username</th>
           <th class='text-start'>Nama Guru</th>
           <th class='text-success'>Hadir</th>
           <th class='text-warning'>Terlambat</th>
@@ -1155,7 +1154,7 @@
         </tr>
       </thead>
       <tbody id='pay-body'>
-        <tr><td class='text-center text-muted py-3' colspan='10'>Tentukan rentang tanggal penggajian lalu klik &quot;Hitung Rekapitulasi&quot;</td></tr>
+        <tr><td class='text-center text-muted py-3' colspan='9'>Tentukan rentang tanggal penggajian lalu klik &quot;Hitung Rekapitulasi&quot;</td></tr>
       </tbody>
     </table>
   </div>
@@ -3384,7 +3383,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
   const THEAD_ABSEN_MASUK = `
     <tr>
-      <th>No</th><th>Username</th><th class="text-start">Nama Guru</th>
+      <th>No</th><th class="text-start">Nama Guru</th>
       <th class="text-success">Hadir</th><th class="text-warning">Terlambat</th>
       <th class="text-info">Sakit</th><th class="text-secondary">Izin</th>
       <th class="text-primary">Tugas Luar</th><th class="text-danger">Tanpa Keterangan</th>
@@ -3392,7 +3391,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     </tr>`;
   const THEAD_JAM_PELAJARAN = `
     <tr>
-      <th>No</th><th>Username</th><th class="text-start">Nama Guru</th>
+      <th>No</th><th class="text-start">Nama Guru</th>
       <th class="text-primary">Impal</th><th class="text-warning">Terlambat</th>
       <th class="text-info">Sakit</th><th class="text-secondary">Izin</th>
       <th class="text-info">Dinas</th><th class="text-danger">Tanpa Keterangan</th>
@@ -3408,14 +3407,14 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     document.getElementById('payroll-thead').innerHTML = (jenis === 'JAM_PELAJARAN') ? THEAD_JAM_PELAJARAN : THEAD_ABSEN_MASUK;
 
     const tbody = document.getElementById('pay-body');
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4"><div class="spinner-border text-success spinner-border-sm"></div> Mengkalkulasi data performa guru...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-success spinner-border-sm"></div> Mengkalkulasi data performa guru...</td></tr>';
 
     if (jenis === 'JAM_PELAJARAN') {
       google.script.run.withSuccessHandler(res => {
         LAST_PAYROLL_DATA = res;
         let html = '';
         if (res.length === 0) {
-          html = '<tr><td colspan="10" class="text-center text-muted py-3">Tidak ditemukan data guru aktif atau riwayat rekap jam pelajaran.</td></tr>';
+          html = '<tr><td colspan="8" class="text-center text-muted py-3">Tidak ditemukan data guru aktif atau riwayat rekap jam pelajaran.</td></tr>';
         } else {
           let totalImpal = 0, totalTerlambat = 0, totalSakit = 0, totalIzin = 0, totalTugasLuar = 0, totalAlpa = 0;
           res.forEach((row, index) => {
@@ -3428,7 +3427,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             html += `
               <tr>
                 <td>${index + 1}</td>
-                <td><strong>${row.nuptk}</strong></td>
                 <td class="text-start">${row.nama}</td>
                 <td class="text-primary fw-bold">${row.impal}</td>
                 <td class="text-warning fw-bold">${row.terlambat}</td>
@@ -3441,7 +3439,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           });
           html += `
             <tr class="table-info fw-bold" style="border-top: 2px solid #000;">
-              <td colspan="3" class="text-end">TOTAL KESELURUHAN</td>
+              <td colspan="2" class="text-end">TOTAL KESELURUHAN</td>
               <td class="text-primary">${totalImpal}</td>
               <td class="text-warning">${totalTerlambat}</td>
               <td>${totalSakit}</td>
@@ -3479,7 +3477,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       LAST_PAYROLL_DATA = res;
       let html = '';
       if(res.length === 0) {
-        html = '<tr><td colspan="10" class="text-center text-muted py-3">Tidak ditemukan data guru aktif atau riwayat presensi.</td></tr>';
+        html = '<tr><td colspan="9" class="text-center text-muted py-3">Tidak ditemukan data guru aktif atau riwayat presensi.</td></tr>';
       } else {
         let totalHadir = 0, totalTerlambat = 0, totalSakit = 0, totalIzin = 0, totalTugasLuar = 0, totalAlpa = 0, totalHariSemua = 0;
         res.forEach((row, index) => {
@@ -3494,7 +3492,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           html += `
             <tr>
               <td>${index + 1}</td>
-              <td><strong>${row.nuptk}</strong></td>
               <td class="text-start">${row.nama}</td>
               <td class="text-success fw-bold">${row.hadir}</td>
               <td class="text-warning fw-bold">${row.terlambat}</td>
@@ -3508,7 +3505,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         });
         html += `
           <tr class="table-info fw-bold" style="border-top: 2px solid #000;">
-            <td colspan="3" class="text-end">TOTAL KESELURUHAN</td>
+            <td colspan="2" class="text-end">TOTAL KESELURUHAN</td>
             <td class="text-success">${totalHadir}</td>
             <td class="text-warning">${totalTerlambat}</td>
             <td>${totalSakit}</td>
@@ -3601,8 +3598,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <thead>
               <tr>
                 <th width="4%">No</th>
-                <th width="14%">NUPTK</th>
-                <th class="text-left" width="${isJP ? '32%' : '28%'}">Nama Lengkap Guru</th>
+                <th class="text-left" width="${isJP ? '46%' : '42%'}">Nama Lengkap Guru</th>
                 <th width="8%">${headKolom1}</th>
                 <th width="8%">Telat</th>
                 <th width="8%">Sakit</th>
@@ -3628,7 +3624,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         printContent += `
           <tr>
             <td>${index + 1}</td>
-            <td>${row.nuptk}</td>
             <td class="text-left fw-bold">${row.nama}</td>
             <td>${nilaiKolom1}</td>
             <td>${row.terlambat}</td>

@@ -91,7 +91,7 @@ export default {
   async scheduled(event, env, ctx) {
     if (event.cron === '20 0 * * *') {
       ctx.waitUntil(cekDanKirimNotifikasiBelumAbsen(env));
-    } else if (event.cron === '20 5 * * *' || event.cron === '0 10 * * *') {
+    } else if (event.cron === '1 6 * * *' || event.cron === '31 8 * * *') {
       ctx.waitUntil(autoSetTanpaKeterangan(env));
     } else if (event.cron === '0 14 * * *') {
       ctx.waitUntil(autoSetTidakAbsenSholat(env));

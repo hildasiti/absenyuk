@@ -25,7 +25,7 @@ id = "614e992ccfd643b8ac628d0de257937b"
 # jalan tiap hari termasuk weekend, cuma langsung berhenti tanpa melakukan apa-apa -
 # sedikit invocation ekstra yang sia-sia, tapi jauh lebih aman daripada salah hari.
 #
-# Auto "Tanpa Keterangan" (Absen Masuk) sengaja dipanggil 2x sehari (12:20 & 17:00
+# Auto "Tanpa Keterangan" (Absen Masuk) sengaja dipanggil 2x sehari (13:01 & 15:31
 # WIB) - BUKAN karena 2 jadwal berbeda per fungsi, tapi karena jam masuk sekolah
 # bisa beda jauh antar sekolah (mis. MDT/DTA yang mulai belajar siang setelah
 # Dzuhur, bukan pagi seperti sekolah reguler). Tiap sekolah punya jam cutoff-nya
@@ -34,8 +34,8 @@ id = "614e992ccfd643b8ac628d0de257937b"
 # jadi aman dipanggil berkali-kali sehari (idempotent, tidak menandai dobel).
 # Waktu dalam UTC (WIB = UTC+7):
 #   "20 0 * * *" -> 07:20 WIB - pengingat belum absen (FCM); di-skip di kode kalau weekend/libur
-#   "20 5 * * *" -> 12:20 WIB - auto set "Tanpa Keterangan" (Absen Masuk), untuk sekolah dgn cutoff pagi/siang
-#   "0 10 * * *" -> 17:00 WIB - auto set "Tanpa Keterangan" (Absen Masuk) lagi, untuk sekolah dgn cutoff sore (mis. MDT/DTA)
+#   "1 6 * * *"  -> 13:01 WIB - auto set "Tanpa Keterangan" (Absen Masuk), untuk sekolah dgn cutoff pagi/siang
+#   "31 8 * * *" -> 15:31 WIB - auto set "Tanpa Keterangan" (Absen Masuk) lagi, untuk sekolah dgn cutoff sore (mis. MDT/DTA)
 #   "0 14 * * *" -> 21:00 WIB - auto set "Tidak Absen" Sholat Dzuhur & Ashar; di-skip di kode kalau weekend/libur
 [triggers]
-crons = ["20 0 * * *", "20 5 * * *", "0 10 * * *", "0 14 * * *"]
+crons = ["20 0 * * *", "1 6 * * *", "31 8 * * *", "0 14 * * *"]
