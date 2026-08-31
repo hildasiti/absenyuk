@@ -599,12 +599,14 @@
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Status Kehadiran</label>
         <select class='form-select' id='am-status' onchange='handleStatusAbsenMasukChange(this.value)' required='required'>
+          <option value='' disabled selected>-- Pilih Status Kehadiran --</option>
           <option value='Hadir &amp; Tawasul'>Hadir &amp; Tawasul</option>
           <option value='Hadir'>Hadir di Sekolah</option>
           <option value='Sakit'>Sakit</option>
           <option value='Izin'>Izin</option>
           <option value='Tugas Luar'>Tugas Luar</option>
         </select>
+        <small class='text-danger d-none' id='am-status-error'>Silakan pilih status kehadiran terlebih dahulu.</small>
       </div>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Keterangan / Alasan</label>
@@ -2476,7 +2478,21 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     e.preventDefault();
     const st = document.getElementById('am-status').value;
     const kt = document.getElementById('am-ket').value;
-    
+    const errEl = document.getElementById('am-status-error');
+
+    // Cegah kirim presensi kalau status masih placeholder (belum dipilih guru
+    // sama sekali). Ini penting khususnya untuk kasus "Hadir & Tawasul" yang
+    // dulu jadi pilihan pertama otomatis ter-select - guru yang buru-buru
+    // (mis. datang terlambat) bisa langsung tap Kirim tanpa sadar ikut
+    // tercatat Tawasul padahal tidak mengikutinya.
+    if (!st) {
+      if (errEl) errEl.classList.remove('d-none');
+      document.getElementById('am-status').focus();
+      Swal.fire('Status Belum Dipilih', 'Silakan pilih status kehadiran Anda terlebih dahulu sebelum kirim presensi.', 'warning');
+      return;
+    }
+    if (errEl) errEl.classList.add('d-none');
+
     Swal.fire({title:'Mengambil Lokasi GPS...', allowOutsideClick:false, didOpen:()=>{Swal.showLoading()}});
     
     if (navigator.geolocation) {
