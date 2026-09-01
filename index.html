@@ -598,7 +598,7 @@
     <form id='form-absen-masuk' onsubmit='submitAbsenMasuk(event)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Status Kehadiran</label>
-        <select class='form-select' id='am-status' onchange='handleStatusAbsenMasukChange(this.value)' required='required'>
+        <select class='form-select' id='am-status' required='required'>
           <option value='' disabled selected>-- Pilih Status Kehadiran --</option>
           <option value='Hadir &amp; Tawasul'>Hadir &amp; Tawasul</option>
           <option value='Hadir'>Hadir di Sekolah</option>
@@ -1843,12 +1843,33 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   }
 
   function initApp() {
-    document.getElementById('login-view').classList.remove('active');
+    const WAKTU_MULAI_INITAPP = Date.now();
+    // Splash HARUS baru mulai memudar SETELAH login-view benar-benar tersembunyi &
+    // app-view benar-benar tampil - lihat splashSetelahTampilanSiap() di bawah, dipakai
+    // menggantikan pemanggilan hideSplash() langsung di ujung fungsi ini. Sebelumnya
+    // splash memudar (transisi CSS 0.35s) berjalan PARALEL dengan pertukaran tampilan
+    // ini (timer terpisah 400ms) - beda 50ms itu jadi celah singkat form login sempat
+    // kelihatan sebelum app-view menutupinya, persis keluhan "halaman login berkedip
+    // sekilas saat refresh padahal sesi masih aktif".
+    const JEDA_TUKAR_VIEW = 450;
     setTimeout(() => {
+      document.getElementById('login-view').classList.remove('active');
       document.getElementById('login-view').style.display = 'none';
       document.getElementById('app-view').style.display = 'block';
       setTimeout(() => document.getElementById('app-view').classList.add('active'), 50);
-    }, 400);
+    }, JEDA_TUKAR_VIEW);
+
+    // Jaminan splash baru boleh memudar setelah pertukaran view di atas selesai total
+    // (JEDA_TUKAR_VIEW + sedikit buffer). Dihitung sebagai SISA waktu sejak initApp()
+    // mulai (bukan ditambah begitu saja di atas durasi loading dashboard yang sudah
+    // berjalan) - supaya untuk Guru/Piket yang hideSplash()-nya sudah wajar tertunda
+    // lebih lama menunggu data dashboard, tidak ada tambahan jeda buatan yang bikin
+    // splash terasa lebih lama dari perlu; splash cuma "ditahan" seperlunya.
+    function splashSetelahTampilanSiap(cb) {
+      const targetMs = JEDA_TUKAR_VIEW + 80;
+      const sisaMs = targetMs - (Date.now() - WAKTU_MULAI_INITAPP);
+      if (sisaMs > 0) setTimeout(cb, sisaMs); else cb();
+    }
 
     maybeOfferPushNotification();
     document.getElementById('user-name-display').innerText = USER_DATA.nama;
@@ -1945,9 +1966,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if (USER_DATA.role === 'ADMIN_UTAMA') {
       switchView('dashboard-admin');
       loadRiwayatAktivitas();
-      hideSplash();
+      splashSetelahTampilanSiap(hideSplash);
     } else {
-      refreshDashboard(null, null, false, hideSplash);
+      refreshDashboard(null, null, false, () => splashSetelahTampilanSiap(hideSplash));
     }
   }
 
@@ -2020,32 +2041,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if (counter) counter.innerText = el.value.length + '/50';
   }
 
-  // Awalan otomatis "Tawasul" di kolom Keterangan saat guru pilih status
-  // "Hadir & Tawasul" - guru tetap bisa menambahkan keterangan sendiri
-  // SETELAH awalan ini. Kalau guru ganti status ke pilihan lain lagi,
-  // awalan ini otomatis dilepas lagi, sisanya (tulisan guru sendiri) tetap ada.
-  const PREFIX_TAWASUL = 'Tawasul';
-
-  function handleStatusAbsenMasukChange(statusBaru) {
-    const ket = document.getElementById('am-ket');
-    if (!ket) return;
-    const nilaiSekarang = ket.value;
-
-    if (statusBaru === 'Hadir & Tawasul') {
-      if (nilaiSekarang.indexOf(PREFIX_TAWASUL) !== 0) {
-        const sisaTulisanGuru = nilaiSekarang.trim();
-        ket.value = sisaTulisanGuru ? `${PREFIX_TAWASUL} - ${sisaTulisanGuru}` : PREFIX_TAWASUL;
-      }
-    } else {
-      if (nilaiSekarang.indexOf(PREFIX_TAWASUL) === 0) {
-        let sisa = nilaiSekarang.slice(PREFIX_TAWASUL.length);
-        sisa = sisa.replace(/^\s*-\s*/, ''); // buang " - " pemisahnya juga
-        ket.value = sisa;
-      }
-    }
-    updateCharCount(ket, 'am-ket-count');
-  }
-
   function openSidebar() {
     document.getElementById('sidebar').classList.add('show-mobile');
     const bd = document.getElementById('sidebarBackdrop');
@@ -2116,7 +2111,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'kelola-kegiatan') loadJadwalKegiatanList();
     if(id === 'absen-kegiatan-khusus') loadKegiatanDropdown();
     if(id === 'absen-kegiatan') { updateStatusOptionsAK(); checkLockKegiatan('ak'); }
-    if(id === 'absen-masuk') { muatDanMulaiLiveGPS('sekolah'); handleStatusAbsenMasukChange(document.getElementById('am-status').value); }
+    if(id === 'absen-masuk') { muatDanMulaiLiveGPS('sekolah'); }
     if(id === 'absen-pesantren') {
       const tglField = document.getElementById('ap-tanggal');
       if (tglField && !tglField.value) tglField.value = new Date().toISOString().split('T')[0];
@@ -2514,7 +2509,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
               }).then((result) => {
                 if (result.isConfirmed) {
                   e.target.reset();
-                  handleStatusAbsenMasukChange(document.getElementById('am-status').value);
                   refreshDashboard();
                 }
               });

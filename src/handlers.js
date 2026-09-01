@@ -291,8 +291,8 @@ async function saveAbsenMasuk(args, env) {
   // payroll/kehadiran yang sudah ada tidak perlu tahu soal Tawasul sama sekali - tetap
   // Hadir/Terlambat seperti biasa). Bedanya cuma: ada efek samping mencatat kehadiran
   // Briefing & Tawasul di bawah, menggantikan absen manual terpisah yang dulu ada.
-  const ikutTawasul = status === 'Hadir & Tawasul';
-  if (status === 'Hadir' || ikutTawasul) {
+  const inginTawasul = status === 'Hadir & Tawasul';
+  if (status === 'Hadir' || inginTawasul) {
     if (jarakMeter > parseInt(settings.radius || 50, 10)) {
       return { success: false, message: `Posisi Anda berada di luar radius sekolah (${jarakMeter} meter). Silakan mendekat ke area sekolah.` };
     }
@@ -303,11 +303,30 @@ async function saveAbsenMasuk(args, env) {
     finalStatus = menitLapor > menitBatas ? 'Terlambat' : 'Hadir';
   }
 
+  // Guru yang pilih "Hadir & Tawasul" TAPI ternyata datang lewat batas toleransi
+  // (finalStatus jadi 'Terlambat') TIDAK dianggap ikut Tawasul - datang terlambat
+  // berarti briefing & tawasul sudah pasti terlewat, jadi jangan sampai tercatat
+  // seolah-olah hadir di kegiatan itu. Baru dianggap ikut Tawasul kalau benar-benar
+  // tepat waktu (finalStatus tetap 'Hadir').
+  const ikutTawasul = inginTawasul && finalStatus !== 'Terlambat';
+
+  // Catatan "Ikut Tawasul" di kolom Keterangan laporan Absen Masuk sengaja dibangun
+  // DI SINI (backend), BUKAN disisipkan di frontend saat guru klik dropdown seperti
+  // implementasi lama - karena saat itu diklik, status akhir (Hadir/Terlambat) BELUM
+  // diketahui (baru dihitung server di atas). Dengan dibangun dari ikutTawasul yang
+  // sudah pasti benar ini, catatan "Ikut Tawasul" TIDAK PERNAH bisa nempel ke guru
+  // yang ternyata terlambat. Keterangan tulisan guru sendiri (kalau ada) tetap
+  // ditambahkan setelahnya, dipisah " - ".
+  const catatanGuru = (keterangan || '').trim();
+  const finalKeterangan = ikutTawasul
+    ? (catatanGuru ? `Ikut Tawasul - ${catatanGuru}` : 'Ikut Tawasul')
+    : (catatanGuru || '-');
+
   try {
     await sbInsert(env, 'absen_masuk', {
       id: generateShortID('AB'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: user.nuptk, nama: user.nama,
       jam: jamLaporStr, latitude: String(lat), longitude: String(lon), jarak: jarakMeter,
-      status: finalStatus, keterangan: keterangan || '-', maps_link: mapsLink
+      status: finalStatus, keterangan: finalKeterangan, maps_link: mapsLink
     });
   } catch (err) {
     if (String(err.message).includes('duplicate key')) {
