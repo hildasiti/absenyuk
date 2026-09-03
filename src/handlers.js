@@ -3,7 +3,7 @@ import { createSession, getSession, destroySession } from './session.js';
 import { verifyAndMigratePassword, hashPassword } from './auth.js';
 import { getSettingsMap } from './settings.js';
 import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
-import { nowJakarta, getPeriodeBerjalan, getMingguIniSeninJumat, toDateStr } from './date.js';
+import { nowJakarta, getPeriodeBerjalan, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
 
@@ -666,13 +666,21 @@ async function getDashboardData(args, env) {
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const { dateStr, dayOfWeek } = nowJakarta();
-  const mingguIni = getMingguIniSeninJumat();
+  // Dulu dashboard sengaja dibatasi tampilan mingguan (bukan periode payroll
+  // 21-20 penuh) untuk menghemat kuota "document reads" Firestore. Sejak
+  // migrasi ke Supabase (PostgreSQL) batasan itu sudah tidak berlaku - Supabase
+  // tidak memungut biaya/kuota per baris yang dibaca, jadi periode bulanan penuh
+  // sama ringannya dengan seminggu. Disamakan dengan getPeriodeBerjalan() yang
+  // sudah dipakai di Rekap Payroll, supaya dashboard & laporan konsisten -
+  // sekaligus otomatis menghitung hari Sabtu untuk sekolah seperti DTA yang
+  // sebelumnya tidak pernah ikut terhitung oleh getMingguIniSeninJumat().
+  const periodeBerjalanDash = getPeriodeBerjalan();
 
   let data = {
     todayStatus: 'Belum Absen', hadir: 0, terlambat: 0, izin: 0, sakit: 0, tugas_luar: 0, alpa_guru: 0,
     totalGuru: 0, adHadir: 0, adTerlambat: 0, adIzin: 0, adSakit: 0, adTugasLuar: 0, adBelum: 0,
-    listBelumAbsen: [], periodeLabel: mingguIni.label,
-    periodeKeterangan: 'Rekap ringkas minggu berjalan (Senin-Jumat). Untuk rekap penggajian bulanan penuh, buka menu Laporan/Payroll atau pakai filter tanggal manual.',
+    listBelumAbsen: [], periodeLabel: periodeBerjalanDash.label,
+    periodeKeterangan: 'Rekap periode penggajian berjalan (tanggal 21 - 20). Gunakan filter di atas untuk cek periode lain.',
     listHadir: [], listTerlambat: [], listSakit: [], listIzin: [], listTugasLuar: [], listAlpa: []
   };
 
@@ -692,7 +700,7 @@ async function getDashboardData(args, env) {
   if (startDate && endDate) {
     sDate = new Date(startDate); eDate = new Date(endDate);
   } else {
-    sDate = mingguIni.start; eDate = mingguIni.end;
+    sDate = periodeBerjalanDash.start; eDate = periodeBerjalanDash.end;
   }
   const sDateStr = toDateStr(sDate);
   const eDateStr = toDateStr(eDate);
@@ -724,8 +732,8 @@ async function getDashboardData(args, env) {
 
     if (nuptkGuru === String(user.nuptk).trim()) {
       if (rowDateStr === dateStr) data.todayStatus = statusAbsen;
-      const sDateGuru = startDate && endDate ? new Date(startDate) : mingguIni.start;
-      const eDateGuru = startDate && endDate ? new Date(endDate) : mingguIni.end;
+      const sDateGuru = startDate && endDate ? new Date(startDate) : periodeBerjalanDash.start;
+      const eDateGuru = startDate && endDate ? new Date(endDate) : periodeBerjalanDash.end;
       const rowDateObjGuru = new Date(rowDateStr);
       if (rowDateObjGuru >= sDateGuru && rowDateObjGuru <= eDateGuru) {
         if (statusAbsen === 'Hadir') data.hadir++;
