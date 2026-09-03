@@ -2930,6 +2930,18 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // =========================================================================
   // EDIT ABSEN MASUK (ADMIN) — perbaikan manual saat ada kendala presensi
   // =========================================================================
+  // Baris data hasil loadEditAbsenList() disimpan di sini, supaya tombol Edit tiap
+  // baris cukup kirim INDEKS (angka) ke bukaEditAbsenModal(), bukan seluruh objek
+  // baris yang di-JSON.stringify lalu disisipkan mentah ke atribut onclick='...'.
+  // Cara lama itu rapuh: JSON.stringify tidak pernah meng-escape tanda kutip satu
+  // ('), jadi begitu ada nama guru yang mengandung apostrof (mis. "Ma'ruf",
+  // "Sya'ban" - lumayan umum di lingkungan pesantren), apostrof itu dibaca browser
+  // sebagai penutup atribut onclick lebih awal, mematahkan tag & memicu
+  // "Uncaught SyntaxError: Invalid or unexpected token". Lewat indeks angka,
+  // karakter apa pun di dalam data (kutip satu, kutip dua, dll) tidak pernah
+  // menyentuh atribut HTML sama sekali - jadi tidak mungkin lagi rusak begini.
+  let _editAbsenRows = [];
+
   function initEditAbsenView() {
     const tglInput = document.getElementById('ea-tanggal');
     if (!tglInput.value) {
@@ -2970,8 +2982,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         return;
       }
       let html = '';
-      res.forEach(row => {
-        const dataAman = JSON.stringify(row).replace(/"/g, '&quot;');
+      _editAbsenRows = res;
+      res.forEach((row, idx) => {
         html += `
           <tr>
             <td class="fw-bold">${row.nama}</td>
@@ -2979,7 +2991,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <td><span class="badge bg-secondary">${row.status}</span></td>
             <td>${row.keterangan || '-'}</td>
             <td>
-              <button class="btn btn-sm btn-outline-primary" onclick='bukaEditAbsenModal(${dataAman})'>
+              <button class="btn btn-sm btn-outline-primary" onclick='bukaEditAbsenModal(${idx})'>
                 <i class="bi bi-pencil-fill"></i> Edit
               </button>
             </td>
@@ -2990,12 +3002,23 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }).getAbsenMasukUntukEdit(SESSION_TOKEN, tanggal, guru);
   }
 
-  function bukaEditAbsenModal(row) {
+  // Escape sederhana untuk teks bebas guru (mis. Keterangan) yang disisipkan ke
+  // atribut HTML seperti value="..." di dalam modal SweetAlert - mencegah tanda
+  // kutip di dalam teks guru merusak atribut, dengan semangat yang sama seperti
+  // perbaikan indeks di atas (jangan biarkan data guru bisa mematahkan markup).
+  function escAttr(teks) {
+    return String(teks == null ? '' : teks)
+      .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+      .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function bukaEditAbsenModal(idx) {
+    const row = _editAbsenRows[idx];
     const statusOptions = ['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Tugas Luar', 'Cuti', 'Tanpa Keterangan'];
     let optionsHtml = statusOptions.map(s => `<option value="${s}" ${s === row.status ? 'selected' : ''}>${s}</option>`).join('');
 
     Swal.fire({
-      title: `Edit Absen: ${row.nama}`,
+      title: `Edit Absen: ${escAttr(row.nama)}`,
       html: `
         <div class="text-start">
           <label class="form-label small fw-bold mb-1">Tanggal</label>
@@ -3008,7 +3031,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <select class="form-select mb-2" id="swal-ea-status">${optionsHtml}</select>
 
           <label class="form-label small fw-bold mb-1">Keterangan</label>
-          <input class="form-control" id="swal-ea-keterangan" type="text" value="${row.keterangan && row.keterangan !== '-' ? row.keterangan : ''}" placeholder="Opsional">
+          <input class="form-control" id="swal-ea-keterangan" type="text" value="${row.keterangan && row.keterangan !== '-' ? escAttr(row.keterangan) : ''}" placeholder="Opsional">
         </div>
       `,
       showCancelButton: true,
