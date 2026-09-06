@@ -1762,12 +1762,14 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
       const hariIni = new Date().toISOString().slice(0, 10);
       const terakhirDitanya = localStorage.getItem('push_notif_last_asked');
-      if (terakhirDitanya === hariIni) return; // sudah ditanya hari ini, jangan ganggu lagi
-
-      // Cuma tanya di hari Senin - biar tidak mengganggu tiap hari, tapi
-      // tetap ada kesempatan berkala buat yang belum aktifkan.
-      const isSenin = new Date().getDay() === 1; // 0=Minggu, 1=Senin, ...
-      if (!isSenin) return;
+      if (terakhirDitanya) {
+        // Tanya lagi tiap 2 HARI kalau masih belum aktif (bukan cuma sekali
+        // seminggu di hari Senin seperti sebelumnya) - supaya guru yang
+        // sempat melewatkan/menolak tetap sering diingatkan tanpa mengganggu
+        // tiap hari.
+        const selisihHari = Math.floor((new Date(hariIni) - new Date(terakhirDitanya)) / 86400000);
+        if (selisihHari < 2) return;
+      }
 
       // iOS Safari HANYA bisa push notification kalau sudah di-"Add to Home Screen".
       if (isIOS() && !isStandalonePWA()) {
@@ -1778,7 +1780,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
               icon: 'info',
               title: 'Notifikasi di iPhone',
               html: 'Untuk mengaktifkan notifikasi pengingat absen di iPhone, tambahkan AbsenYuk! ke Home Screen dulu lewat menu Share (ikon kotak dengan panah ke atas) &gt; "Add to Home Screen". Ini cuma perlu dilakukan sekali.',
-              confirmButtonText: 'Mengerti'
+              confirmButtonText: 'Mengerti',
+              width: 'min(92vw, 380px)'
             });
           }, 1500);
         }
@@ -1790,10 +1793,12 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         Swal.fire({
           icon: 'question',
           title: 'Aktifkan Notifikasi?',
-          text: 'Dapatkan pengingat kalau lupa presensi masuk. Kalau dilewati, akan ditanya lagi Senin depan.',
+          text: 'Dapatkan pengingat kalau lupa presensi masuk. Kalau dilewati, akan ditanya lagi 2 hari kemudian.',
           showCancelButton: true,
           confirmButtonText: 'Aktifkan',
-          cancelButtonText: 'Nanti saja'
+          cancelButtonText: 'Nanti saja',
+          width: 'min(92vw, 380px)',
+          padding: '1.25em'
         }).then((result) => {
           localStorage.setItem('push_notif_last_asked', hariIni);
           if (result.isConfirmed) {
@@ -1801,7 +1806,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             setupPushNotification().then((hasil) => {
               if (!hasil.success) {
                 localStorage.setItem('push_notif_choice', 'declined');
-                Swal.fire('Notifikasi Belum Aktif', PESAN_GAGAL_NOTIF[hasil.reason] || 'Gagal mengaktifkan notifikasi. Akan ditanya lagi Senin depan.', 'warning');
+                let pesanGagal = PESAN_GAGAL_NOTIF[hasil.reason] || 'Gagal mengaktifkan notifikasi. Akan ditanya lagi 2 hari kemudian.';
+                if (hasil.detail) pesanGagal += ` (Detail teknis: ${hasil.detail})`;
+                Swal.fire({ title: 'Notifikasi Belum Aktif', text: pesanGagal, icon: 'warning', width: 'min(92vw, 380px)' });
               }
             });
           } else {
@@ -1879,8 +1886,12 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       // Kegagalan apa pun di sini (termasuk keterbatasan iOS Safari yang
       // belum ter-cover pengecekan di atas) sengaja HANYA di-log, tidak
       // pernah dilempar lebih jauh - aplikasi utama harus tetap jalan normal.
+      // Pesan error ASLINYA (err.message) tetap disertakan di 'detail' -
+      // supaya kalau ini terjadi lagi, penyebabnya kelihatan jelas di popup
+      // (bukan cuma "terjadi kesalahan tak terduga" yang tidak bisa
+      // ditelusuri sama sekali).
       console.warn('Setup push notification gagal (diabaikan):', err);
-      return { success: false, reason: 'error-tak-terduga' };
+      return { success: false, reason: 'error-tak-terduga', detail: err && err.message };
     }
   }
 
