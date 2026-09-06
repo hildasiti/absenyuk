@@ -1688,6 +1688,7 @@ async function kirimNotifikasiAdmin(args, env) {
 
   let berhasil = 0;
   const catatanGagal = [];
+  let jumlahTokenBasiDibersihkan = 0;
   for (const t of targets) {
     if (!t.fcm_token) {
       catatanGagal.push(`${t.nama} (belum pernah mengizinkan notifikasi di browsernya)`);
@@ -1695,8 +1696,22 @@ async function kirimNotifikasiAdmin(args, env) {
     }
     try {
       const hasil = await kirimNotifikasiKeSatuHP(env, t.fcm_token, judul.trim(), pesan.trim());
-      if (hasil.success) berhasil++;
-      else catatanGagal.push(`${t.nama} (${hasil.message})`);
+      if (hasil.success) {
+        berhasil++;
+      } else if (hasil.tokenTidakValid) {
+        // Token basi (guru pernah aktifkan notifikasi, tapi registrasinya di
+        // Firebase sudah tidak berlaku lagi - mis. data browser sempat
+        // dibersihkan) - dihapus dari database supaya tidak terus dicoba
+        // kirim ke token yang sama tiap kali, dan supaya aplikasi otomatis
+        // mendaftarkan token baru begitu guru itu membuka lagi (lihat
+        // setupPushNotification() di frontend, jalan otomatis tiap buka app
+        // kalau izin notifikasi browsernya masih aktif).
+        await sbUpdate(env, 'users', 'nuptk', t.nuptk, { fcm_token: null });
+        jumlahTokenBasiDibersihkan++;
+        catatanGagal.push(`${t.nama} (registrasi notifikasi di HP-nya sudah kedaluwarsa - otomatis akan aktif lagi begitu dia membuka aplikasi)`);
+      } else {
+        catatanGagal.push(`${t.nama} (${hasil.message})`);
+      }
     } catch (err) {
       catatanGagal.push(`${t.nama} (${err.message})`);
     }
@@ -1746,6 +1761,7 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
     const sudahAbsenNuptk = absenHariIni.map((r) => String(r.nuptk).trim());
 
     let jumlahDikirim = 0;
+    let jumlahTokenBasiDibersihkan = 0;
     for (const u of users) {
       const uRole = String(u.role).trim(), uStatus = String(u.status).trim(), uNuptk = String(u.nuptk).trim();
       const fcmToken = u.fcm_token;
@@ -1753,12 +1769,23 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
         if (!sudahAbsenNuptk.includes(uNuptk) && fcmToken) {
           const judul = 'Pengingat Presensi Masuk ⏱️';
           const pesan = `Halo ${u.nama}, waktu sudah menunjukkan pukul 07.20 WIB. Mari segera lakukan presensi masuk sebelum terlambat!`;
-          await kirimNotifikasiKeSatuHP(env, fcmToken, judul, pesan);
-          jumlahDikirim++;
+          const hasil = await kirimNotifikasiKeSatuHP(env, fcmToken, judul, pesan);
+          if (hasil.success) {
+            jumlahDikirim++;
+          } else if (hasil.tokenTidakValid) {
+            // Token basi - dibersihkan supaya tidak gagal diam-diam berulang
+            // TIAP HARI tanpa pernah ketahuan (dulu hasil pengiriman ini sama
+            // sekali tidak dicek). Lihat komentar lebih lengkap di
+            // kirimNotifikasiAdmin().
+            await sbUpdate(env, 'users', 'nuptk', uNuptk, { fcm_token: null });
+            jumlahTokenBasiDibersihkan++;
+          } else {
+            console.warn(`[${sekolahId}] Gagal kirim notifikasi ke ${u.nama}:`, hasil.message);
+          }
         }
       }
     }
-    console.log(`[${sekolahId}] Selesai! Notifikasi dikirim ke ${jumlahDikirim} GTK yang belum absen.`);
+    console.log(`[${sekolahId}] Selesai! Notifikasi dikirim ke ${jumlahDikirim} GTK yang belum absen.${jumlahTokenBasiDibersihkan ? ` (${jumlahTokenBasiDibersihkan} token FCM basi dibersihkan)` : ''}`);
   }
 }
 

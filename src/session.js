@@ -1,8 +1,13 @@
 /**
- * Session login disimpan di Workers KV dengan TTL 6 jam (21600 detik).
+ * Session login disimpan di Workers KV dengan TTL 6 hari (518400 detik).
+ * Durasi ini murni soal kenyamanan (guru tidak perlu login ulang tiap
+ * beberapa jam) - TIDAK ADA hubungannya dengan FCM/push notification, yang
+ * memakai token terpisah (fcm_token di tabel users, dengan otentikasi Google
+ * Service Account sendiri) dan tetap berfungsi normal walau sesi ini sudah
+ * kedaluwarsa.
  */
 
-const SESSION_TTL_SECONDS = 21600;
+const SESSION_TTL_SECONDS = 518400;
 
 export async function createSession(env, userObj) {
   const token = crypto.randomUUID();

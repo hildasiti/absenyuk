@@ -31,7 +31,15 @@ export async function kirimNotifikasiKeSatuHP(env, fcmToken, judul, pesan) {
 
   if (!res.ok) {
     const errText = await res.text();
-    return { success: false, message: 'FCM gagal (' + res.status + '): ' + errText };
+    // FCM balas 404 + kode error UNREGISTERED/NOT_FOUND kalau token yang
+    // tersimpan sudah basi (mis. data browser guru sempat dibersihkan, atau
+    // lama tidak membuka aplikasi) - Firebase sendiri tidak akan pernah bisa
+    // mengirim ke token itu lagi. Ditandai eksplisit di sini (bukan cuma
+    // membaca pesan errornya) supaya pemanggil (kirimNotifikasiAdmin, cron
+    // pengingat, dll) bisa langsung membersihkan fcm_token yang basi itu dari
+    // database, bukan terus-menerus mencoba mengirim ke token yang sama.
+    const tokenTidakValid = res.status === 404 || /UNREGISTERED|NOT_FOUND/i.test(errText);
+    return { success: false, message: 'FCM gagal (' + res.status + '): ' + errText, tokenTidakValid };
   }
   return { success: true };
 }
