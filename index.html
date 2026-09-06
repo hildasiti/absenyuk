@@ -505,6 +505,9 @@
         </div>
       </div>
 
+      <a class='menu-btn text-muted' href='#' onclick='cobaAktifkanNotifikasiManual()' style='font-size:0.85rem;'>
+        <i class='bi bi-bell me-2'></i> Uji Coba Notifikasi
+      </a>
       <a class='text-danger d-inline-flex align-items-center decoration-none flex-shrink-0 border-top border-light' href='#' onclick='handleLogout()' style='padding: 14px 20px;'>
         <i class='bi bi-box-arrow-left me-2'></i> <strong>Logout</strong>
       </a>
@@ -1832,18 +1835,21 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       return { success: false, reason: 'tidak-didukung' };
     }
 
+    let langkah = 'inisialisasi Firebase';
     try {
       if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
 
       // Cek dukungan browser secara lebih akurat lewat SDK Firebase sendiri
       // (mendeteksi keterbatasan Safari/browser lama yang tidak kelihatan
       // dari sekadar cek 'Notification' in window).
+      langkah = 'cek dukungan Firebase Messaging';
       const didukung = await firebase.messaging.isSupported().catch(() => false);
       if (!didukung) {
         console.warn('Browser ini tidak didukung Firebase Messaging.');
         return { success: false, reason: 'tidak-didukung' };
       }
 
+      langkah = 'minta izin notifikasi ke browser';
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         console.warn('Izin notifikasi ditolak/diabaikan oleh pengguna. Status:', permission);
@@ -1851,10 +1857,13 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         return { success: false, reason: permission === 'denied' ? 'izin-diblokir' : 'izin-diabaikan' };
       }
 
+      langkah = 'menunggu service worker siap';
       const messaging = firebase.messaging();
       // Pakai registration yang sudah didaftarkan lebih awal (lihat atas),
       // jangan register ulang - cukup tunggu sampai siap.
       const registration = await navigator.serviceWorker.ready;
+
+      langkah = 'mengambil token FCM (messaging.getToken)';
       const fcmToken = await messaging.getToken({ vapidKey: FIREBASE_VAPID_KEY, serviceWorkerRegistration: registration });
 
       if (!fcmToken) {
@@ -1862,14 +1871,16 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         return { success: false, reason: 'token-gagal' };
       }
 
+      langkah = 'menyimpan token FCM ke server';
       let simpanBerhasil = true;
+      let pesanGagalSimpan = '';
       await new Promise((resolve) => {
         google.script.run
           .withSuccessHandler(() => { console.log('Token FCM tersimpan.'); resolve(); })
-          .withFailureHandler((err) => { console.warn('Gagal simpan token FCM:', err.message); simpanBerhasil = false; resolve(); })
+          .withFailureHandler((err) => { console.warn('Gagal simpan token FCM:', err.message); simpanBerhasil = false; pesanGagalSimpan = err.message; resolve(); })
           .simpanTokenFCM(SESSION_TOKEN, fcmToken);
       });
-      if (!simpanBerhasil) return { success: false, reason: 'simpan-token-gagal' };
+      if (!simpanBerhasil) return { success: false, reason: 'simpan-token-gagal', detail: pesanGagalSimpan };
 
       pushNotifSudahDisetup = true;
 
@@ -1886,13 +1897,33 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       // Kegagalan apa pun di sini (termasuk keterbatasan iOS Safari yang
       // belum ter-cover pengecekan di atas) sengaja HANYA di-log, tidak
       // pernah dilempar lebih jauh - aplikasi utama harus tetap jalan normal.
-      // Pesan error ASLINYA (err.message) tetap disertakan di 'detail' -
-      // supaya kalau ini terjadi lagi, penyebabnya kelihatan jelas di popup
-      // (bukan cuma "terjadi kesalahan tak terduga" yang tidak bisa
-      // ditelusuri sama sekali).
-      console.warn('Setup push notification gagal (diabaikan):', err);
-      return { success: false, reason: 'error-tak-terduga', detail: err && err.message };
+      // 'langkah' SELALU disertakan di detail (bukan cuma err.message, yang
+      // ternyata bisa kosong untuk sebagian jenis error) - supaya minimal
+      // kelihatan jelas GAGAL DI LANGKAH MANA persisnya, walau pesan error
+      // aslinya tidak informatif.
+      const pesanAsli = (err && (err.message || err.code)) || (typeof err === 'string' ? err : '') || '(tidak ada pesan error dari browser)';
+      console.warn(`Setup push notification gagal di langkah "${langkah}":`, err);
+      return { success: false, reason: 'error-tak-terduga', detail: `Gagal di langkah "${langkah}" - ${pesanAsli}` };
     }
+  }
+
+  function cobaAktifkanNotifikasiManual() {
+    if (typeof Swal === 'undefined') return;
+    Swal.fire({ title: 'Mengecek & mengaktifkan notifikasi...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    // Dipanggil manual - SENGAJA tidak lewat pengecekan "sudah ditanya berapa
+    // hari lalu" seperti maybeOfferPushNotification(), supaya bisa dites
+    // kapan saja tanpa perlu menunggu jadwal atau mengutak-atik localStorage.
+    pushNotifSudahDisetup = false; // paksa setup ulang walau sesi ini sebelumnya sempat "sudah aktif"
+    setupPushNotification().then((hasil) => {
+      if (hasil.success) {
+        localStorage.setItem('push_notif_choice', 'granted');
+        Swal.fire({ icon: 'success', title: 'Notifikasi Aktif!', text: 'Perangkat ini sudah terdaftar untuk menerima notifikasi.', width: 'min(92vw, 380px)' });
+      } else {
+        let pesanGagal = PESAN_GAGAL_NOTIF[hasil.reason] || 'Gagal mengaktifkan notifikasi.';
+        if (hasil.detail) pesanGagal += ` (Detail teknis: ${hasil.detail})`;
+        Swal.fire({ icon: 'warning', title: 'Notifikasi Belum Aktif', text: pesanGagal, width: 'min(92vw, 380px)' });
+      }
+    });
   }
 
   function muatDaftarSekolahUntukPicker() {
