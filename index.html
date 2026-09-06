@@ -501,6 +501,7 @@
           <a class='menu-btn' href='#' id='sub-edit-absen' onclick='switchView(&apos;edit-absen&apos;)'><i class='bi bi-pencil-square me-2'></i> Edit Absen Masuk</a>
           <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'></i> Rekap Payroll</a>
           <a class='menu-btn' href='#' id='sub-pengaturan' onclick='switchView(&apos;pengaturan&apos;)'><i class='bi bi-gear me-2'></i> Pengaturan</a>
+          <a class='menu-btn' href='#' id='sub-notifikasi' onclick='switchView(&apos;kirim-notifikasi&apos;)'><i class='bi bi-bell-fill me-2'></i> Kirim Notifikasi</a>
         </div>
       </div>
 
@@ -647,6 +648,10 @@
         </div>
       </div>
     </form>
+
+    <button class='btn btn-outline-secondary w-100 mt-3' type='button' onclick='bukaRekapKehadiranSendiri()'>
+      <i class='bi bi-file-earmark-bar-graph me-1'></i> Rekap Kehadiran (Periode Berjalan)
+    </button>
   </div>
 </div>
 
@@ -996,6 +1001,36 @@
       </div>
       
       <button class='btn btn-primary w-100 mt-2' type='submit'><i class='bi bi-save-fill'></i> Simpan Seluruh Pengaturan</button>
+    </form>
+  </div>
+</div>
+
+<div class='content-section' id='kirim-notifikasi' style='display: none;'>
+  <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
+    <h5 class='mb-2 text-secondary fw-bold'><i class='bi bi-bell-fill text-primary'></i> Kirim Notifikasi</h5>
+    <p class='text-muted small mb-3'>Kirim pesan bebas lewat push notification ke HP guru - baik untuk pengumuman biasa, maupun untuk uji coba apakah notifikasi memang sampai di HP guru tertentu atau tidak.</p>
+
+    <form id='form-kirim-notifikasi' onsubmit='kirimNotifikasiAdminSubmit(event)'>
+      <div class='mb-3'>
+        <label class='form-label fw-semibold'>Kirim Ke</label>
+        <select class='form-select' id='notif-target' required='required'>
+          <option value='' disabled selected>-- Pilih Penerima --</option>
+          <option value='SENDIRI'>🔔 Diri Saya Sendiri (Uji Coba Notifikasi)</option>
+          <option value='SEMUA'>📢 Semua Guru Aktif</option>
+          <optgroup id='notif-target-staf-group' label='Guru/Staf Tertentu'></optgroup>
+        </select>
+        <small class='text-muted'>Pilih "Diri Saya Sendiri" dulu untuk memastikan notifikasi memang sampai di HP Anda, sebelum kirim ke guru sungguhan.</small>
+      </div>
+      <div class='mb-3'>
+        <label class='form-label fw-semibold'>Judul Notifikasi</label>
+        <input class='form-control' id='notif-judul' maxlength='60' placeholder='Contoh: Pengumuman Penting' required='required' type='text'/>
+      </div>
+      <div class='mb-3'>
+        <label class='form-label fw-semibold'>Isi Pesan</label>
+        <textarea class='form-control' id='notif-pesan' maxlength='150' oninput="updateCharCount(this, 'notif-pesan-count')" placeholder='Tulis isi pesan notifikasi...' required='required' rows='3'></textarea>
+        <small class='text-muted float-end' id='notif-pesan-count'>0/150</small>
+      </div>
+      <button class='btn btn-primary w-100 fw-bold' id='btn-kirim-notifikasi' type='submit'><i class='bi bi-send-fill me-1'></i> Kirim Notifikasi</button>
     </form>
   </div>
 </div>
@@ -2154,6 +2189,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }
     if(id === 'rekap-jam-pelajaran') loadGuruDropdownJamPelajaran();
     if(id === 'pengaturan') loadSettings();
+    if(id === 'kirim-notifikasi') loadStafUntukNotifikasi();
   }
 
   function loadGuruDropdownJamPelajaran() {
@@ -2642,6 +2678,160 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         { enableHighAccuracy: true }
       );
     });
+  }
+
+  // ====================================================================
+  // REKAP KEHADIRAN (POPUP) - milik diri sendiri, periode payroll berjalan
+  // (21 - 20). Berlaku untuk semua role yang bisa membuka menu Absen Masuk
+  // ini (GURU/PIKET/KEPALA_SEKOLAH/ADMIN_SEKOLAH) - ADMIN_UTAMA otomatis
+  // tidak pernah sampai ke sini karena menu ini memang tidak muncul di
+  // sidebar-nya sama sekali (lihat initApp()).
+  // ====================================================================
+  let REKAP_SENDIRI_DATA = null;
+
+  function bukaRekapKehadiranSendiri() {
+    Swal.fire({ title: 'Memuat rekap kehadiran...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    google.script.run.withSuccessHandler(res => {
+      REKAP_SENDIRI_DATA = res;
+      renderPopupRekapKehadiranSendiri(res);
+    }).getRekapAbsenMasukSendiri(SESSION_TOKEN);
+  }
+
+  function renderPopupRekapKehadiranSendiri(res) {
+    // Kolom yang disembunyikan SAMA PERSIS dengan Laporan Absen Masuk di menu
+    // Admin - format tabelnya sengaja dibuat identik (lihat loadReport()).
+    const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
+    const headers = res.headers || [];
+
+    let headHtml = '<tr><th>No.</th>';
+    headers.forEach(h => { if (!kolomDilarang.includes(h.toLowerCase())) headHtml += `<th>${h}</th>`; });
+    headHtml += '</tr>';
+
+    const jumlahKolom = headers.filter(h => !kolomDilarang.includes(h.toLowerCase())).length + 1;
+    let bodyHtml = '';
+    if (!res.data || res.data.length === 0) {
+      bodyHtml = `<tr><td colspan="${jumlahKolom}" class="text-center text-muted py-3">Belum ada data presensi pada periode ini.</td></tr>`;
+    } else {
+      res.data.forEach((row, idx) => {
+        bodyHtml += `<tr><td class="fw-bold text-secondary">${idx + 1}</td>`;
+        headers.forEach(h => {
+          if (!kolomDilarang.includes(h.toLowerCase())) {
+            bodyHtml += `<td>${row[h] !== undefined && row[h] !== null ? row[h] : ''}</td>`;
+          }
+        });
+        bodyHtml += '</tr>';
+      });
+    }
+
+    Swal.fire({
+      title: `Rekap Kehadiran - ${res.periodeLabel || ''}`,
+      html: `<div class="table-responsive" style="max-height:55vh; overflow-y:auto;">
+               <table class="table table-sm table-bordered table-hover" style="font-size:0.82rem;">
+                 <thead class="table-light" style="position:sticky; top:0;">${headHtml}</thead>
+                 <tbody>${bodyHtml}</tbody>
+               </table>
+             </div>`,
+      width: '90%',
+      showCancelButton: true,
+      confirmButtonText: '<i class="bi bi-printer-fill"></i> Cetak',
+      cancelButtonText: 'Tutup',
+      confirmButtonColor: '#0f4c81',
+      cancelButtonColor: '#6c757d',
+      focusConfirm: false
+    }).then(result => {
+      if (result.isConfirmed) cetakRekapKehadiranSendiri();
+    });
+  }
+
+  function cetakRekapKehadiranSendiri() {
+    if (!REKAP_SENDIRI_DATA || !REKAP_SENDIRI_DATA.data || REKAP_SENDIRI_DATA.data.length === 0) {
+      return Swal.fire('Gagal Cetak', 'Tidak ada data untuk dicetak pada periode ini.', 'warning');
+    }
+    Swal.fire({ title: 'Menyiapkan Dokumen...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+
+    google.script.run.withSuccessHandler(identitas => {
+      Swal.close();
+      const schName = identitas.nama_sekolah || 'SEKOLAH';
+      const schAddress = identitas.alamat_sekolah || '-';
+      const schWakasek = identitas.nama_wakasek || '( .................................... )';
+      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
+      const headers = REKAP_SENDIRI_DATA.headers || [];
+
+      let printWindowContent = `
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Cetak Rekap Kehadiran</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 30px; color: #000; background-color: #fff; }
+            .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
+            .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
+            .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
+            .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
+            .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 5px; color: #555; }
+            table { font-size: 11px !important; width: 100%; border-collapse: collapse; }
+            th { background-color: #f2f2f2 !important; color: #000 !important; font-weight: bold; text-transform: uppercase; border: 1px solid #000 !important; text-align: center; vertical-align: middle;}
+            td { border: 1px solid #000 !important; padding: 4px !important; text-align: center; vertical-align: middle;}
+            .row { display: flex; flex-wrap: wrap; margin: 0 -8px; }
+            .row.mt-5 { margin-top: 40px; }
+            .col-4 { flex: 0 0 33.333%; max-width: 33.333%; padding: 0 8px; box-sizing: border-box; }
+            .col-8 { flex: 0 0 66.666%; max-width: 66.666%; padding: 0 8px; box-sizing: border-box; }
+            .text-center { text-align: center; }
+            .fw-bold { font-weight: bold; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="kop-surat">
+            <h3 class="kop-title">${schName}</h3>
+            <p class="kop-subtitle">${schAddress}</p>
+          </div>
+          <div class="laporan-title">Rekap Kehadiran Pribadi - ${REKAP_SENDIRI_DATA.namaGuru || ''}</div>
+          <div class="laporan-periode">Periode: ${REKAP_SENDIRI_DATA.periodeLabel || ''}</div>
+          <table>
+            <thead><tr><th>No.</th>
+      `;
+      headers.forEach(h => { if (!kolomDilarang.includes(h.toLowerCase())) printWindowContent += `<th>${h}</th>`; });
+      printWindowContent += `</tr></thead><tbody>`;
+
+      REKAP_SENDIRI_DATA.data.forEach((row, idx) => {
+        printWindowContent += `<tr><td class="fw-bold" style="color:#555;">${idx + 1}</td>`;
+        headers.forEach(h => {
+          if (!kolomDilarang.includes(h.toLowerCase())) {
+            printWindowContent += `<td>${row[h] !== undefined && row[h] !== null ? row[h] : ''}</td>`;
+          }
+        });
+        printWindowContent += `</tr>`;
+      });
+      printWindowContent += `</tbody></table>`;
+
+      printWindowContent += `
+          <div class="row mt-5" style="font-size: 11px;">
+            <div class="col-8"></div>
+            <div class="col-4 text-center">
+              <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p style="margin-bottom: 50px;">Wakasek Bidang SDM,</p>
+              <p class="fw-bold" style="text-decoration: underline;">${schWakasek}</p>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+                setTimeout(function() { window.close(); }, 800);
+              }, 300);
+            }
+          <\/script>
+        </body>
+        </html>
+      `;
+      const blob = new Blob([printWindowContent], { type: 'text/html' });
+      const blobUrl = URL.createObjectURL(blob);
+      const printWindow = window.open(blobUrl, '_blank');
+      if (!printWindow) {
+        Swal.fire('Pop-up Diblokir', 'Harap izinkan pop-up pada browser Anda untuk mencetak PDF.', 'warning');
+      }
+    }).getIdentitasSekolahUntukCetak(SESSION_TOKEN);
   }
 
   function submitAbsenMasuk(e) {
@@ -3963,6 +4153,58 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       });
       sel.innerHTML = opts;
     }).getStafAktifUntukImpal(SESSION_TOKEN);
+  }
+
+  // ====================================================================
+  // KIRIM NOTIFIKASI (Admin) - pengumuman bebas + alat uji coba FCM
+  // ====================================================================
+  function loadStafUntukNotifikasi() {
+    const grup = document.getElementById('notif-target-staf-group');
+    if (!grup || grup.dataset.loaded) return; // cukup sekali per sesi, daftar staf jarang berubah selagi halaman terbuka
+    google.script.run.withSuccessHandler(list => {
+      let opts = '';
+      list.forEach(u => {
+        const labelRole = (u.role && u.role !== 'GURU') ? ` (${String(u.role).replace('_', ' ')})` : '';
+        opts += `<option value="${u.nuptk}">${u.nama}${labelRole}</option>`;
+      });
+      grup.innerHTML = opts;
+      grup.dataset.loaded = '1';
+    }).getStafAktifUntukImpal(SESSION_TOKEN);
+  }
+
+  function kirimNotifikasiAdminSubmit(e) {
+    e.preventDefault();
+    const target = document.getElementById('notif-target').value;
+    const judul = document.getElementById('notif-judul').value.trim();
+    const pesan = document.getElementById('notif-pesan').value.trim();
+    if (!target) return Swal.fire('Belum Lengkap', 'Pilih penerima notifikasi terlebih dahulu.', 'warning');
+    if (!judul || !pesan) return Swal.fire('Belum Lengkap', 'Judul dan Isi Pesan wajib diisi.', 'warning');
+
+    // Admin Utama wajib pilih sekolah dulu KHUSUS untuk kirim ke "Semua Guru
+    // Aktif" (perlu tahu sekolah mana) - uji coba ke diri sendiri tidak perlu ini.
+    const sekolahIdUntukKirim = (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '';
+    if (target === 'SEMUA' && USER_DATA && USER_DATA.role === 'ADMIN_UTAMA' && !sekolahIdUntukKirim) {
+      return Swal.fire('Pilih Sekolah Dulu', 'Pilih sekolah di pojok kiri atas sebelum mengirim notifikasi ke semua guru.', 'warning');
+    }
+
+    const labelTarget = target === 'SENDIRI' ? 'diri Anda sendiri (uji coba)'
+      : target === 'SEMUA' ? 'SEMUA guru aktif' : 'guru yang dipilih';
+
+    Swal.fire({
+      title: 'Kirim Notifikasi?',
+      html: `Notifikasi akan dikirim ke <strong>${labelTarget}</strong>. Lanjutkan?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya, Kirim',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#0f4c81'
+    }).then(result => {
+      if (!result.isConfirmed) return;
+      Swal.fire({ title: 'Mengirim notifikasi...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+      google.script.run.withSuccessHandler(res => {
+        Swal.fire(res.success ? 'Berhasil' : 'Ada Kendala', res.message, res.success ? 'success' : 'warning');
+      }).kirimNotifikasiAdmin(SESSION_TOKEN, target, judul, pesan, sekolahIdUntukKirim);
+    });
   }
 
   function submitCutiGuru(e) {

@@ -876,6 +876,27 @@ async function getSettingsData(args, env) {
   return getSettingsMap(env, sekolahId);
 }
 
+/**
+ * Versi MINIMAL dari getSettingsData(), cuma 3 field identitas untuk kop surat
+ * cetak (nama sekolah, alamat, nama wakasek) - dibuat TERPISAH dan boleh
+ * diakses SIAPA PUN yang login (bukan cuma Admin/Piket seperti
+ * getSettingsData()), karena dipakai fitur cetak Rekap Kehadiran milik sendiri
+ * yang berlaku untuk semua role. Sengaja TIDAK ikut mengembalikan field
+ * sensitif lain di settings (koordinat GPS, radius, dll) - guru biasa tidak
+ * perlu dan tidak semestinya bisa melihat itu.
+ */
+async function getIdentitasSekolahUntukCetak(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!user) return {};
+  const settings = await getSettingsMap(env, user.sekolahId);
+  return {
+    nama_sekolah: settings.nama_sekolah || '',
+    alamat_sekolah: settings.alamat_sekolah || '',
+    nama_wakasek: settings.nama_wakasek || ''
+  };
+}
+
 async function saveSettingsData(args, env) {
   const [token, config, requestedSekolahId] = args;
   const user = await requireUser(env, token);
@@ -1481,6 +1502,58 @@ async function getReport(args, env) {
   return { headers: config.headers, data: result };
 }
 
+/**
+ * Rekap Kehadiran (Absen Masuk) milik diri sendiri, periode payroll berjalan
+ * (21 - 20) - dipakai tombol "Rekap Kehadiran" di menu Absen Masuk, tampil di
+ * popup. Sengaja dibuat handler TERPISAH dari getReport() (bukan memakainya
+ * langsung) karena getReport() dibatasi HANYA untuk Admin/Piket/Kepsek -
+ * di sini SIAPA PUN (kecuali Admin Utama, yang tidak punya presensi pribadi -
+ * tidak terikat ke satu sekolah) boleh melihat rekap kehadirannya sendiri,
+ * tidak perlu login sebagai admin. Bentuk hasilnya SAMA PERSIS dengan
+ * getReport() ({headers, data}) supaya bisa dirender pakai fungsi render
+ * tabel laporan yang sudah ada di frontend, tanpa kode render terpisah.
+ */
+async function getRekapAbsenMasukSendiri(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { headers: [], data: [] };
+  if (user.role === 'ADMIN_UTAMA') return { headers: [], data: [] };
+
+  const sekolahId = user.sekolahId;
+  const config = REPORT_CONFIG.ABSEN_MASUK;
+  const { start, end, label } = getPeriodeBerjalan();
+  const sDateStr = toDateStr(start);
+  const eDateStr = toDateStr(end);
+
+  const rows = await sbSelect(env, config.table,
+    `sekolah_id=eq.${sekolahId}&nuptk=eq.${encodeURIComponent(user.nuptk)}&${config.dateField}=gte.${sDateStr}&${config.dateField}=lte.${eDateStr}`);
+
+  // Sama seperti getReport() - "Ikut Tawasul" ditempel dari baris kegiatan_umum
+  // terpisah (BRIEFING_TAWASUL), bukan dari teks Keterangan yang guru ketik
+  // sendiri. Lihat komentar lengkap di getReport().
+  const tawasulRows = await sbSelect(env, 'kegiatan_umum',
+    `sekolah_id=eq.${sekolahId}&nuptk=eq.${encodeURIComponent(user.nuptk)}&jenis_kegiatan=eq.BRIEFING_TAWASUL&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
+  const tawasulSet = new Set(tawasulRows.map((r) => r.tanggal));
+
+  rows.sort((a, b) => (a[config.dateField] < b[config.dateField] ? -1 : a[config.dateField] > b[config.dateField] ? 1 : 0));
+
+  const data = rows.map((row) => {
+    const ikutTawasulRow = tawasulSet.has(row[config.dateField]);
+    const rowObj = {};
+    config.headers.forEach((header, j) => {
+      let val = row[config.fields[j]];
+      if (header === 'Keterangan' && ikutTawasulRow) {
+        const asli = (val === undefined || val === null || val === '-') ? '' : String(val).trim();
+        val = asli ? `Ikut Tawasul - ${asli}` : 'Ikut Tawasul';
+      }
+      rowObj[header] = val === undefined || val === null ? '' : val;
+    });
+    return rowObj;
+  });
+
+  return { headers: config.headers, data, periodeLabel: label, namaGuru: user.nama, sekolahId };
+}
+
 async function getRekapJamPelajaranSendiri(args, env) {
   const [token, startDate, endDate] = args;
   const user = await requireUser(env, token);
@@ -1573,6 +1646,68 @@ async function saveRekapJamPelajaran(args, env) {
 // ====================================================================
 // FCM / NOTIFIKASI (dipanggil dari frontend & dari cron)
 // ====================================================================
+
+/**
+ * Kirim push notification (FCM) manual dari Admin Sekolah/Admin Utama - dipakai
+ * untuk fitur "Kirim Notifikasi" di Admin Panel (pengumuman bebas ke guru,
+ * SEKALIGUS alat uji coba apakah notifikasi sampai ke HP atau tidak).
+ *
+ * targetNuptk menentukan penerima:
+ * - 'SEMUA'   -> broadcast ke semua staf berstatus Aktif di sekolah (kecuali
+ *                Admin Utama - bukan staf spesifik 1 sekolah).
+ * - 'SENDIRI' -> kirim ke device Admin yang SEDANG LOGIN saat ini - cara
+ *                tercepat untuk Admin menguji sendiri apakah notifikasi
+ *                sungguhan sampai di HP-nya, tanpa perlu minta tolong guru
+ *                lain untuk mengecek.
+ * - NUPTK staf tertentu -> kirim ke 1 orang saja - berguna untuk uji coba
+ *   per-guru juga, mis. menelusuri kenapa 1 guru tertentu tidak pernah
+ *   dapat notifikasi (biasanya karena belum pernah mengizinkan notifikasi
+ *   di browser-nya, sehingga fcm_token masih kosong).
+ */
+async function kirimNotifikasiAdmin(args, env) {
+  const [token, targetNuptk, judul, pesan, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  if (!judul || !judul.trim() || !pesan || !pesan.trim()) {
+    return { success: false, message: 'Judul dan Pesan notifikasi wajib diisi.' };
+  }
+
+  let targets = [];
+  if (targetNuptk === 'SENDIRI') {
+    // Tidak butuh resolveSekolahId sama sekali - uji coba ke diri sendiri
+    // relevan buat Admin Utama juga TANPA harus pilih sekolah dulu.
+    targets = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(user.nuptk)}&limit=1`);
+  } else if (targetNuptk === 'SEMUA') {
+    const sekolahId = resolveSekolahId(user, requestedSekolahId);
+    const users = await getUsersListCached(env, sekolahId);
+    targets = users.filter((u) => String(u.status).trim() === 'Aktif' && String(u.role).trim() !== 'ADMIN_UTAMA');
+  } else {
+    targets = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(String(targetNuptk).trim())}&limit=1`);
+  }
+  if (!targets.length) return { success: false, message: 'Target penerima tidak ditemukan.' };
+
+  let berhasil = 0;
+  const catatanGagal = [];
+  for (const t of targets) {
+    if (!t.fcm_token) {
+      catatanGagal.push(`${t.nama} (belum pernah mengizinkan notifikasi di browsernya)`);
+      continue;
+    }
+    try {
+      const hasil = await kirimNotifikasiKeSatuHP(env, t.fcm_token, judul.trim(), pesan.trim());
+      if (hasil.success) berhasil++;
+      else catatanGagal.push(`${t.nama} (${hasil.message})`);
+    } catch (err) {
+      catatanGagal.push(`${t.nama} (${err.message})`);
+    }
+  }
+
+  let pesanHasil = `Notifikasi berhasil dikirim ke ${berhasil} dari ${targets.length} penerima.`;
+  if (catatanGagal.length) {
+    pesanHasil += ` Gagal: ${catatanGagal.slice(0, 5).join('; ')}${catatanGagal.length > 5 ? `, dan ${catatanGagal.length - 5} lainnya` : ''}.`;
+  }
+  return { success: berhasil > 0, message: pesanHasil };
+}
 
 async function simpanTokenFCM(args, env) {
   const [token, fcmToken] = args;
@@ -2086,6 +2221,7 @@ export const handlers = {
   deleteJadwalKegiatan,
   getDashboardData,
   getSettingsData,
+  getIdentitasSekolahUntukCetak,
   saveSettingsData,
   jalankanAutoAlpaManual,
   jalankanAutoSholatManual,
@@ -2105,8 +2241,10 @@ export const handlers = {
   deleteCutiGuru,
   getPayrollReport,
   getReport,
+  getRekapAbsenMasukSendiri,
   getRekapJamPelajaranSendiri,
   getPayrollJamPelajaran,
   saveRekapJamPelajaran,
-  simpanTokenFCM
+  simpanTokenFCM,
+  kirimNotifikasiAdmin
 };
