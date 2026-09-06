@@ -25,17 +25,22 @@ id = "614e992ccfd643b8ac628d0de257937b"
 # jalan tiap hari termasuk weekend, cuma langsung berhenti tanpa melakukan apa-apa -
 # sedikit invocation ekstra yang sia-sia, tapi jauh lebih aman daripada salah hari.
 #
-# Auto "Tanpa Keterangan" (Absen Masuk) sengaja dipanggil 2x sehari (13:01 & 15:31
-# WIB) - BUKAN karena 2 jadwal berbeda per fungsi, tapi karena jam masuk sekolah
-# bisa beda jauh antar sekolah (mis. MDT/DTA yang mulai belajar siang setelah
-# Dzuhur, bukan pagi seperti sekolah reguler). Tiap sekolah punya jam cutoff-nya
-# sendiri (settings.jam_cutoff_alpa, diatur admin di menu Pengaturan) - fungsi
-# autoSetTanpaKeterangan() otomatis skip sekolah yang belum lewat jam cutoff-nya,
-# jadi aman dipanggil berkali-kali sehari (idempotent, tidak menandai dobel).
+# Auto "Tanpa Keterangan" (Absen Masuk) TIDAK LAGI punya cron khusus (dulu 2x sehari
+# jam 13:01 & 15:31 WIB) - sejak Absen Pulang ada, pemicunya sekarang OPORTUNISTIK:
+# setiap kali ADA guru yang Presensi Pulang di suatu sekolah, sekolah ITU SAJA langsung
+# dicek ulang saat itu juga (lihat trigerAutoAlpaOportunistik & saveAbsenPulang di
+# handlers.js) - lebih responsif (bisa langsung tertandai begitu ada aktivitas nyata,
+# tidak perlu menunggu jadwal tetap) dan sekaligus menghemat 2 slot Cron Trigger
+# (jatah akun gratis Cloudflare cuma 5 total). Jaring pengaman terakhir tetap ada:
+# cron 18:00 WIB di bawah SEKALIAN menjalankan autoSetTanpaKeterangan() 1x lagi untuk
+# SEMUA sekolah, buat jaga-jaga kalau di suatu sekolah kebetulan tidak ada satupun guru
+# yang Absen Pulang hari itu (lihat komentar lengkap di autoSetTidakAbsenSholat()).
+#
 # Waktu dalam UTC (WIB = UTC+7):
 #   "20 0 * * *" -> 07:20 WIB - pengingat belum absen (FCM); di-skip di kode kalau weekend/libur
-#   "1 6 * * *"  -> 13:01 WIB - auto set "Tanpa Keterangan" (Absen Masuk), untuk sekolah dgn cutoff pagi/siang
-#   "31 8 * * *" -> 15:31 WIB - auto set "Tanpa Keterangan" (Absen Masuk) lagi, untuk sekolah dgn cutoff sore (mis. MDT/DTA)
-#   "0 14 * * *" -> 21:00 WIB - auto set "Tidak Absen" Sholat Dzuhur & Ashar; di-skip di kode kalau weekend/libur
+#   "0 11 * * *" -> 18:00 WIB - jaring pengaman auto "Tanpa Keterangan" (Absen Masuk, SEMUA
+#                    sekolah) + auto set "Tidak Absen" Sholat Dzuhur & Ashar + auto set
+#                    "Tidak Absen Pulang" (Absen Pulang), semua digabung dalam 1 pemanggilan.
+#                    Waktu ini sebelumnya 21:00 WIB, digeser lebih awal.
 [triggers]
-crons = ["20 0 * * *", "1 6 * * *", "31 8 * * *", "0 14 * * *"]
+crons = ["20 0 * * *", "0 11 * * *"]

@@ -86,8 +86,8 @@ const KEGIATAN_IDENTIK = [
 const REPORT_CONFIG = {
   ABSEN_MASUK: {
     table: 'absen_masuk',
-    headers: ['ID', 'Tanggal', 'NUPTK', 'Nama', 'Jam', 'Latitude', 'Longitude', 'Jarak (m)', 'Status', 'Keterangan', 'Maps Link'],
-    fields: ['id', 'tanggal', 'nuptk', 'nama', 'jam', 'latitude', 'longitude', 'jarak', 'status', 'keterangan', 'maps_link'],
+    headers: ['ID', 'Tanggal', 'NUPTK', 'Nama', 'Jam', 'Latitude', 'Longitude', 'Jarak (m)', 'Jam Pulang', 'Latitude Pulang', 'Longitude Pulang', 'Jarak Pulang (m)', 'Status', 'Keterangan', 'Maps Link'],
+    fields: ['id', 'tanggal', 'nuptk', 'nama', 'jam', 'latitude', 'longitude', 'jarak', 'jam_pulang', 'lat_pulang', 'long_pulang', 'jarak_pulang', 'status', 'keterangan', 'maps_link'],
     dateField: 'tanggal', sortField: 'jam'
   },
   ABSEN_KEGIATAN_KHUSUS: {
@@ -240,7 +240,8 @@ async function getLokasiAbsenTarget(args, env) {
       lat: settings.lat_pesantren ? parseFloat(settings.lat_pesantren) : null,
       lon: settings.long_pesantren ? parseFloat(settings.long_pesantren) : null,
       radius: parseInt(settings.radius_pesantren || 100, 10)
-    }
+    },
+    jamBolehPulang: settings.jam_boleh_pulang || '15:30'
   };
 }
 
@@ -364,6 +365,95 @@ async function saveAbsenMasuk(args, env) {
   }
   if (ikutTawasul) pesanSukses += ' Kehadiran Briefing & Tawasul juga otomatis tercatat.';
   return { success: true, message: pesanSukses };
+}
+
+/**
+ * Baris absen_masuk milik guru yang login, HARI INI SAJA - dipakai frontend untuk
+ * menampilkan status "sudah Masuk jam berapa / sudah Pulang jam berapa" begitu
+ * menu Absen Masuk dibuka (mirip contoh tampilan Check in / Check out yang
+ * diberikan Admin), dan untuk memutuskan tombol mana yang boleh aktif. SENGAJA
+ * dibuat handler baru terpisah dari getLokasiAbsenTarget() (yang datanya
+ * di-cache sekali per sesi login di frontend) - status hari ini harus SELALU
+ * fresh, tidak boleh ikut ke-cache.
+ */
+async function getStatusAbsenHariIni(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!user) return null;
+  const { dateStr } = nowJakarta();
+  const rows = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${user.sekolahId}&tanggal=eq.${dateStr}&nuptk=eq.${encodeURIComponent(user.nuptk)}`);
+  return rows.length ? rows[0] : null;
+}
+
+/**
+ * Presensi PULANG - pasangan dari saveAbsenMasuk() di atas, tapi meng-UPDATE baris
+ * absen_masuk hari ini (bukan INSERT baris baru) karena secara konsep ini melengkapi
+ * baris presensi yang sama, bukan kejadian terpisah. Guru harus sudah Absen Masuk
+ * hari ini dulu (tidak bisa langsung Pulang tanpa Masuk), dan cuma bisa dilakukan
+ * SEKALI (kolom jam_pulang harus masih kosong) - dijaga di level query (bukan cuma
+ * dicek lalu percaya begitu saja) lewat filter jam_pulang=is.null di WHERE UPDATE-
+ * nya sendiri, supaya aman dari race condition 2 tab/perangkat sekaligus.
+ *
+ * GPS tetap divalidasi (radius sekolah yang sama seperti Absen Masuk) - beda dengan
+ * fitur "pulang cepat" (dicatat manual oleh Piket/Admin, dibahas terpisah) yang
+ * memang tidak butuh GPS karena bukan aksi mandiri guru.
+ *
+ * Setelah berhasil, sekalian memicu trigerAutoAlpaOportunistik() untuk sekolah ini -
+ * lihat komentar di fungsi itu untuk alasannya (akal-akalan hemat slot Cron Trigger
+ * Cloudflare).
+ */
+async function saveAbsenPulang(args, env) {
+  const [token, lat, lon] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { success: false, message: 'Sesi habis, silakan login ulang.' };
+  const sekolahId = user.sekolahId;
+  const { dateStr, timeStr } = nowJakarta();
+
+  const rows = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}&nuptk=eq.${encodeURIComponent(user.nuptk)}`);
+  const rowHariIni = rows.length ? rows[0] : null;
+  if (!rowHariIni) {
+    return { success: false, message: 'Anda belum melakukan Presensi Masuk hari ini, jadi belum bisa Presensi Pulang.' };
+  }
+  if (rowHariIni.jam_pulang) {
+    return { success: false, message: 'Anda sudah melakukan Presensi Pulang hari ini pada pukul ' + rowHariIni.jam_pulang + ' WIB.' };
+  }
+  if (!['Hadir', 'Terlambat'].includes(String(rowHariIni.status).trim())) {
+    return { success: false, message: 'Presensi Pulang cuma berlaku untuk guru yang hadir fisik di sekolah hari ini.' };
+  }
+
+  const settings = await getSettingsMap(env, sekolahId);
+
+  // Pengaman di belakang tombol yang sudah dikunci di frontend sebelum jam ini -
+  // ditolak juga di sini supaya tidak bisa dilewati dengan memanggil API langsung.
+  const jamBolehPulang = settings.jam_boleh_pulang || '15:30';
+  if (timeStr < jamBolehPulang) {
+    return { success: false, message: `Presensi Pulang baru bisa dilakukan mulai pukul ${jamBolehPulang} WIB, sesuai tata tertib sekolah.` };
+  }
+
+  const jarakMeter = hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(settings.lat_sekolah), parseFloat(settings.long_sekolah));
+  if (jarakMeter > parseInt(settings.radius || 50, 10)) {
+    return { success: false, message: `Posisi Anda berada di luar radius sekolah (${jarakMeter} meter). Silakan mendekat ke area sekolah.` };
+  }
+
+  const hasil = await sbUpdateWhere(env, 'absen_masuk',
+    { sekolah_id: sekolahId, tanggal: dateStr, nuptk: user.nuptk, jam_pulang: null },
+    { jam_pulang: timeStr, lat_pulang: String(lat), long_pulang: String(lon), jarak_pulang: jarakMeter });
+  if (!hasil) {
+    // Filter jam_pulang=null di atas tidak menemukan baris (race condition - sudah
+    // ke-update duluan oleh request lain di detik yang sama).
+    return { success: false, message: 'Anda sudah melakukan Presensi Pulang hari ini.' };
+  }
+  await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
+
+  // Efek samping: manfaatkan momen ada aktivitas nyata di sekolah ini untuk sekalian
+  // mengecek apakah sudah waktunya menandai guru lain yang belum Absen Masuk sebagai
+  // Tanpa Keterangan - lihat komentar di trigerAutoAlpaOportunistik(). Tidak di-await
+  // dengan menghalangi respons ke guru (biar Presensi Pulang tetap terasa instan),
+  // tapi tetap dijamin selesai lewat waitUntil-style try/catch di dalam fungsinya
+  // sendiri - kalaupun gagal, tidak mempengaruhi keberhasilan Presensi Pulang ini.
+  await trigerAutoAlpaOportunistik(env, sekolahId);
+
+  return { success: true, message: `Presensi Pulang berhasil disimpan pada pukul ${timeStr} WIB. Hati-hati di jalan, sampai jumpa besok!` };
 }
 
 async function getAbsenMasukUntukEdit(args, env) {
@@ -1556,143 +1646,210 @@ export async function autoSetTanpaKeterangan(env) {
   console.log(`[autoSetTanpaKeterangan] Ditemukan ${daftarSekolah.length} sekolah berstatus Aktif untuk diproses (tanggal ${dateStr}).`);
 
   for (const sekolah of daftarSekolah) {
-    const sekolahId = sekolah.id;
-    try {
-      const settings = await getSettingsMap(env, sekolahId);
-      if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
-        console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin.`);
-        ringkasan.sekolahDilewati.push(`${sekolahId} (auto alpa nonaktif)`);
-        continue;
-      }
-
-      // Hari libur MINGGUAN bisa beda per sekolah (mis. MDT/DTA cuma libur Ahad,
-      // bukan Sabtu+Ahad seperti sekolah reguler) - lihat isHariLiburMingguan().
-      if (isHariLiburMingguan(settings, dayOfWeek)) {
-        ringkasan.sekolahDilewati.push(`${sekolahId} (hari libur mingguan sekolah ini)`);
-        continue;
-      }
-
-      // Jam batas auto-alpa BISA BEDA per sekolah (mis. MDT/DTA yang masuk siang hari,
-      // bukan pagi seperti sekolah reguler) - diatur lewat settings.jam_cutoff_alpa
-      // (default '12:20' kalau belum pernah diisi admin, supaya sekolah lama yang belum
-      // sempat set field ini tetap jalan seperti biasa). Fungsi ini dipanggil oleh 2 cron
-      // sekaligus (12:20 & 17:00 WIB - lihat wrangler.toml), tiap sekolah cuma benar-benar
-      // diproses begitu waktu SEKARANG sudah melewati jam batasnya sendiri. Aman dipanggil
-      // berkali-kali sehari untuk sekolah yang sama - begitu sekali berhasil ditandai,
-      // kandidatnya otomatis jadi 0 di pemanggilan berikutnya (sudah ada baris hari ini).
-      const jamCutoff = settings.jam_cutoff_alpa || '12:20';
-      if (timeStr < jamCutoff) {
-        ringkasan.sekolahDilewati.push(`${sekolahId} (belum lewat jam cutoff ${jamCutoff}, sekarang ${timeStr})`);
-        continue;
-      }
-
-      const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
-      if (statusLibur) {
-        ringkasan.sekolahDilewati.push(`${sekolahId} (libur: ${statusLibur})`);
-        continue;
-      }
-
-      const users = await getUsersListCached(env, sekolahId);
-      const absenHariIni = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
-      const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
-      // Guru yang sedang dalam rentang Cuti/Sakit (dicatat manual admin lewat menu
-      // Cuti/Sakit Guru) DIKECUALIKAN dari auto Tanpa Keterangan - lihat
-      // getGuruCutiAktifHariIni().
-      const guruCutiMap = await getGuruCutiAktifHariIni(env, sekolahId, dateStr);
-
-      // Kumpulkan dulu semua baris yang perlu ditambahkan, baru kirim 1x lewat bulk
-      // insert (bukan 1 request HTTP per guru) - supaya tidak menabrak limit
-      // "Too many subrequests by single Worker invocation" di Cloudflare kalau
-      // jumlah guru banyak. NB: latitude/longitude/jarak dikirim null (bukan teks
-      // placeholder seperti '-' atau '0 m') - kolom-kolom ini bertipe numeric di
-      // Supabase (terbukti dari log error "invalid input syntax for type numeric"),
-      // jadi teks apapun selain angka murni akan selalu ditolak. null valid karena
-      // memang tidak ada GPS sungguhan untuk baris "Tanpa Keterangan" otomatis ini.
-      let jumlahEligible = 0; // masuk kriteria role+status aktif (calon "wajib absen")
-      let jumlahSedangCuti = 0;
-      const calonBaris = [];
-      for (const u of users) {
-        const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
-        const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
-
-        if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
-          jumlahEligible++;
-          if (guruCutiMap[userNuptk]) {
-            jumlahSedangCuti++;
-            continue;
-          }
-          if (!sudahAbsenHariIni.includes(userNuptk)) {
-            calonBaris.push({
-              id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
-              jam: '--:--', latitude: null, longitude: null, jarak: null,
-              status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
-            });
-          }
-        }
-      }
-      // Rincian debug ini SENGAJA selalu disertakan (bukan cuma pas error) - supaya
-      // kalau "Total ditandai" ternyata 0 padahal harusnya tidak, bisa langsung
-      // ketahuan di tahap mana penyebabnya tanpa perlu buka log Cloudflare:
-      // total user di tabel 'users' utk sekolah ini, berapa yang lolos filter
-      // role+status Aktif, berapa yang sedang cuti/sakit (dikecualikan), dan berapa
-      // yang sistem anggap sudah absen hari ini.
-      const debugInfo = `total user: ${users.length}, eligible (role+aktif): ${jumlahEligible}, sedang cuti/sakit: ${jumlahSedangCuti}, sudah ada baris hari ini: ${sudahAbsenHariIni.length}`;
-
-      let ditandaiDiSekolahIni = 0;
-      if (calonBaris.length) {
-        try {
-          const hasil = await sbInsertMany(env, 'absen_masuk', calonBaris);
-          ditandaiDiSekolahIni = hasil.length;
-        } catch (err) {
-          // Bulk insert gagal total (mis. race condition ada 1 guru yang barusan
-          // absen manual di detik yang sama, bikin duplicate key untuk 1 baris saja
-          // dan menggagalkan seluruh batch) - fallback ke insert satu-satu KHUSUS
-          // untuk sekolah ini saja, supaya baris yang valid tetap tersimpan.
-          console.error(`[${sekolahId}] Bulk insert gagal, fallback ke insert satu-satu:`, err.message);
-          for (const baris of calonBaris) {
-            try {
-              await sbInsert(env, 'absen_masuk', baris);
-              ditandaiDiSekolahIni++;
-            } catch (err2) {
-              if (!String(err2.message).includes('duplicate key')) {
-                console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}):`, err2.message);
-                if (ringkasan.gagalDetail.length < 5) ringkasan.gagalDetail.push(`${sekolahId} (${baris.nuptk}): ${err2.message}`);
-              }
-            }
-          }
-        }
-      }
-      await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
-      console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} guru ditandai Tanpa Keterangan. (${debugInfo})`);
-      ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai — ${debugInfo})`);
-      ringkasan.totalDitandaiAlpa += ditandaiDiSekolahIni;
-    } catch (err) {
-      // Sekolah ini gagal (mis. error koneksi Supabase, data settings korup, dll) -
-      // dicatat, lalu LANJUT ke sekolah berikutnya, bukan berhenti total.
-      console.error(`[${sekolahId}] GAGAL auto alpa:`, err.message);
-      ringkasan.sekolahError.push(`${sekolahId}: ${err.message}`);
-    }
+    await prosesAutoAlpaSatuSekolah(env, sekolah.id, dateStr, dayOfWeek, timeStr, ringkasan);
   }
   return ringkasan;
 }
 
 /**
- * Dipanggil dari Cron Trigger (1x sehari, jam 21:00 WIB - setelah waktu Dzuhur MAUPUN
- * Ashar pasti sudah lewat), atau manual lewat tombol Admin Utama (jalankanAutoSholatManual).
- * Guru yang tidak pernah mengisi presensi Pendampingan Sholat Dzuhur dan/atau Ashar hari
- * itu (lewat menu Kegiatan Sekolah) akan otomatis ditandai "Tidak Absen" untuk sesi yang
- * terlewat - dulu kalau tidak absen datanya cuma kosong/tidak ada baris sama sekali di
- * kegiatan_umum, jadi tidak kelihatan di laporan sebagai bahan evaluasi. Sekarang selalu
- * ada baris eksplisit "Tidak Absen" untuk sesi yang benar-benar terlewat.
+ * Logika inti auto-alpa UNTUK SATU SEKOLAH SAJA - diambil dari isi loop
+ * autoSetTanpaKeterangan() supaya bisa dipakai ulang oleh 2 pemicu berbeda:
+ * 1) Trigger "oportunistik" setiap kali ADA guru yang Absen Pulang di suatu sekolah
+ *    (lihat saveAbsenPulang) - HANYA memproses sekolah guru itu sendiri, bukan
+ *    semua sekolah. Ini pemicu UTAMA sekarang (dulu ada cron khusus jam 13:01 &
+ *    15:31 WIB, sudah dihapus - lihat wrangler.toml) - aktivitas nyata (ada yang
+ *    pulang) dimanfaatkan sebagai "denyut" untuk mengecek ulang sekolah itu saat
+ *    itu juga, tanpa perlu slot Cron Trigger sendiri (jatah akun gratis Cloudflare
+ *    cuma 5). Konsekuensinya: begitu trigger ini sempat jalan untuk suatu sekolah
+ *    hari itu (karena ada guru lain yang sudah pulang duluan), guru LAIN di
+ *    sekolah yang sama yang baru mau Absen Masuk SETELAH momen itu akan ditolak
+ *    sistem (duplicate key - baris "Tanpa Keterangan" keburu dibuat sistem
+ *    untuknya). Sebelum trigger manapun sempat jalan, absen normal (termasuk
+ *    yang terlambat) masih diterima seperti biasa.
+ * 2) Cron terjadwal jam 18:00 WIB (lewat autoSetTanpaKeterangan, loop SEMUA
+ *    sekolah - lihat komentar lengkap di autoSetTidakAbsenSholat()) - JARING
+ *    PENGAMAN TERAKHIR kalau kebetulan di suatu sekolah tidak ada satu pun guru
+ *    yang Absen Pulang hari itu, jadi trigger oportunistik di atas tidak pernah
+ *    terpanggil sama sekali.
  *
- * Sengaja dicek Dzuhur DAN Ashar dalam 1 pemanggilan jam 21:00 WIB (bukan 2 cron terpisah
- * persis setelah tiap sesi) - lebih sederhana dan cukup aman karena jam 21:00 WIB kedua
- * sesi pasti sudah lewat jauh.
+ * Menambah hasilnya ke objek `ringkasan` yang di-pass dari pemanggil (dipakai
+ * bersama antar sekolah saat dipanggil dari loop cron).
+ */
+async function prosesAutoAlpaSatuSekolah(env, sekolahId, dateStr, dayOfWeek, timeStr, ringkasan) {
+  try {
+    const settings = await getSettingsMap(env, sekolahId);
+    if ((settings.status_auto_alpa || 'Aktif') === 'Nonaktif') {
+      console.log(`[${sekolahId}] Auto Alpa dinonaktifkan sementara oleh Admin.`);
+      ringkasan.sekolahDilewati.push(`${sekolahId} (auto alpa nonaktif)`);
+      return;
+    }
+
+    // Hari libur MINGGUAN bisa beda per sekolah (mis. MDT/DTA cuma libur Ahad,
+    // bukan Sabtu+Ahad seperti sekolah reguler) - lihat isHariLiburMingguan().
+    if (isHariLiburMingguan(settings, dayOfWeek)) {
+      ringkasan.sekolahDilewati.push(`${sekolahId} (hari libur mingguan sekolah ini)`);
+      return;
+    }
+
+    // Jam batas auto-alpa BISA BEDA per sekolah (mis. MDT/DTA yang masuk siang hari,
+    // bukan pagi seperti sekolah reguler) - diatur lewat settings.jam_cutoff_alpa
+    // (default '12:20' kalau belum pernah diisi admin, supaya sekolah lama yang belum
+    // sempat set field ini tetap jalan seperti biasa). Sekolah cuma benar-benar
+    // diproses begitu waktu SEKARANG sudah melewati jam batasnya sendiri. Aman
+    // dipanggil berkali-kali sehari untuk sekolah yang sama - begitu sekali berhasil
+    // ditandai, kandidatnya otomatis jadi 0 di pemanggilan berikutnya (sudah ada
+    // baris hari ini).
+    const jamCutoff = settings.jam_cutoff_alpa || '12:20';
+    if (timeStr < jamCutoff) {
+      ringkasan.sekolahDilewati.push(`${sekolahId} (belum lewat jam cutoff ${jamCutoff}, sekarang ${timeStr})`);
+      return;
+    }
+
+    const statusLibur = await checkApakahHariLibur(env, sekolahId, dateStr);
+    if (statusLibur) {
+      ringkasan.sekolahDilewati.push(`${sekolahId} (libur: ${statusLibur})`);
+      return;
+    }
+
+    const users = await getUsersListCached(env, sekolahId);
+    const absenHariIni = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
+    const sudahAbsenHariIni = absenHariIni.map((r) => String(r.nuptk).trim());
+    // Guru yang sedang dalam rentang Cuti/Sakit (dicatat manual admin lewat menu
+    // Cuti/Sakit Guru) DIKECUALIKAN dari auto Tanpa Keterangan - lihat
+    // getGuruCutiAktifHariIni().
+    const guruCutiMap = await getGuruCutiAktifHariIni(env, sekolahId, dateStr);
+
+    // Kumpulkan dulu semua baris yang perlu ditambahkan, baru kirim 1x lewat bulk
+    // insert (bukan 1 request HTTP per guru) - supaya tidak menabrak limit
+    // "Too many subrequests by single Worker invocation" di Cloudflare kalau
+    // jumlah guru banyak. NB: latitude/longitude/jarak dikirim null (bukan teks
+    // placeholder seperti '-' atau '0 m') - kolom-kolom ini bertipe numeric di
+    // Supabase (terbukti dari log error "invalid input syntax for type numeric"),
+    // jadi teks apapun selain angka murni akan selalu ditolak. null valid karena
+    // memang tidak ada GPS sungguhan untuk baris "Tanpa Keterangan" otomatis ini.
+    let jumlahEligible = 0; // masuk kriteria role+status aktif (calon "wajib absen")
+    let jumlahSedangCuti = 0;
+    const calonBaris = [];
+    for (const u of users) {
+      const userRole = String(u.role).trim(), userStatus = String(u.status).trim();
+      const userNuptk = String(u.nuptk).trim(), userNama = String(u.nama).trim();
+
+      if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) && userStatus === 'Aktif') {
+        jumlahEligible++;
+        if (guruCutiMap[userNuptk]) {
+          jumlahSedangCuti++;
+          continue;
+        }
+        if (!sudahAbsenHariIni.includes(userNuptk)) {
+          calonBaris.push({
+            id: generateShortID('AO'), sekolah_id: sekolahId, tanggal: dateStr, nuptk: userNuptk, nama: userNama,
+            jam: '--:--', latitude: null, longitude: null, jarak: null,
+            status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!', maps_link: '-'
+          });
+        }
+      }
+    }
+    // Rincian debug ini SENGAJA selalu disertakan (bukan cuma pas error) - supaya
+    // kalau "Total ditandai" ternyata 0 padahal harusnya tidak, bisa langsung
+    // ketahuan di tahap mana penyebabnya tanpa perlu buka log Cloudflare:
+    // total user di tabel 'users' utk sekolah ini, berapa yang lolos filter
+    // role+status Aktif, berapa yang sedang cuti/sakit (dikecualikan), dan berapa
+    // yang sistem anggap sudah absen hari ini.
+    const debugInfo = `total user: ${users.length}, eligible (role+aktif): ${jumlahEligible}, sedang cuti/sakit: ${jumlahSedangCuti}, sudah ada baris hari ini: ${sudahAbsenHariIni.length}`;
+
+    let ditandaiDiSekolahIni = 0;
+    if (calonBaris.length) {
+      try {
+        const hasil = await sbInsertMany(env, 'absen_masuk', calonBaris);
+        ditandaiDiSekolahIni = hasil.length;
+      } catch (err) {
+        // Bulk insert gagal total (mis. race condition ada 1 guru yang barusan
+        // absen manual di detik yang sama, bikin duplicate key untuk 1 baris saja
+        // dan menggagalkan seluruh batch) - fallback ke insert satu-satu KHUSUS
+        // untuk sekolah ini saja, supaya baris yang valid tetap tersimpan.
+        console.error(`[${sekolahId}] Bulk insert gagal, fallback ke insert satu-satu:`, err.message);
+        for (const baris of calonBaris) {
+          try {
+            await sbInsert(env, 'absen_masuk', baris);
+            ditandaiDiSekolahIni++;
+          } catch (err2) {
+            if (!String(err2.message).includes('duplicate key')) {
+              console.error(`[${sekolahId}] Gagal insert 1 baris (${baris.nuptk}):`, err2.message);
+              if (ringkasan.gagalDetail.length < 5) ringkasan.gagalDetail.push(`${sekolahId} (${baris.nuptk}): ${err2.message}`);
+            }
+          }
+        }
+      }
+    }
+    await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
+    console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} guru ditandai Tanpa Keterangan. (${debugInfo})`);
+    ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai — ${debugInfo})`);
+    ringkasan.totalDitandaiAlpa += ditandaiDiSekolahIni;
+  } catch (err) {
+    // Sekolah ini gagal (mis. error koneksi Supabase, data settings korup, dll) -
+    // dicatat, lalu LANJUT ke sekolah berikutnya (kalau dipanggil dari loop cron),
+    // bukan berhenti total.
+    console.error(`[${sekolahId}] GAGAL auto alpa:`, err.message);
+    ringkasan.sekolahError.push(`${sekolahId}: ${err.message}`);
+  }
+}
+
+/**
+ * Dipanggil sebagai efek samping setelah Absen Pulang berhasil disimpan (lihat
+ * saveAbsenPulang) - versi "sekali pakai, 1 sekolah" dari trigger oportunistik di
+ * atas. Sengaja dibungkus try/catch SENDIRI di sini (terpisah dari try/catch
+ * saveAbsenPulang) supaya kalau proses auto-alpa ini gagal karena sebab apa pun,
+ * Absen Pulang guru yang barusan berhasil TETAP dianggap sukses - ini cuma efek
+ * samping tambahan, bukan bagian inti dari aksi guru itu sendiri.
+ */
+async function trigerAutoAlpaOportunistik(env, sekolahId) {
+  try {
+    const { dateStr, dayOfWeek, timeStr } = nowJakarta();
+    const ringkasanSementara = { sekolahDiproses: [], sekolahDilewati: [], sekolahError: [], gagalDetail: [], totalDitandaiAlpa: 0 };
+    await prosesAutoAlpaSatuSekolah(env, sekolahId, dateStr, dayOfWeek, timeStr, ringkasanSementara);
+    if (ringkasanSementara.totalDitandaiAlpa > 0) {
+      console.log(`[trigerAutoAlpaOportunistik] Dipicu oleh Absen Pulang - ${sekolahId}: ${ringkasanSementara.totalDitandaiAlpa} guru ditandai Tanpa Keterangan.`);
+    }
+  } catch (err) {
+    console.error(`[trigerAutoAlpaOportunistik] Gagal (sekolah ${sekolahId}):`, err.message);
+  }
+}
+
+/**
+ * Dipanggil dari Cron Trigger (1x sehari, jam 18:00 WIB - setelah waktu Dzuhur MAUPUN
+ * Ashar pasti sudah lewat, dan jam pulang sekolah manapun juga pasti sudah lewat), atau
+ * manual lewat tombol Admin Utama (jalankanAutoSholatManual). Guru yang tidak pernah
+ * mengisi presensi Pendampingan Sholat Dzuhur dan/atau Ashar hari itu (lewat menu
+ * Kegiatan Sekolah) akan otomatis ditandai "Tidak Absen" untuk sesi yang terlewat - dulu
+ * kalau tidak absen datanya cuma kosong/tidak ada baris sama sekali di kegiatan_umum,
+ * jadi tidak kelihatan di laporan sebagai bahan evaluasi. Sekarang selalu ada baris
+ * eksplisit "Tidak Absen" untuk sesi yang benar-benar terlewat.
+ *
+ * SEKALIAN menandai "Tidak Absen Pulang" (lihat prosesAutoTidakAbsenPulang di bawah) di
+ * pemanggilan yang sama - digabung jadi 1 fungsi/1 Cron Trigger (bukan 3 slot terpisah
+ * untuk Dzuhur, Ashar, Pulang) supaya hemat slot Cron Trigger Cloudflare (jatah akun
+ * gratis cuma 5 total).
+ *
+ * SEKALIAN JUGA menjalankan autoSetTanpaKeterangan() (auto-alpa Absen Masuk) sebagai
+ * JARING PENGAMAN TERAKHIR di penghujung hari - sejak tombol Presensi Pulang jadi
+ * pemicu oportunistik untuk auto-alpa (lihat trigerAutoAlpaOportunistik, dipanggil dari
+ * saveAbsenPulang), cron KHUSUS auto-alpa (dulu jam 13:01 & 15:31 WIB) sudah dihapus -
+ * pemicu utama sekarang murni aktivitas nyata guru yang Absen Pulang. TAPI kalau di
+ * suatu sekolah TIDAK ADA satu pun guru yang Absen Pulang hari itu (lupa semua/libur
+ * mendadak/dll), trigger oportunistik itu tidak akan pernah terpanggil sama sekali -
+ * makanya cron 18:00 WIB ini tetap menjalankan auto-alpa 1x lagi untuk SEMUA sekolah
+ * sebagai jaminan terakhir, tanpa perlu slot Cron Trigger tambahan (nebeng di cron yang
+ * sudah ada).
+ *
+ * Sengaja dicek Dzuhur, Ashar, DAN Pulang dalam 1 pemanggilan jam 18:00 WIB (bukan cron
+ * terpisah persis setelah tiap sesi) - lebih sederhana dan cukup aman karena jam 18:00
+ * WIB semuanya pasti sudah lewat jauh. Waktu ini sebelumnya 21:00 WIB, digeser lebih awal
+ * supaya juga masuk akal sebagai jam evaluasi "sudah pulang atau belum".
  *
  * Memakai toggle Admin yang sama dengan Auto Alpa Absen Masuk (settings.status_auto_alpa) -
  * supaya tidak perlu tambah menu Pengaturan baru; kalau nanti perlu tombol on/off terpisah
- * khusus otomasi sholat, tinggal ganti ke key settings baru di sini + tambah field di
- * form Pengaturan.
+ * khusus otomasi sholat/pulang, tinggal ganti ke key settings baru di sini + tambah field
+ * di form Pengaturan.
  */
 export async function autoSetTidakAbsenSholat(env) {
   const SEMUA_JENIS = ['SHOLAT_DZUHUR', 'SHOLAT_ASHAR'];
@@ -1801,12 +1958,63 @@ export async function autoSetTidakAbsenSholat(env) {
       console.log(`[${sekolahId}] Selesai: ${ditandaiDiSekolahIni} baris Tidak Absen ditambahkan (${rincianJenis}).`);
       ringkasan.sekolahDiproses.push(`${sekolahId} (${ditandaiDiSekolahIni} ditandai — ${rincianJenis})`);
       ringkasan.totalDitandaiTidakAbsen += ditandaiDiSekolahIni;
+
+      // Ditaruh di try/catch TERPISAH (bukan menyatu dengan try Sholat di atas) -
+      // supaya kalau proses pulang gagal karena sebab apa pun, hasil Sholat yang
+      // sudah berhasil dihitung di atas TETAP tercatat di ringkasan, tidak ikut
+      // dianggap gagal juga.
+      try {
+        const jumlahPulang = await prosesAutoTidakAbsenPulangSatuSekolah(env, sekolahId, dateStr);
+        if (jumlahPulang > 0) console.log(`[${sekolahId}] ${jumlahPulang} guru ditandai Tidak Absen Pulang.`);
+        ringkasan.totalDitandaiTidakAbsenPulang = (ringkasan.totalDitandaiTidakAbsenPulang || 0) + jumlahPulang;
+      } catch (errPulang) {
+        console.error(`[${sekolahId}] GAGAL auto Tidak Absen Pulang:`, errPulang.message);
+        ringkasan.gagalDetail.push(`${sekolahId} (auto tidak absen pulang): ${errPulang.message}`);
+      }
     } catch (err) {
       console.error(`[${sekolahId}] GAGAL auto Tidak Absen Sholat:`, err.message);
       ringkasan.sekolahError.push(`${sekolahId}: ${err.message}`);
     }
   }
+
+  // Jaring pengaman terakhir - lihat penjelasan lengkap di komentar atas fungsi ini.
+  try {
+    const ringkasanAlpa = await autoSetTanpaKeterangan(env);
+    ringkasan.jaringPengamanAlpa = ringkasanAlpa;
+  } catch (errAlpa) {
+    console.error('[autoSetTidakAbsenSholat] Jaring pengaman auto-alpa gagal:', errAlpa.message);
+    ringkasan.gagalDetail.push(`jaring pengaman auto-alpa: ${errAlpa.message}`);
+  }
+
   return ringkasan;
+}
+
+/**
+ * Menandai "Tidak Absen Pulang" untuk SATU sekolah - dipanggil dari
+ * autoSetTidakAbsenSholat() di atas (gabung 1 Cron jam 18:00 WIB, lihat komentar
+ * di atas fungsi itu). Guru yang punya baris absen_masuk hari ini (artinya
+ * memang Hadir/Terlambat pagi tadi) TAPI kolom jam_pulang-nya masih kosong,
+ * dianggap lupa/tidak melakukan Absen Pulang - ditandai eksplisit supaya
+ * laporan tidak ambigu antara "belum waktunya pulang" vs "memang tidak pernah
+ * absen pulang". TIDAK menyentuh guru yang absen_masuk-nya berstatus selain
+ * Hadir/Terlambat (Sakit/Izin/Tugas Luar/Tanpa Keterangan) - mereka memang
+ * tidak diharapkan absen pulang sama sekali karena tidak hadir fisik hari itu.
+ * Return jumlah baris yang berhasil ditandai.
+ */
+async function prosesAutoTidakAbsenPulangSatuSekolah(env, sekolahId, dateStr) {
+  const rows = await sbSelect(env, 'absen_masuk',
+    `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}&jam_pulang=is.null&status=in.(Hadir,Terlambat)`);
+  let jumlahDitandai = 0;
+  for (const row of rows) {
+    try {
+      await sbUpdateWhere(env, 'absen_masuk', { sekolah_id: sekolahId, tanggal: dateStr, nuptk: row.nuptk },
+        { jam_pulang: '--:--', lat_pulang: null, long_pulang: null, jarak_pulang: null });
+      jumlahDitandai++;
+    } catch (err) {
+      console.error(`[${sekolahId}] Gagal menandai Tidak Absen Pulang utk ${row.nuptk}:`, err.message);
+    }
+  }
+  return jumlahDitandai;
 }
 
 /**
@@ -1864,6 +2072,8 @@ export const handlers = {
   getSekolahList,
   getLokasiAbsenTarget,
   saveAbsenMasuk,
+  getStatusAbsenHariIni,
+  saveAbsenPulang,
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
   checkSudahAbsenKegiatan,

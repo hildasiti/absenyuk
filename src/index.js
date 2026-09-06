@@ -15,7 +15,7 @@
  * ====================================================================
  */
 
-import { handlers, autoSetTanpaKeterangan, cekDanKirimNotifikasiBelumAbsen, autoSetTidakAbsenSholat } from './handlers.js';
+import { handlers, cekDanKirimNotifikasiBelumAbsen, autoSetTidakAbsenSholat } from './handlers.js';
 import { getSession } from './session.js';
 
 const ALLOWED_ORIGIN = '*'; // TODO: ganti ke domain GitHub Pages Anda setelah frontend live
@@ -91,9 +91,12 @@ export default {
   async scheduled(event, env, ctx) {
     if (event.cron === '20 0 * * *') {
       ctx.waitUntil(cekDanKirimNotifikasiBelumAbsen(env));
-    } else if (event.cron === '1 6 * * *' || event.cron === '31 8 * * *') {
-      ctx.waitUntil(autoSetTanpaKeterangan(env));
-    } else if (event.cron === '0 14 * * *') {
+    } else if (event.cron === '0 11 * * *') {
+      // Menjalankan Sholat+Pulang, SEKALIGUS jaring pengaman auto "Tanpa Keterangan"
+      // untuk semua sekolah di dalamnya - lihat komentar lengkap di atas
+      // autoSetTidakAbsenSholat() di handlers.js. Cron khusus auto-alfa (dulu jam
+      // 13:01 & 15:31 WIB) sudah dihapus, digantikan trigger oportunistik dari
+      // tombol Presensi Pulang (lihat saveAbsenPulang & trigerAutoAlpaOportunistik).
       ctx.waitUntil(autoSetTidakAbsenSholat(env));
     }
   }

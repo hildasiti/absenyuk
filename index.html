@@ -591,7 +591,24 @@
 <!-- FORM 1: ABSEN MASUK SEKOLAH (MENGGUNAKAN GPS) -->
 <div class='content-section' id='absen-masuk'>
   <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
-    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-geo-alt-fill text-primary'></i> Presensi Masuk Sekolah</h5>
+    <h5 class='mb-3 text-secondary fw-bold'><i class='bi bi-geo-alt-fill text-primary'></i> Presensi Harian</h5>
+
+    <!-- Status hari ini, mirip contoh Check in/Check out - diisi getStatusAbsenHariIni() -->
+    <div class='row g-2 mb-3'>
+      <div class='col-6'>
+        <div class='p-3 rounded-3 text-center h-100' id='am-box-masuk' style='background:#e9ecef;'>
+          <div class='small text-muted fw-semibold'><i class="bi bi-box-arrow-in-right"></i> Jam Masuk</div>
+          <div class='fs-4 fw-bold text-secondary' id='am-jam-masuk-display'>--:--</div>
+        </div>
+      </div>
+      <div class='col-6'>
+        <div class='p-3 rounded-3 text-center h-100' id='am-box-pulang' style='background:#e9ecef;'>
+          <div class='small text-muted fw-semibold'><i class="bi bi-box-arrow-right"></i> Jam Pulang</div>
+          <div class='fs-4 fw-bold text-secondary' id='am-jam-pulang-display'>--:--</div>
+        </div>
+      </div>
+    </div>
+
     <div class='alert alert-secondary py-2 px-3 mb-3' id='am-jarak-live' style='font-size: 0.85rem;'>
       <i class='bi bi-broadcast'></i> Mengaktifkan GPS realtime...
     </div>
@@ -613,11 +630,25 @@
         <textarea class='form-control' id='am-ket' maxlength='50' oninput='updateCharCount(this, &apos;am-ket-count&apos;)' placeholder='Kosongkan jika hadir fisik normal...' rows='2'></textarea>
         <small class='text-muted float-end' id='am-ket-count'>0/50</small>
       </div>
-      <button class='btn btn-primary w-100 fw-bold shadow-sm' id='btn-absen' style='background-color: var(--primary-color);' type='submit'>
-        <i class='bi bi-geo-alt-fill me-2'></i> Kirim Presensi Masuk (Validasi GPS)
-      </button>
+
+      <!-- 2 tombol berdampingan: Masuk (submit form ini) & Pulang (aksi terpisah,
+           dihubungkan via atribut form='' biar tetap bisa berdampingan tanpa
+           bersarang di dalam <form> yang sama). -->
+      <div class='row g-2'>
+        <div class='col-6'>
+          <button class='btn btn-success w-100 fw-bold shadow-sm' id='btn-absen-masuk' type='submit'>
+            <i class='bi bi-box-arrow-in-right me-1'></i> Presensi Masuk
+          </button>
+        </div>
+        <div class='col-6'>
+          <button class='btn btn-warning w-100 fw-bold shadow-sm text-white' id='btn-absen-pulang' type='button' onclick='submitAbsenPulang()' disabled>
+            <i class='bi bi-box-arrow-right me-1'></i> Presensi Pulang
+          </button>
+        </div>
+      </div>
     </form>
   </div>
+</div>
 </div>
 
 <!-- FORM 2: LAPORAN KEGIATAN SEKOLAH -->
@@ -912,6 +943,11 @@
           <label class='form-label fw-semibold'>Jam Batas Auto Tanpa Keterangan</label>
           <input class='form-control' id='set-jam-cutoff-alpa' placeholder='12:20' type='time'/>
           <small class='text-muted'>Guru yang belum absen masuk setelah jam ini otomatis ditandai Tanpa Keterangan. Default 12:20 - ganti mis. jadi 17:00 untuk sekolah yang masuk siang hari.</small>
+        </div>
+        <div class='col-md-4 mb-3'>
+          <label class='form-label fw-semibold'>Jam Boleh Absen Pulang</label>
+          <input class='form-control' id='set-jam-boleh-pulang' placeholder='15:30' type='time'/>
+          <small class='text-muted'>Tombol Presensi Pulang guru baru aktif setelah jam ini, menyesuaikan tata tertib jam pulang sekolah. Default 15:30.</small>
         </div>
         <div class='col-md-4 mb-3'>
           <label class='form-label fw-semibold'>Wajib Absen Sholat Dzuhur?</label>
@@ -2110,7 +2146,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'kelola-kegiatan') loadJadwalKegiatanList();
     if(id === 'absen-kegiatan-khusus') loadKegiatanDropdown();
     if(id === 'absen-kegiatan') { updateStatusOptionsAK(); checkLockKegiatan('ak'); }
-    if(id === 'absen-masuk') { muatDanMulaiLiveGPS('sekolah'); }
+    if(id === 'absen-masuk') { muatDanMulaiLiveGPS('sekolah'); muatStatusAbsenHariIni(); }
     if(id === 'absen-pesantren') {
       const tglField = document.getElementById('ap-tanggal');
       if (tglField && !tglField.value) tglField.value = new Date().toISOString().split('T')[0];
@@ -2392,6 +2428,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // tetap dihitung ulang di server saat submit (tidak bisa dipalsukan dari sini).
   let LOKASI_TARGET_CACHE = null;
   let GPS_WATCH_ID = null;
+  let INTERVAL_CEK_JAM_PULANG = null;
 
   /** Rumus Haversine, sama persis dengan hitungRadiusGPS() di backend (libur.js). */
   function hitungJarakMeter(lat1, lon1, lat2, lon2) {
@@ -2409,6 +2446,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if (GPS_WATCH_ID !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(GPS_WATCH_ID);
       GPS_WATCH_ID = null;
+    }
+    if (INTERVAL_CEK_JAM_PULANG !== null) {
+      clearInterval(INTERVAL_CEK_JAM_PULANG);
+      INTERVAL_CEK_JAM_PULANG = null;
     }
   }
 
@@ -2462,9 +2503,146 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }
     google.script.run.withSuccessHandler(res => {
       if (!res.success) return;
-      LOKASI_TARGET_CACHE = { sekolah: res.sekolah, pesantren: res.pesantren };
+      LOKASI_TARGET_CACHE = { sekolah: res.sekolah, pesantren: res.pesantren, jamBolehPulang: res.jamBolehPulang };
       mulaiLiveGPS(elId, LOKASI_TARGET_CACHE[formTujuan]);
+      // Begitu jam_boleh_pulang sungguhan datang dari server, render ulang tombol
+      // Pulang - sebelum ini sempat pakai fallback default '15:30' kalau kebetulan
+      // status hari ini sudah lebih dulu selesai dimuat.
+      if (formTujuan === 'sekolah') terapkanStatusAbsenHariIni(STATUS_ABSEN_HARI_INI_CACHE);
     }).getLokasiAbsenTarget(SESSION_TOKEN);
+  }
+
+  // ====================================================================
+  // STATUS PRESENSI HARI INI (kotak Jam Masuk / Jam Pulang + kunci tombol)
+  // ====================================================================
+  let STATUS_ABSEN_HARI_INI_CACHE = null;
+
+  /** Jam sekarang di device guru, format "HH:MM" - dipakai murni untuk kunci
+   * tombol di layar (UX). Validasi SEBENARNYA tetap di server (saveAbsenPulang),
+   * jadi tidak masalah kalau jam device guru meleset sedikit. */
+  function jamSekarangStr() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  function terapkanStatusAbsenHariIni(row) {
+    STATUS_ABSEN_HARI_INI_CACHE = row;
+    const boxMasuk = document.getElementById('am-box-masuk');
+    const boxPulang = document.getElementById('am-box-pulang');
+    const jamMasukEl = document.getElementById('am-jam-masuk-display');
+    const jamPulangEl = document.getElementById('am-jam-pulang-display');
+    const btnMasuk = document.getElementById('btn-absen-masuk');
+    const btnPulang = document.getElementById('btn-absen-pulang');
+    if (!boxMasuk || !boxPulang || !btnMasuk || !btnPulang) return;
+
+    const sudahMasuk = !!(row && row.jam);
+    // "Sudah Pulang" secara fungsional (tombol Pulang dikunci) begitu jam_pulang
+    // terisi APA PUN isinya - termasuk '--:--' hasil auto Tidak Absen Pulang jam
+    // 18:00 WIB (lihat prosesAutoTidakAbsenPulangSatuSekolah di backend). Kalau
+    // sistem sudah menandai itu, guru tidak perlu/tidak bisa lagi absen pulang
+    // manual susulan untuk hari yang sama.
+    const sudahPulang = !!(row && row.jam_pulang);
+    // Cuma guru yang statusnya Hadir/Terlambat yang relevan untuk Presensi Pulang
+    // (Sakit/Izin/Tugas Luar/Tanpa Keterangan memang tidak hadir fisik).
+    const relevanUntukPulang = row && ['Hadir', 'Terlambat'].includes(String(row.status).trim());
+    // Jam boleh pulang - per sekolah, diatur Admin Sekolah (default 15:30). Diambil
+    // dari cache getLokasiAbsenTarget yang sama dipakai untuk titik GPS.
+    const jamBolehPulang = (LOKASI_TARGET_CACHE && LOKASI_TARGET_CACHE.jamBolehPulang) || '15:30';
+    const belumWaktunyaPulang = jamSekarangStr() < jamBolehPulang;
+
+    jamMasukEl.textContent = sudahMasuk ? (row.jam + ' WIB') : '--:--';
+    boxMasuk.style.background = sudahMasuk ? '#d1e7dd' : '#e9ecef';
+    jamMasukEl.className = 'fs-4 fw-bold ' + (sudahMasuk ? 'text-success' : 'text-secondary');
+
+    if (sudahPulang && row.jam_pulang !== '--:--') {
+      jamPulangEl.textContent = row.jam_pulang + ' WIB';
+      boxPulang.style.background = '#d1e7dd';
+      jamPulangEl.className = 'fs-4 fw-bold text-success';
+    } else if (sudahPulang && row.jam_pulang === '--:--') {
+      jamPulangEl.textContent = 'Tidak Absen';
+      boxPulang.style.background = '#f8d7da';
+      jamPulangEl.className = 'fs-5 fw-bold text-danger';
+    } else {
+      jamPulangEl.textContent = '--:--';
+      boxPulang.style.background = '#e9ecef';
+      jamPulangEl.className = 'fs-4 fw-bold text-secondary';
+    }
+
+    // Kunci tombol Masuk begitu sudah absen masuk hari ini (form status/keterangan
+    // dibiarkan aktif secara visual tidak masalah - percobaan kirim ulang toh akan
+    // ditolak server via duplicate key - tapi tombol dikunci supaya guru tidak
+    // bolak-balik dapat pesan gagal untuk sesuatu yang sebenarnya sudah selesai).
+    btnMasuk.disabled = sudahMasuk;
+    btnMasuk.innerHTML = sudahMasuk
+      ? '<i class="bi bi-check-circle-fill me-1"></i> Sudah Presensi Masuk'
+      : '<i class="bi bi-box-arrow-in-right me-1"></i> Presensi Masuk';
+
+    // Tombol Pulang aktif HANYA kalau: sudah masuk, statusnya Hadir/Terlambat,
+    // belum pulang, DAN sudah masuk jam yang diizinkan sekolah.
+    btnPulang.disabled = !(sudahMasuk && relevanUntukPulang && !sudahPulang && !belumWaktunyaPulang);
+    if (sudahPulang) {
+      btnPulang.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Sudah Presensi Pulang';
+    } else if (sudahMasuk && relevanUntukPulang && belumWaktunyaPulang) {
+      btnPulang.innerHTML = `<i class="bi bi-lock-fill me-1"></i> Pulang mulai ${jamBolehPulang}`;
+    } else {
+      btnPulang.innerHTML = '<i class="bi bi-box-arrow-right me-1"></i> Presensi Pulang';
+    }
+  }
+
+  function muatStatusAbsenHariIni() {
+    google.script.run.withSuccessHandler(row => {
+      terapkanStatusAbsenHariIni(row);
+    }).getStatusAbsenHariIni(SESSION_TOKEN);
+
+    // Cek ulang jam tiap menit selagi guru berada di menu ini, supaya tombol
+    // Pulang otomatis kebuka pas jam-nya tiba tanpa perlu keluar-masuk menu -
+    // pakai data status yang sudah ada di cache (STATUS_ABSEN_HARI_INI_CACHE),
+    // tidak query server ulang tiap menit, cukup render ulang saja.
+    if (INTERVAL_CEK_JAM_PULANG !== null) clearInterval(INTERVAL_CEK_JAM_PULANG);
+    INTERVAL_CEK_JAM_PULANG = setInterval(() => {
+      terapkanStatusAbsenHariIni(STATUS_ABSEN_HARI_INI_CACHE);
+    }, 60000);
+  }
+
+  function submitAbsenPulang() {
+    Swal.fire({
+      title: 'Presensi Pulang?',
+      text: 'Pastikan Anda benar-benar berada di area sekolah saat ini.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#fd7e14',
+      confirmButtonText: 'Ya, Presensi Pulang',
+      cancelButtonText: 'Batal'
+    }).then(result => {
+      if (!result.isConfirmed) return;
+
+      Swal.fire({ title: 'Mengambil Lokasi GPS...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+
+      if (!navigator.geolocation) {
+        Swal.fire('Error', 'Browser tidak mendukung fitur GPS.', 'error');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          Swal.fire({ title: 'Menyimpan data presensi...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+
+          google.script.run.withSuccessHandler(res => {
+            if (res.success) {
+              Swal.fire({
+                icon: 'success', title: 'Presensi Pulang Berhasil!', text: res.message,
+                confirmButtonColor: '#0f4c81', confirmButtonText: 'Selesai', allowOutsideClick: false
+              }).then(() => { muatStatusAbsenHariIni(); refreshDashboard(); });
+            } else {
+              Swal.fire('Gagal Presensi', res.message, 'error');
+            }
+          }).saveAbsenPulang(SESSION_TOKEN, lat, lon);
+        },
+        err => { Swal.fire('Error GPS', 'Gagal mendapatkan koordinat. Pastikan izin lokasi browser Anda aktif.', 'error'); },
+        { enableHighAccuracy: true }
+      );
+    });
   }
 
   function submitAbsenMasuk(e) {
@@ -2508,6 +2686,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
               }).then((result) => {
                 if (result.isConfirmed) {
                   e.target.reset();
+                  muatStatusAbsenHariIni();
                   refreshDashboard();
                 }
               });
@@ -2672,6 +2851,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('set-nama-wakasek').value = data.nama_wakasek || '';
       document.getElementById('set-auto-alpa').value = data.status_auto_alpa || 'Aktif';
       document.getElementById('set-jam-cutoff-alpa').value = data.jam_cutoff_alpa || '12:20';
+      document.getElementById('set-jam-boleh-pulang').value = data.jam_boleh_pulang || '15:30';
       document.getElementById('set-wajib-dzuhur').value = data.wajib_absen_dzuhur || 'Aktif';
       document.getElementById('set-wajib-ashar').value = data.wajib_absen_ashar || 'Aktif';
 
@@ -2696,6 +2876,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       nama_wakasek: document.getElementById('set-nama-wakasek').value,
       status_auto_alpa: document.getElementById('set-auto-alpa').value,
       jam_cutoff_alpa: document.getElementById('set-jam-cutoff-alpa').value || '12:20',
+      jam_boleh_pulang: document.getElementById('set-jam-boleh-pulang').value || '15:30',
       wajib_absen_dzuhur: document.getElementById('set-wajib-dzuhur').value,
       wajib_absen_ashar: document.getElementById('set-wajib-ashar').value,
       hari_libur_mingguan: Array.from(document.querySelectorAll('.cek-hari-libur:checked')).map(cb => cb.value).join(',') || '0,6'
@@ -3115,7 +3296,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
          tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted">Struktur tabel belum siap atau data tidak ditemukan.</td></tr>';
          return;
       }
-      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'maps link'];
+      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
       
       let headHtml = '<tr><th>No.</th>';
       res.headers.forEach(h => {
@@ -3322,7 +3503,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <th>No.</th>
       `;
 
-      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'maps link'];
+      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
       LAST_REPORT_DATA.headers.forEach(h => { 
         if (!kolomDilarang.includes(h.toLowerCase())) {
           printWindowContent += `<th>${h}</th>`; 
