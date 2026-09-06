@@ -1843,7 +1843,14 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       // (mendeteksi keterbatasan Safari/browser lama yang tidak kelihatan
       // dari sekadar cek 'Notification' in window).
       langkah = 'cek dukungan Firebase Messaging';
-      const didukung = await firebase.messaging.isSupported().catch(() => false);
+      // Promise.resolve(...) sengaja membungkus hasilnya (bukan langsung
+      // .catch() ke hasil panggilan) - di sebagian browser/kondisi,
+      // firebase.messaging.isSupported() ternyata bisa balik boolean
+      // LANGSUNG (bukan Promise<boolean> seperti didokumentasikan Firebase),
+      // yang bikin .catch() error "is not a function". Promise.resolve()
+      // aman untuk dua-duanya: kalau sudah Promise ya diteruskan, kalau
+      // cuma boolean biasa dibungkus jadi Promise dulu.
+      const didukung = await Promise.resolve(firebase.messaging.isSupported()).catch(() => false);
       if (!didukung) {
         console.warn('Browser ini tidak didukung Firebase Messaging.');
         return { success: false, reason: 'tidak-didukung' };
