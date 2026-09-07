@@ -424,6 +424,15 @@
   .swal2-popup { border-radius: var(--radius-lg) !important; font-family: 'Plus Jakarta Sans', sans-serif !important; }
   .swal2-styled.swal2-confirm { border-radius: 10px !important; }
 
+  /* Popup Rekap Kehadiran pribadi - dibuat sedikit lebih ringkas KHUSUS di HP
+     (bukan semua popup SweetAlert lain ikut mengecil), supaya muat pas tanpa
+     terasa kebesaran, tapi teksnya tetap dalam batas nyaman dibaca. */
+  @media (max-width: 576px) {
+    .swal-rekap-kehadiran.swal2-popup { padding: 0.9em 0.6em !important; }
+    .swal-rekap-kehadiran .swal2-title { font-size: 1rem !important; padding: 0.4em 0.3em 0 !important; }
+    .swal-rekap-kehadiran .swal2-html-container { margin: 0.6em 0.3em !important; font-size: 0.85rem; }
+  }
+
   /* ===== ALERT ===== */
   .alert-info {
     background: linear-gradient(135deg, rgba(30,136,229,0.08), rgba(56,189,248,0.10));
@@ -2737,40 +2746,58 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   }
 
   function renderPopupRekapKehadiranSendiri(res) {
-    // Kolom yang disembunyikan SAMA PERSIS dengan Laporan Absen Masuk di menu
-    // Admin - format tabelnya sengaja dibuat identik (lihat loadReport()).
-    const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
-    const headers = res.headers || [];
+    // Kolom "Nama" DIHILANGKAN (bukan cuma disembunyikan seperti lat/long) -
+    // ini rekap milik SATU guru saja, jadi mengulang nama yang sama di setiap
+    // baris tidak perlu (nama sudah ada di judul cetak nanti). Posisi kolom
+    // itu digantikan "Hari" (dihitung dari Tanggal), lebih informatif.
+    const kolomDilarang = ['id', 'nuptk', 'nama', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
+    const headersAsli = res.headers || [];
+    // Daftar kolom FINAL yang benar-benar dirender, sudah dalam urutan yang
+    // benar (Hari disisipkan tepat setelah Tanggal, Nama tidak pernah masuk).
+    const kolomTampil = [];
+    headersAsli.forEach(h => {
+      if (h === 'Tanggal') { kolomTampil.push('Tanggal'); kolomTampil.push('Hari'); return; }
+      if (kolomDilarang.includes(h.toLowerCase())) return;
+      kolomTampil.push(h);
+    });
 
-    let headHtml = '<tr><th>No.</th>';
-    headers.forEach(h => { if (!kolomDilarang.includes(h.toLowerCase())) headHtml += `<th>${h}</th>`; });
-    headHtml += '</tr>';
+    let headHtml = '<tr><th>No.</th>' + kolomTampil.map(h => `<th>${h}</th>`).join('') + '</tr>';
 
-    const jumlahKolom = headers.filter(h => !kolomDilarang.includes(h.toLowerCase())).length + 1;
     let bodyHtml = '';
     if (!res.data || res.data.length === 0) {
-      bodyHtml = `<tr><td colspan="${jumlahKolom}" class="text-center text-muted py-3">Belum ada data presensi pada periode ini.</td></tr>`;
+      bodyHtml = `<tr><td colspan="${kolomTampil.length + 1}" class="text-center text-muted py-3">Belum ada data presensi pada periode ini.</td></tr>`;
     } else {
       res.data.forEach((row, idx) => {
         bodyHtml += `<tr><td class="fw-bold text-secondary">${idx + 1}</td>`;
-        headers.forEach(h => {
-          if (!kolomDilarang.includes(h.toLowerCase())) {
-            bodyHtml += `<td>${row[h] !== undefined && row[h] !== null ? row[h] : ''}</td>`;
-          }
+        kolomTampil.forEach(h => {
+          const val = h === 'Hari' ? namaHariIndo(row['Tanggal']) : (row[h] !== undefined && row[h] !== null ? row[h] : '');
+          bodyHtml += `<td>${val}</td>`;
         });
         bodyHtml += '</tr>';
       });
     }
 
+    const counter = hitungCounterAbsenMasuk(res.data);
+    const cardsHtml = buildRekapCardsHtml(counter, (res.data || []).length + ' hari', [
+      { key: 'Hadir', icon: 'bi-check-circle-fill', color: 'success' },
+      { key: 'Terlambat', icon: 'bi-exclamation-triangle-fill', color: 'warning' },
+      { key: 'Sakit', icon: 'bi-plus-circle-fill', color: 'info' },
+      { key: 'Izin', icon: 'bi-info-circle-fill', color: 'secondary' },
+      { key: 'Tugas Luar', icon: 'bi-briefcase-fill', color: 'primary' },
+      { key: 'Tanpa Keterangan', icon: 'bi-x-circle-fill', color: 'danger' }
+    ], 'col-4 col-md-2');
+
     Swal.fire({
       title: `Rekap Kehadiran - ${res.periodeLabel || ''}`,
-      html: `<div class="table-responsive" style="max-height:55vh; overflow-y:auto;">
+      html: `<div class="mb-3">${cardsHtml}</div>
+             <div class="table-responsive" style="max-height:50vh; overflow-y:auto;">
                <table class="table table-sm table-bordered table-hover" style="font-size:0.82rem;">
                  <thead class="table-light" style="position:sticky; top:0;">${headHtml}</thead>
                  <tbody>${bodyHtml}</tbody>
                </table>
              </div>`,
-      width: '90%',
+      width: 'min(95vw, 720px)',
+      customClass: { popup: 'swal-rekap-kehadiran' },
       showCancelButton: true,
       confirmButtonText: '<i class="bi bi-printer-fill"></i> Cetak',
       cancelButtonText: 'Tutup',
@@ -2793,8 +2820,16 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       const schName = identitas.nama_sekolah || 'SEKOLAH';
       const schAddress = identitas.alamat_sekolah || '-';
       const schWakasek = identitas.nama_wakasek || '( .................................... )';
-      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
-      const headers = REKAP_SENDIRI_DATA.headers || [];
+      // Sama seperti di popup: kolom Nama dihilangkan (sudah ada di judul di
+      // bawah kop surat), digantikan Hari tepat setelah Tanggal.
+      const kolomDilarang = ['id', 'nuptk', 'nama', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
+      const headersAsli = REKAP_SENDIRI_DATA.headers || [];
+      const kolomTampil = [];
+      headersAsli.forEach(h => {
+        if (h === 'Tanggal') { kolomTampil.push('Tanggal'); kolomTampil.push('Hari'); return; }
+        if (kolomDilarang.includes(h.toLowerCase())) return;
+        kolomTampil.push(h);
+      });
 
       let printWindowContent = `
         <html>
@@ -2817,6 +2852,15 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .col-8 { flex: 0 0 66.666%; max-width: 66.666%; padding: 0 8px; box-sizing: border-box; }
             .text-center { text-align: center; }
             .fw-bold { font-weight: bold; }
+            /* Kartu rekapitulasi - diletakkan di BAWAH tabel (kebalikan dari
+               popup layar, yang di ATAS tabel). Default 3 kolom (2 baris),
+               otomatis jadi 1 baris (6 kolom) begitu lebar layar/kertas cukup -
+               berlaku baik saat pratinjau cetak di HP maupun kertas fisik. */
+            .rekap-cards-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 25px; }
+            .rekap-card-item { flex: 0 0 calc(33.333% - 4px); box-sizing: border-box; border: 1px solid #999; border-radius: 4px; padding: 6px 4px; text-align: center; }
+            .rekap-card-item .angka { font-size: 16px; font-weight: bold; }
+            .rekap-card-item .label { font-size: 9px; color: #333; text-transform: uppercase; }
+            @media (min-width: 700px) { .rekap-card-item { flex: 0 0 calc(16.666% - 5px); } }
             @media print { body { padding: 0; } }
           </style>
         </head>
@@ -2828,21 +2872,20 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <div class="laporan-title">Rekap Kehadiran Pribadi - ${REKAP_SENDIRI_DATA.namaGuru || ''}</div>
           <div class="laporan-periode">Periode: ${REKAP_SENDIRI_DATA.periodeLabel || ''}</div>
           <table>
-            <thead><tr><th>No.</th>
+            <thead><tr><th>No.</th>${kolomTampil.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+            <tbody>
       `;
-      headers.forEach(h => { if (!kolomDilarang.includes(h.toLowerCase())) printWindowContent += `<th>${h}</th>`; });
-      printWindowContent += `</tr></thead><tbody>`;
-
       REKAP_SENDIRI_DATA.data.forEach((row, idx) => {
         printWindowContent += `<tr><td class="fw-bold" style="color:#555;">${idx + 1}</td>`;
-        headers.forEach(h => {
-          if (!kolomDilarang.includes(h.toLowerCase())) {
-            printWindowContent += `<td>${row[h] !== undefined && row[h] !== null ? row[h] : ''}</td>`;
-          }
+        kolomTampil.forEach(h => {
+          const val = h === 'Hari' ? namaHariIndo(row['Tanggal']) : (row[h] !== undefined && row[h] !== null ? row[h] : '');
+          printWindowContent += `<td>${val}</td>`;
         });
         printWindowContent += `</tr>`;
       });
       printWindowContent += `</tbody></table>`;
+
+      printWindowContent += buildRekapCardsHtmlCetak(hitungCounterAbsenMasuk(REKAP_SENDIRI_DATA.data));
 
       printWindowContent += `
           <div class="row mt-5" style="font-size: 11px;">
@@ -3483,7 +3526,28 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // KOMPONEN REKAP BERSAMA — dipakai konsisten di Laporan Absen Masuk,
   // Laporan Kegiatan Khusus, dan Payroll (baik tampilan layar maupun cetak PDF)
   // =========================================================================
-  function buildRekapCardsHtml(counter, totalInfo, customItems) {
+  /** Nama hari (Indonesia) dari string tanggal 'YYYY-MM-DD' - dipakai untuk
+   * mengganti kolom Nama (redundan di rekap per-guru) jadi info hari, lebih
+   * berguna daripada mengulang nama yang sama di setiap baris. */
+  function namaHariIndo(tanggalStr) {
+    if (!tanggalStr) return '';
+    const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const d = new Date(tanggalStr + 'T00:00:00');
+    return isNaN(d.getTime()) ? '' : HARI[d.getDay()];
+  }
+
+  /** Hitung jumlah per status dari baris data Absen Masuk - dipakai bareng
+   * oleh popup Rekap Kehadiran pribadi & versi cetaknya. */
+  function hitungCounterAbsenMasuk(dataRows) {
+    const counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Tanpa Keterangan': 0 };
+    (dataRows || []).forEach(row => {
+      const status = String(row['Status'] || '').trim();
+      if (counter[status] !== undefined) counter[status]++;
+    });
+    return counter;
+  }
+
+  function buildRekapCardsHtml(counter, totalInfo, customItems, gridClass) {
     const items = customItems || [
       { key: 'Hadir', icon: 'bi-check-circle-fill', color: 'success' },
       { key: 'Terlambat', icon: 'bi-exclamation-triangle-fill', color: 'warning' },
@@ -3493,8 +3557,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       { key: 'Cuti', icon: 'bi-airplane-fill', color: 'dark' },
       { key: 'Tanpa Keterangan', icon: 'bi-x-circle-fill', color: 'danger' }
     ];
+    const kolom = gridClass || 'col-6 col-md-2';
     let cardsHtml = items.map(function(it) {
-      return '<div class="col-6 col-md-2">' +
+      return '<div class="' + kolom + '">' +
         '<div class="p-2 bg-white rounded shadow-sm text-center h-100 border-start border-3 border-' + it.color + '">' +
         '<i class="bi ' + it.icon + ' text-' + it.color + '"></i>' +
         '<div class="fw-bold fs-5">' + (counter[it.key] || 0) + '</div>' +
@@ -3505,6 +3570,27 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     return '<div class="card border-0 shadow-sm p-3" style="background: linear-gradient(135deg, rgba(30,136,229,0.05), rgba(56,189,248,0.08));">' +
       '<h6 class="fw-bold text-secondary mb-3"><i class="bi bi-bar-chart-fill text-primary"></i> Rekapitulasi Total' + (totalInfo ? ' - ' + totalInfo : '') + '</h6>' +
       '<div class="row g-2">' + cardsHtml + '</div></div>';
+  }
+
+  /** Versi cetak (HTML+CSS polos, tanpa Bootstrap) dari kartu rekapitulasi di
+   * atas - dipakai di lembar cetak Rekap Kehadiran pribadi. Layout: 3 kolom
+   * (2 baris) secara default, otomatis jadi 1 baris (6 kolom) di layar/kertas
+   * lebih lebar lewat media query di dalam <style> lembar cetak itu sendiri. */
+  function buildRekapCardsHtmlCetak(counter) {
+    const items = [
+      { key: 'Hadir', warna: '#198754' }, { key: 'Terlambat', warna: '#fd7e14' },
+      { key: 'Sakit', warna: '#0dcaf0' }, { key: 'Izin', warna: '#6c757d' },
+      { key: 'Tugas Luar', warna: '#0d6efd' }, { key: 'Tanpa Keterangan', warna: '#dc3545' }
+    ];
+    let html = '<div class="rekap-cards-wrap">';
+    items.forEach(it => {
+      html += `<div class="rekap-card-item" style="border-left:3px solid ${it.warna};">
+                 <div class="angka">${counter[it.key] || 0}</div>
+                 <div class="label">${it.key}</div>
+               </div>`;
+    });
+    html += '</div>';
+    return html;
   }
 
   function loadReport() {
@@ -3525,20 +3611,33 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
          return;
       }
       const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
-      
-      let headHtml = '<tr><th>No.</th>';
+
+      // Kolom "Nama" cuma dihilangkan & digantikan "Hari" kalau memang sedang
+      // difilter ke SATU guru spesifik (bukan "Semua Guru") - kalau semua
+      // guru ditampilkan sekaligus, nama tetap wajib ada untuk membedakan
+      // baris siapa punya siapa. Nama kolom Tanggal/Nama beda-beda dikit
+      // antar jenis laporan (mis. "Tanggal Lapor", "Nama Guru"), makanya
+      // dideteksi lewat awalan teksnya, bukan dicocokkan persis.
+      const guruSpesifikDipilih = guru && guru !== 'ALL';
+      const kolomTanggal = res.headers.find(h => h.startsWith('Tanggal'));
+      const kolomNama = res.headers.find(h => h.startsWith('Nama'));
+      const gantiNamaJadiHari = guruSpesifikDipilih && !!kolomNama;
+
+      const kolomTampil = [];
       res.headers.forEach(h => {
-        if (!kolomDilarang.includes(h.toLowerCase())) {
-          headHtml += `<th>${h}</th>`;
-        }
+        if (gantiNamaJadiHari && h === kolomNama) return; // dilewati, digantikan "Hari" di bawah
+        if (kolomDilarang.includes(h.toLowerCase())) return;
+        kolomTampil.push(h);
+        if (gantiNamaJadiHari && h === kolomTanggal) kolomTampil.push('Hari');
       });
-      headHtml += '</tr>';
+
+      let headHtml = '<tr><th>No.</th>' + kolomTampil.map(h => `<th>${h}</th>`).join('') + '</tr>';
       document.getElementById('tr-head').innerHTML = headHtml;
       
       let counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Cuti': 0, 'Tanpa Keterangan': 0 };
       let totalData = res.data ? res.data.length : 0;
       
-      const jumlahKolomAktif = res.headers.filter(h => !kolomDilarang.includes(h.toLowerCase())).length + 1;
+      const jumlahKolomAktif = kolomTampil.length + 1;
 
       let bodyHtml = '';
       if(totalData === 0) {
@@ -3548,18 +3647,20 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             bodyHtml += '<tr>';
             bodyHtml += `<td class="fw-bold text-secondary">${idx + 1}</td>`;
             
-            res.headers.forEach(h => {
-               if (!kolomDilarang.includes(h.toLowerCase())) {
-                 let val = row[h] !== undefined ? row[h] : '';
-                 
-                 if (typeof val === 'string' && val.toUpperCase().includes('HYPERLINK') && val.includes('maps')) {
-                   const ekstrakUrl = val.match(/"([^"]+)"/);
-                   if (ekstrakUrl && ekstrakUrl[1]) {
-                       val = `<a href="${ekstrakUrl[1]}" target="_blank" class="btn btn-sm btn-outline-danger py-0" style="font-size:0.8rem;"><i class="bi bi-geo-alt-fill"></i> Buka Peta</a>`;
-                   }
-                 }
-                 bodyHtml += `<td>${val}</td>`; 
+            kolomTampil.forEach(h => {
+               if (h === 'Hari') {
+                 bodyHtml += `<td>${namaHariIndo(row[kolomTanggal])}</td>`;
+                 return;
                }
+               let val = row[h] !== undefined ? row[h] : '';
+
+               if (typeof val === 'string' && val.toUpperCase().includes('HYPERLINK') && val.includes('maps')) {
+                 const ekstrakUrl = val.match(/"([^"]+)"/);
+                 if (ekstrakUrl && ekstrakUrl[1]) {
+                     val = `<a href="${ekstrakUrl[1]}" target="_blank" class="btn btn-sm btn-outline-danger py-0" style="font-size:0.8rem;"><i class="bi bi-geo-alt-fill"></i> Buka Peta</a>`;
+                 }
+               }
+               bodyHtml += `<td>${val}</td>`;
             });
             bodyHtml += '</tr>';
 
@@ -3732,25 +3833,36 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       `;
 
       const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
-      LAST_REPORT_DATA.headers.forEach(h => { 
-        if (!kolomDilarang.includes(h.toLowerCase())) {
-          printWindowContent += `<th>${h}</th>`; 
-        }
+      // Sama seperti tampilan layar (loadReport) - kolom Nama dihilangkan &
+      // digantikan Hari HANYA kalau sedang difilter ke satu guru spesifik.
+      const guruSpesifikDipilihCetak = filterGuruValue && filterGuruValue !== 'ALL';
+      const kolomTanggalCetak = LAST_REPORT_DATA.headers.find(h => h.startsWith('Tanggal'));
+      const kolomNamaCetak = LAST_REPORT_DATA.headers.find(h => h.startsWith('Nama'));
+      const gantiNamaJadiHariCetak = guruSpesifikDipilihCetak && !!kolomNamaCetak;
+      const kolomTampilCetak = [];
+      LAST_REPORT_DATA.headers.forEach(h => {
+        if (gantiNamaJadiHariCetak && h === kolomNamaCetak) return;
+        if (kolomDilarang.includes(h.toLowerCase())) return;
+        kolomTampilCetak.push(h);
+        if (gantiNamaJadiHariCetak && h === kolomTanggalCetak) kolomTampilCetak.push('Hari');
       });
+      kolomTampilCetak.forEach(h => { printWindowContent += `<th>${h}</th>`; });
       printWindowContent += `</tr></thead><tbody>`;
 
       LAST_REPORT_DATA.data.forEach((row, idx) => {
         printWindowContent += `<tr>`;
         printWindowContent += `<td class="fw-bold" style="color:#555;">${idx + 1}</td>`;
         
-        LAST_REPORT_DATA.headers.forEach(h => {
-          if (!kolomDilarang.includes(h.toLowerCase())) {
-            let val = row[h] || '';
-            if (typeof val === 'string' && val.toUpperCase().includes('HYPERLINK') && val.includes('maps')) {
-              val = "Koordinat GPS Terlampir";
-            }
-            printWindowContent += `<td>${val}</td>`;
+        kolomTampilCetak.forEach(h => {
+          if (h === 'Hari') {
+            printWindowContent += `<td>${namaHariIndo(row[kolomTanggalCetak])}</td>`;
+            return;
           }
+          let val = row[h] || '';
+          if (typeof val === 'string' && val.toUpperCase().includes('HYPERLINK') && val.includes('maps')) {
+            val = "Koordinat GPS Terlampir";
+          }
+          printWindowContent += `<td>${val}</td>`;
         });
         printWindowContent += `</tr>`;
       });

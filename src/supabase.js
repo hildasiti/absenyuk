@@ -86,8 +86,19 @@ export async function sbUpdate(env, table, column, value, data) {
 
 /** Update baris berdasarkan LEBIH DARI SATU filter kolom sekaligus (untuk primary key gabungan). */
 export async function sbUpdateWhere(env, table, filters, data) {
+  // PENTING: filter dengan nilai null HARUS pakai operator PostgREST 'is.null',
+  // BUKAN 'eq.' - encodeURIComponent(null) menghasilkan teks "null" (string),
+  // dan 'kolom=eq.null' di PostgREST artinya "cari baris yang isinya PERSIS
+  // teks 'null'", BUKAN "cari baris yang kosong (NULL)". Filter seperti itu
+  // tidak akan pernah cocok dengan baris manapun (kolom NULL sungguhan tidak
+  // pernah "eq" apa pun, termasuk teks "null") - update jadi selalu gagal
+  // menemukan barisnya. Ini persis penyebab bug "Anda sudah melakukan
+  // Presensi Pulang hari ini" yang muncul di percobaan PERTAMA guru (belum
+  // pernah pulang sama sekali) - saveAbsenPulang() memfilter jam_pulang: null
+  // untuk memastikan cuma meng-update baris yang belum diisi, tapi filter itu
+  // tidak pernah match sama sekali sebelum perbaikan ini.
   const filterQuery = Object.entries(filters)
-    .map(([col, val]) => `${col}=eq.${encodeURIComponent(val)}`)
+    .map(([col, val]) => val === null ? `${col}=is.null` : `${col}=eq.${encodeURIComponent(val)}`)
     .join('&');
   const url = `${env.SUPABASE_URL}/rest/v1/${table}?${filterQuery}`;
   const res = await fetch(url, {
