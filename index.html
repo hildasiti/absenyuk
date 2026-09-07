@@ -641,12 +641,12 @@
       <div class='row g-2'>
         <div class='col-6'>
           <button class='btn btn-success w-100 fw-bold shadow-sm' id='btn-absen-masuk' type='submit'>
-            <i class='bi bi-box-arrow-in-right me-1'></i> Presensi Masuk
+            <i class='bi bi-box-arrow-in-right me-1'></i> Masuk
           </button>
         </div>
         <div class='col-6'>
           <button class='btn btn-warning w-100 fw-bold shadow-sm text-white' id='btn-absen-pulang' type='button' onclick='submitAbsenPulang()' disabled>
-            <i class='bi bi-box-arrow-right me-1'></i> Presensi Pulang
+            <i class='bi bi-box-arrow-right me-1'></i> Pulang
           </button>
         </div>
       </div>
@@ -2409,39 +2409,16 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           document.getElementById('label-periode-keterangan').innerText = data.periodeKeterangan;
         }
         loadRekapJamPelajaranSendiri(startDate, endDate);
-        
-        const listStatusSudahAbsen = ['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Tugas Luar'];
-        const formAbsenMasuk = document.getElementById('absen-masuk');
-        
-        if (formAbsenMasuk) {
-          const btnAbsen = formAbsenMasuk.querySelector('button[type="submit"]');
-          const selectStatus = document.getElementById('am-status');
-          const txtKeterangan = document.getElementById('am-ket');
-          
-          if (listStatusSudahAbsen.indexOf(data.todayStatus) !== -1) {
-            if(btnAbsen) {
-              btnAbsen.disabled = true;
-              btnAbsen.className = "btn btn-secondary shadow-sm w-100";
-              btnAbsen.innerHTML = `<i class="bi bi-lock-fill"></i> Anda Sudah Melakukan Presensi Hari Ini (${data.todayStatus})`;
-            }
-            if(selectStatus) selectStatus.disabled = true;
-            if(txtKeterangan) {
-              txtKeterangan.disabled = true;
-              txtKeterangan.placeholder = `Sistem: Presensi Anda hari ini telah terkunci dengan status [${data.todayStatus}].`;
-            }
-          } else {
-            if(btnAbsen) {
-              btnAbsen.disabled = false;
-              btnAbsen.className = "btn btn-primary shadow-sm w-100";
-              btnAbsen.innerHTML = `<i class="bi bi-geo-fill"></i> Kirim Presensi (Validasi GPS)`;
-            }
-            if(selectStatus) selectStatus.disabled = false;
-            if(txtKeterangan) {
-              txtKeterangan.disabled = false;
-              txtKeterangan.placeholder = "Tulis tugas dinas atau alasan izin jika tidak hadir fisik...";
-            }
-          }
-        }
+
+        // Kunci/buka tombol Masuk & Pulang serta kotak status hari ini SEPENUHNYA
+        // ditangani terapkanStatusAbsenHariIni() (lihat fungsi itu) - satu-satunya
+        // sumber kebenaran untuk UI Absen Masuk/Pulang. Dulu ada logika duplikat
+        // di sini (dari sebelum tombol dipecah jadi Masuk & Pulang terpisah) yang
+        // menimpa hasil kerja terapkanStatusAbsenHariIni() setiap kali dashboard
+        // di-refresh - itu sebabnya keterangan "terkunci dengan status [...]" versi
+        // lama masih sempat muncul. Query ulang di sini supaya tetap sinkron begitu
+        // dashboard di-refresh dari menu lain (bukan cuma saat buka menu Absen Masuk).
+        if (document.getElementById('absen-masuk')) muatStatusAbsenHariIni();
       }
 
       // Kartu admin (Admin, Piket, Kepala Sekolah - siapa saja yang punya akses Admin Panel)
@@ -2652,24 +2629,37 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       jamPulangEl.className = 'fs-4 fw-bold text-secondary';
     }
 
-    // Kunci tombol Masuk begitu sudah absen masuk hari ini (form status/keterangan
-    // dibiarkan aktif secara visual tidak masalah - percobaan kirim ulang toh akan
-    // ditolak server via duplicate key - tapi tombol dikunci supaya guru tidak
-    // bolak-balik dapat pesan gagal untuk sesuatu yang sebenarnya sudah selesai).
+    // Kunci tombol Masuk begitu sudah absen masuk hari ini. Begitu terkunci,
+    // label tombol langsung menampilkan STATUS KEHADIRANNYA (Hadir/Terlambat/dst)
+    // - jadi guru tidak perlu buka kolom lain buat tahu status yang tercatat.
     btnMasuk.disabled = sudahMasuk;
     btnMasuk.innerHTML = sudahMasuk
-      ? '<i class="bi bi-check-circle-fill me-1"></i> Sudah Presensi Masuk'
-      : '<i class="bi bi-box-arrow-in-right me-1"></i> Presensi Masuk';
+      ? `<i class="bi bi-check-circle-fill me-1"></i> ${row.status}`
+      : '<i class="bi bi-box-arrow-in-right me-1"></i> Masuk';
 
     // Tombol Pulang aktif HANYA kalau: sudah masuk, statusnya Hadir/Terlambat,
-    // belum pulang, DAN sudah masuk jam yang diizinkan sekolah.
+    // belum pulang, DAN sudah masuk jam yang diizinkan sekolah. Labelnya sengaja
+    // dibuat SEPENDEK mungkin ("Pulang" saja) di semua kondisi kecuali sudah
+    // selesai - info jam boleh pulang sudah cukup diwakili kolom Keterangan di
+    // bawah, tidak perlu diulang lagi di tombol supaya tidak kepanjangan.
     btnPulang.disabled = !(sudahMasuk && relevanUntukPulang && !sudahPulang && !belumWaktunyaPulang);
-    if (sudahPulang) {
-      btnPulang.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Sudah Presensi Pulang';
-    } else if (sudahMasuk && relevanUntukPulang && belumWaktunyaPulang) {
-      btnPulang.innerHTML = `<i class="bi bi-lock-fill me-1"></i> Pulang mulai ${jamBolehPulang}`;
-    } else {
-      btnPulang.innerHTML = '<i class="bi bi-box-arrow-right me-1"></i> Presensi Pulang';
+    btnPulang.innerHTML = sudahPulang
+      ? '<i class="bi bi-check-circle-fill me-1"></i> Sudah Presensi Pulang'
+      : '<i class="bi bi-box-arrow-right me-1"></i> Pulang';
+
+    // Kolom Keterangan/Alasan - begitu Absen Masuk selesai, kolom ini dikunci dan
+    // dialihfungsikan jadi info jam boleh Presensi Pulang (bukan lagi mengulang
+    // status kehadiran, karena itu sudah terwakili label tombol Masuk di atas).
+    const txtKeterangan = document.getElementById('am-ket');
+    if (txtKeterangan) {
+      if (sudahMasuk) {
+        txtKeterangan.disabled = true;
+        txtKeterangan.value = '';
+        txtKeterangan.placeholder = `Presensi pulang mulai ${jamBolehPulang} WIB.`;
+      } else {
+        txtKeterangan.disabled = false;
+        txtKeterangan.placeholder = 'Kosongkan jika hadir fisik normal...';
+      }
     }
   }
 
@@ -4209,7 +4199,15 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // ====================================================================
   function loadStafUntukNotifikasi() {
     const grup = document.getElementById('notif-target-staf-group');
-    if (!grup || grup.dataset.loaded) return; // cukup sekali per sesi, daftar staf jarang berubah selagi halaman terbuka
+    if (!grup) return;
+    const sekolahIdSaatIni = (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '';
+    // Cache per SEKOLAH (bukan sekali selamanya per sesi) - kalau Admin Utama
+    // ganti sekolah aktif, sekolahIdSaatIni ikut berubah, jadi daftar staf
+    // otomatis dimuat ulang untuk sekolah yang baru. Sebelumnya cache-nya
+    // permanen sekali dimuat, jadi kalau ganti sekolah lalu balik lagi ke
+    // menu ini, daftarnya masih menampilkan staf sekolah LAMA sampai halaman
+    // di-reload total.
+    if (grup.dataset.loadedForSekolah === sekolahIdSaatIni) return;
     google.script.run.withSuccessHandler(list => {
       let opts = '';
       list.forEach(u => {
@@ -4217,8 +4215,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         opts += `<option value="${u.nuptk}">${u.nama}${labelRole}</option>`;
       });
       grup.innerHTML = opts;
-      grup.dataset.loaded = '1';
-    }).getStafAktifUntukImpal(SESSION_TOKEN);
+      grup.dataset.loadedForSekolah = sekolahIdSaatIni;
+    }).getStafAktifUntukImpal(SESSION_TOKEN, sekolahIdSaatIni);
   }
 
   function kirimNotifikasiAdminSubmit(e) {
