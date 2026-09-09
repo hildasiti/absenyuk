@@ -271,12 +271,12 @@ async function saveAbsenMasuk(args, env) {
     if (namaLiburNasional) statusLiburSistem = 'Libur Nasional: ' + namaLiburNasional;
   }
   if (statusLiburSistem !== '') {
-    return { success: false, message: `Presensi Ditolak! Hari ini sistem dinonaktifkan karena agenda [${statusLiburSistem}].` };
+    return { success: false, message: `Absen Ditolak! Hari ini sistem dinonaktifkan karena agenda [${statusLiburSistem}].` };
   }
 
   const existing = await sbSelect(env, 'absen_masuk', `nuptk=eq.${encodeURIComponent(user.nuptk)}&tanggal=eq.${dateStr}&limit=1`);
   if (existing.length > 0) {
-    return { success: false, message: `Anda sudah melakukan presensi masuk hari ini pada pukul ${existing[0].jam} WIB.` };
+    return { success: false, message: `Anda sudah melakukan absen masuk hari ini pada pukul ${existing[0].jam} WIB.` };
   }
 
   if (!lat || !lon || lat === '-' || lon === '-') {
@@ -331,7 +331,7 @@ async function saveAbsenMasuk(args, env) {
     });
   } catch (err) {
     if (String(err.message).includes('duplicate key')) {
-      return { success: false, message: 'Anda sudah melakukan presensi masuk hari ini.' };
+      return { success: false, message: 'Anda sudah melakukan absen masuk hari ini.' };
     }
     throw err;
   }
@@ -341,20 +341,20 @@ async function saveAbsenMasuk(args, env) {
     // Catat juga sebagai kehadiran Briefing & Tawasul (jenis kegiatan yang sama dengan
     // yang dulu diisi manual lewat menu Kegiatan Sekolah) - supaya laporan Briefing &
     // Tawasul tetap jalan tanpa guru perlu absen 2x. Kalau gagal (mis. race condition
-    // duplicate key), jangan sampai membatalkan presensi masuk yang sudah tersimpan -
-    // presensi masuk tetap prioritas utama.
+    // duplicate key), jangan sampai membatalkan absen masuk yang sudah tersimpan -
+    // absen masuk tetap prioritas utama.
     try {
       await sbInsert(env, 'kegiatan_umum', {
         id: generateShortID('K'), sekolah_id: sekolahId, jenis_kegiatan: 'BRIEFING_TAWASUL', tanggal: dateStr,
         nuptk: user.nuptk, nama: user.nama, kegiatan: 'BRIEFING_TAWASUL', status: 'Hadir',
-        catatan: 'Otomatis tercatat dari Presensi Masuk (Hadir & Tawasul).', timestamp: new Date().toISOString()
+        catatan: 'Otomatis tercatat dari Absen Masuk (Hadir & Tawasul).', timestamp: new Date().toISOString()
       });
     } catch (err) {
       if (!String(err.message).includes('duplicate key')) console.error('Gagal mencatat kehadiran Briefing & Tawasul otomatis:', err.message);
     }
   }
 
-  let pesanSukses = `Presensi berhasil disimpan pada pukul ${jamLaporStr} WIB.`;
+  let pesanSukses = `Absen berhasil disimpan pada pukul ${jamLaporStr} WIB.`;
   switch (finalStatus) {
     case 'Hadir': pesanSukses += ' Terimakasih Telah Tepat Waktu. Semoga Allah Lancarkan Kegiatan hari ini!'; break;
     case 'Terlambat': pesanSukses = 'Mari datang lebih pagi untuk menyambut siswa. Jam Absen ' + jamLaporStr + ' WIB.'; break;
@@ -386,9 +386,9 @@ async function getStatusAbsenHariIni(args, env) {
 }
 
 /**
- * Presensi PULANG - pasangan dari saveAbsenMasuk() di atas, tapi meng-UPDATE baris
+ * Absen PULANG - pasangan dari saveAbsenMasuk() di atas, tapi meng-UPDATE baris
  * absen_masuk hari ini (bukan INSERT baris baru) karena secara konsep ini melengkapi
- * baris presensi yang sama, bukan kejadian terpisah. Guru harus sudah Absen Masuk
+ * baris absen yang sama, bukan kejadian terpisah. Guru harus sudah Absen Masuk
  * hari ini dulu (tidak bisa langsung Pulang tanpa Masuk), dan cuma bisa dilakukan
  * SEKALI (kolom jam_pulang harus masih kosong) - dijaga di level query (bukan cuma
  * dicek lalu percaya begitu saja) lewat filter jam_pulang=is.null di WHERE UPDATE-
@@ -412,13 +412,13 @@ async function saveAbsenPulang(args, env) {
   const rows = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}&nuptk=eq.${encodeURIComponent(user.nuptk)}`);
   const rowHariIni = rows.length ? rows[0] : null;
   if (!rowHariIni) {
-    return { success: false, message: 'Anda belum melakukan Presensi Masuk hari ini, jadi belum bisa Presensi Pulang.' };
+    return { success: false, message: 'Anda belum melakukan Absen Masuk hari ini, jadi belum bisa Absen Pulang.' };
   }
   if (rowHariIni.jam_pulang) {
-    return { success: false, message: 'Anda sudah melakukan Presensi Pulang hari ini pada pukul ' + rowHariIni.jam_pulang + ' WIB.' };
+    return { success: false, message: 'Anda sudah melakukan Absen Pulang hari ini pada pukul ' + rowHariIni.jam_pulang + ' WIB.' };
   }
   if (!['Hadir', 'Terlambat'].includes(String(rowHariIni.status).trim())) {
-    return { success: false, message: 'Presensi Pulang cuma berlaku untuk guru yang hadir fisik di sekolah hari ini.' };
+    return { success: false, message: 'Absen Pulang cuma berlaku untuk guru yang hadir fisik di sekolah hari ini.' };
   }
 
   const settings = await getSettingsMap(env, sekolahId);
@@ -427,7 +427,7 @@ async function saveAbsenPulang(args, env) {
   // ditolak juga di sini supaya tidak bisa dilewati dengan memanggil API langsung.
   const jamBolehPulang = settings.jam_boleh_pulang || '15:30';
   if (timeStr < jamBolehPulang) {
-    return { success: false, message: `Presensi Pulang baru bisa dilakukan mulai pukul ${jamBolehPulang} WIB, sesuai tata tertib sekolah.` };
+    return { success: false, message: `Absen Pulang baru bisa dilakukan mulai pukul ${jamBolehPulang} WIB, sesuai tata tertib sekolah.` };
   }
 
   const jarakMeter = hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(settings.lat_sekolah), parseFloat(settings.long_sekolah));
@@ -441,19 +441,19 @@ async function saveAbsenPulang(args, env) {
   if (!hasil) {
     // Filter jam_pulang=null di atas tidak menemukan baris (race condition - sudah
     // ke-update duluan oleh request lain di detik yang sama).
-    return { success: false, message: 'Anda sudah melakukan Presensi Pulang hari ini.' };
+    return { success: false, message: 'Anda sudah melakukan Absen Pulang hari ini.' };
   }
   await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${sekolahId}`);
 
   // Efek samping: manfaatkan momen ada aktivitas nyata di sekolah ini untuk sekalian
   // mengecek apakah sudah waktunya menandai guru lain yang belum Absen Masuk sebagai
   // Tanpa Keterangan - lihat komentar di trigerAutoAlpaOportunistik(). Tidak di-await
-  // dengan menghalangi respons ke guru (biar Presensi Pulang tetap terasa instan),
+  // dengan menghalangi respons ke guru (biar Absen Pulang tetap terasa instan),
   // tapi tetap dijamin selesai lewat waitUntil-style try/catch di dalam fungsinya
-  // sendiri - kalaupun gagal, tidak mempengaruhi keberhasilan Presensi Pulang ini.
+  // sendiri - kalaupun gagal, tidak mempengaruhi keberhasilan Absen Pulang ini.
   await trigerAutoAlpaOportunistik(env, sekolahId);
 
-  return { success: true, message: `Presensi Pulang berhasil disimpan pada pukul ${timeStr} WIB. Hati-hati di jalan, sampai jumpa besok!` };
+  return { success: true, message: `Absen Pulang berhasil disimpan pada pukul ${timeStr} WIB. Hati-hati di jalan, sampai jumpa besok!` };
 }
 
 async function getAbsenMasukUntukEdit(args, env) {
@@ -559,7 +559,7 @@ async function saveAbsenKegiatanKhusus(args, env) {
   const existing = await sbSelect(env, 'absen_kegiatan_khusus', `sekolah_id=eq.${sekolahId}&nuptk=eq.${encodeURIComponent(user.nuptk)}&tanggal_lapor=eq.${dateStr}`);
   const sudah = existing.some((r) => String(r.nama_kegiatan).trim().toLowerCase() === inputCleanKegNama);
   if (sudah) {
-    return { success: false, message: `Ditolak! Anda sudah melakukan presensi untuk kegiatan "${namaKegiatanStr}" hari ini.` };
+    return { success: false, message: `Ditolak! Anda sudah melakukan absen untuk kegiatan "${namaKegiatanStr}" hari ini.` };
   }
 
   let finalStatus = statusKehadiran;
@@ -583,7 +583,7 @@ async function saveAbsenKegiatanKhusus(args, env) {
     }
     const jarakMeter = hitungRadiusGPS(parseFloat(lat), parseFloat(lon), parseFloat(latKegiatan), parseFloat(lonKegiatan));
     if (jarakMeter > radiusKegiatan) {
-      return { success: false, message: `Ditolak! Anda berada sekitar ${Math.round(jarakMeter)} meter dari lokasi kegiatan (maksimal ${radiusKegiatan} meter). Pastikan Anda sudah berada di lokasi acara sebelum presensi.` };
+      return { success: false, message: `Ditolak! Anda berada sekitar ${Math.round(jarakMeter)} meter dari lokasi kegiatan (maksimal ${radiusKegiatan} meter). Pastikan Anda sudah berada di lokasi acara sebelum absen.` };
     }
   }
 
@@ -814,7 +814,13 @@ async function getDashboardData(args, env) {
         if (statusAbsen === 'Hadir') data.adHadir++;
         else if (statusAbsen === 'Terlambat') data.adTerlambat++;
         else if (statusAbsen === 'Izin') data.adIzin++;
-        else if (statusAbsen === 'Sakit') data.adSakit++;
+        // 'Cuti' digabung ke bucket Sakit yang sama ("Sakit / Cuti") - baris
+        // berstatus Cuti sudah otomatis dibuatkan (backfill) oleh saveCutiGuru()
+        // untuk tiap hari kerja dalam rentang yang didaftarkan admin, jadi
+        // cukup dibaca langsung dari sini, TIDAK PERLU query ulang tabel
+        // cuti_guru secara terpisah (itu tadinya menyebabkan hitungan dobel
+        // untuk entri berstatus Sakit).
+        else if (statusAbsen === 'Sakit' || statusAbsen === 'Cuti') data.adSakit++;
         else if (statusAbsen === 'Tugas Luar') data.adTugasLuar++;
         else if (statusAbsen === 'Tanpa Keterangan') data.adBelum++;
       }
@@ -829,7 +835,7 @@ async function getDashboardData(args, env) {
         if (statusAbsen === 'Hadir') data.hadir++;
         else if (statusAbsen === 'Terlambat') data.terlambat++;
         else if (statusAbsen === 'Izin') data.izin++;
-        else if (statusAbsen === 'Sakit') data.sakit++;
+        else if (statusAbsen === 'Sakit' || statusAbsen === 'Cuti') data.sakit++;
         else if (statusAbsen === 'Tugas Luar') data.tugas_luar++;
         else if (statusAbsen === 'Tanpa Keterangan') data.alpa_guru++;
       }
@@ -841,12 +847,23 @@ async function getDashboardData(args, env) {
     }
   });
 
+  // Guru yang sedang dalam rentang Cuti/Sakit terdaftar (menu Cuti/Sakit Guru)
+  // HARI INI harus dikecualikan dari daftar "Belum Absen/Alpa" di bawah -
+  // mereka memang tidak diharapkan absen_masuk hari ini (sama seperti
+  // pengecualian di auto-alfa), jadi kalau tidak dicek di sini akan salah
+  // muncul di daftar alpa padahal cutinya sah.
+  const guruCutiHariIni = await getGuruCutiAktifHariIni(env, sekolahId, dateStr);
+
   users.forEach((u) => {
     const uNuptk = String(u.nuptk).trim(), uNama = String(u.nama).trim();
     const uRole = String(u.role).trim(), uStatus = String(u.status).trim();
     if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(uRole) && uStatus === 'Aktif') {
       if (!sudahAbsenHariIni.includes(uNuptk)) {
-        if (!apakahHariLibur) { data.listBelumAbsen.push({ nuptk: uNuptk, nama: uNama }); data.listAlpa.push(uNama); }
+        if (guruCutiHariIni[uNuptk]) {
+          data.listSakit.push(uNama); // sedang Cuti/Sakit terdaftar admin, bukan alpa
+        } else if (!apakahHariLibur) {
+          data.listBelumAbsen.push({ nuptk: uNuptk, nama: uNama }); data.listAlpa.push(uNama);
+        }
       } else {
         const info = statusGuruHariIni[uNuptk];
         if (info) {
@@ -1431,12 +1448,19 @@ async function getPayrollReport(args, env) {
     if (payrollMap[nuptk]) {
       if (status === 'Hadir') payrollMap[nuptk].hadir++;
       else if (status === 'Terlambat') payrollMap[nuptk].terlambat++;
-      else if (status === 'Sakit') payrollMap[nuptk].sakit++;
+      // 'Cuti' digabung ke kolom sakit yang sama ("Sakit / Cuti") - baris
+      // berstatus Cuti sudah otomatis dibuatkan (backfill) oleh saveCutiGuru()
+      // untuk tiap hari kerja dalam rentang yang didaftarkan admin, jadi cukup
+      // dibaca langsung dari sini, TIDAK PERLU query ulang tabel cuti_guru
+      // secara terpisah (itu tadinya menyebabkan hitungan dobel untuk entri
+      // berstatus Sakit yang didaftarkan lewat menu Cuti/Sakit Guru).
+      else if (status === 'Sakit' || status === 'Cuti') payrollMap[nuptk].sakit++;
       else if (status === 'Izin') payrollMap[nuptk].izin++;
       else if (status === 'Tugas Luar') payrollMap[nuptk].tugasLuar++;
       else if (status === 'Tanpa Keterangan') payrollMap[nuptk].alpa++;
     }
   });
+
   return Object.values(payrollMap);
 }
 
@@ -1456,24 +1480,6 @@ async function getReport(args, env) {
   if (config.jenisKegiatan) query += `&jenis_kegiatan=eq.${config.jenisKegiatan}`;
   const rows = await sbSelect(env, config.table, query);
 
-  // Laporan Absen Masuk: guru yang pilih "Hadir & Tawasul" tersimpan di absen_masuk
-  // dengan status biasa (Hadir/Terlambat) TANPA jejak "Tawasul" apapun di kolom
-  // manapun di tabel itu - supaya rekap payroll tidak perlu tahu soal ini sama
-  // sekali (lihat saveAbsenMasuk()). Jejak keikutsertaan Tawasul-nya cuma ada di
-  // tabel kegiatan_umum (jenis BRIEFING_TAWASUL) sebagai baris terpisah, PERMANEN
-  // dan tidak bisa diubah/dihapus guru dari form Absen Masuk (beda dengan kolom
-  // Keterangan yang teksnya bebas diedit guru). Di sini kedua sumber itu digabung
-  // HANYA untuk tampilan laporan - data asli di kedua tabel tidak diubah sama
-  // sekali, jadi walaupun guru hapus/ubah teks Keterangan-nya, prefix "Ikut
-  // Tawasul" ini tetap muncul benar karena sumbernya baris terpisah tadi,
-  // bukan dari teks yang guru ketik.
-  let tawasulSet = new Set();
-  if (type === 'ABSEN_MASUK') {
-    const tawasulRows = await sbSelect(env, 'kegiatan_umum',
-      `sekolah_id=eq.${sekolahId}&jenis_kegiatan=eq.BRIEFING_TAWASUL&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
-    tawasulSet = new Set(tawasulRows.map((r) => `${String(r.nuptk).trim()}|${r.tanggal}`));
-  }
-
   const filterTarget = String(filterNuptk).trim();
 
   rows.sort((a, b) => {
@@ -1486,14 +1492,9 @@ async function getReport(args, env) {
   const result = [];
   rows.forEach((row) => {
     if (filterTarget !== 'ALL' && String(row.nuptk).trim() !== filterTarget) return;
-    const ikutTawasulRow = type === 'ABSEN_MASUK' && tawasulSet.has(`${String(row.nuptk).trim()}|${row[config.dateField]}`);
     const rowObj = {};
     config.headers.forEach((header, j) => {
-      let val = row[config.fields[j]];
-      if (header === 'Keterangan' && ikutTawasulRow) {
-        const asli = (val === undefined || val === null || val === '-') ? '' : String(val).trim();
-        val = asli ? `Ikut Tawasul - ${asli}` : 'Ikut Tawasul';
-      }
+      const val = row[config.fields[j]];
       rowObj[header] = val === undefined || val === null ? '' : val;
     });
     result.push(rowObj);
@@ -1507,7 +1508,7 @@ async function getReport(args, env) {
  * (21 - 20) - dipakai tombol "Rekap Kehadiran" di menu Absen Masuk, tampil di
  * popup. Sengaja dibuat handler TERPISAH dari getReport() (bukan memakainya
  * langsung) karena getReport() dibatasi HANYA untuk Admin/Piket/Kepsek -
- * di sini SIAPA PUN (kecuali Admin Utama, yang tidak punya presensi pribadi -
+ * di sini SIAPA PUN (kecuali Admin Utama, yang tidak punya absen pribadi -
  * tidak terikat ke satu sekolah) boleh melihat rekap kehadirannya sendiri,
  * tidak perlu login sebagai admin. Bentuk hasilnya SAMA PERSIS dengan
  * getReport() ({headers, data}) supaya bisa dirender pakai fungsi render
@@ -1528,24 +1529,12 @@ async function getRekapAbsenMasukSendiri(args, env) {
   const rows = await sbSelect(env, config.table,
     `sekolah_id=eq.${sekolahId}&nuptk=eq.${encodeURIComponent(user.nuptk)}&${config.dateField}=gte.${sDateStr}&${config.dateField}=lte.${eDateStr}`);
 
-  // Sama seperti getReport() - "Ikut Tawasul" ditempel dari baris kegiatan_umum
-  // terpisah (BRIEFING_TAWASUL), bukan dari teks Keterangan yang guru ketik
-  // sendiri. Lihat komentar lengkap di getReport().
-  const tawasulRows = await sbSelect(env, 'kegiatan_umum',
-    `sekolah_id=eq.${sekolahId}&nuptk=eq.${encodeURIComponent(user.nuptk)}&jenis_kegiatan=eq.BRIEFING_TAWASUL&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
-  const tawasulSet = new Set(tawasulRows.map((r) => r.tanggal));
-
   rows.sort((a, b) => (a[config.dateField] < b[config.dateField] ? -1 : a[config.dateField] > b[config.dateField] ? 1 : 0));
 
   const data = rows.map((row) => {
-    const ikutTawasulRow = tawasulSet.has(row[config.dateField]);
     const rowObj = {};
     config.headers.forEach((header, j) => {
-      let val = row[config.fields[j]];
-      if (header === 'Keterangan' && ikutTawasulRow) {
-        const asli = (val === undefined || val === null || val === '-') ? '' : String(val).trim();
-        val = asli ? `Ikut Tawasul - ${asli}` : 'Ikut Tawasul';
-      }
+      const val = row[config.fields[j]];
       rowObj[header] = val === undefined || val === null ? '' : val;
     });
     return rowObj;
@@ -1767,8 +1756,8 @@ export async function cekDanKirimNotifikasiBelumAbsen(env) {
       const fcmToken = u.fcm_token;
       if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(uRole) && uStatus === 'Aktif') {
         if (!sudahAbsenNuptk.includes(uNuptk) && fcmToken) {
-          const judul = 'Pengingat Presensi Masuk ⏱️';
-          const pesan = `Halo ${u.nama}, waktu sudah menunjukkan pukul 07.20 WIB. Mari segera lakukan presensi masuk sebelum terlambat!`;
+          const judul = 'Pengingat Absen Masuk ⏱️';
+          const pesan = `Halo ${u.nama}, waktu sudah menunjukkan pukul 07.20 WIB. Mari segera lakukan absen masuk sebelum terlambat!`;
           const hasil = await kirimNotifikasiKeSatuHP(env, fcmToken, judul, pesan);
           if (hasil.success) {
             jumlahDikirim++;
@@ -1981,7 +1970,7 @@ async function trigerAutoAlpaOportunistik(env, sekolahId) {
  * Dipanggil dari Cron Trigger (1x sehari, jam 18:00 WIB - setelah waktu Dzuhur MAUPUN
  * Ashar pasti sudah lewat, dan jam pulang sekolah manapun juga pasti sudah lewat), atau
  * manual lewat tombol Admin Utama (jalankanAutoSholatManual). Guru yang tidak pernah
- * mengisi presensi Pendampingan Sholat Dzuhur dan/atau Ashar hari itu (lewat menu
+ * mengisi absen Pendampingan Sholat Dzuhur dan/atau Ashar hari itu (lewat menu
  * Kegiatan Sekolah) akan otomatis ditandai "Tidak Absen" untuk sesi yang terlewat - dulu
  * kalau tidak absen datanya cuma kosong/tidak ada baris sama sekali di kegiatan_umum,
  * jadi tidak kelihatan di laporan sebagai bahan evaluasi. Sekarang selalu ada baris
@@ -1993,7 +1982,7 @@ async function trigerAutoAlpaOportunistik(env, sekolahId) {
  * gratis cuma 5 total).
  *
  * SEKALIAN JUGA menjalankan autoSetTanpaKeterangan() (auto-alpa Absen Masuk) sebagai
- * JARING PENGAMAN TERAKHIR di penghujung hari - sejak tombol Presensi Pulang jadi
+ * JARING PENGAMAN TERAKHIR di penghujung hari - sejak tombol Absen Pulang jadi
  * pemicu oportunistik untuk auto-alpa (lihat trigerAutoAlpaOportunistik, dipanggil dari
  * saveAbsenPulang), cron KHUSUS auto-alpa (dulu jam 13:01 & 15:31 WIB) sudah dihapus -
  * pemicu utama sekarang murni aktivitas nyata guru yang Absen Pulang. TAPI kalau di
@@ -2082,7 +2071,7 @@ export async function autoSetTidakAbsenSholat(env) {
               calonBaris.push({
                 id: generateShortID('KO'), sekolah_id: sekolahId, jenis_kegiatan: jenisKegiatan, tanggal: dateStr,
                 nuptk: userNuptk, nama: userNama, kegiatan: jenisKegiatan, status: 'Tidak Absen',
-                catatan: 'Otomatis oleh sistem - tidak melakukan presensi sampai batas waktu.', timestamp: new Date().toISOString()
+                catatan: 'Otomatis oleh sistem - tidak melakukan absen sampai batas waktu.', timestamp: new Date().toISOString()
               });
             }
           }
