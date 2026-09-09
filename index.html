@@ -2851,9 +2851,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
             .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
             .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 5px; color: #555; }
-            table { font-size: 11px !important; width: 100%; border-collapse: collapse; }
-            th { background-color: #f2f2f2 !important; color: #000 !important; font-weight: bold; text-transform: uppercase; border: 1px solid #000 !important; text-align: center; vertical-align: middle;}
-            td { border: 1px solid #000 !important; padding: 4px !important; text-align: center; vertical-align: middle;}
+            table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th { background-color: #f2f2f2 !important; color: #000 !important; font-weight: bold; text-transform: uppercase; border: 1px solid #000 !important; text-align: center; vertical-align: middle; word-wrap: break-word; overflow-wrap: break-word; }
+            td { border: 1px solid #000 !important; padding: 4px !important; text-align: center; vertical-align: middle; word-wrap: break-word; overflow-wrap: break-word; }
             .row { display: flex; flex-wrap: wrap; margin: 0 -8px; }
             .row.mt-5 { margin-top: 40px; }
             .col-4 { flex: 0 0 33.333%; max-width: 33.333%; padding: 0 8px; box-sizing: border-box; }
@@ -2880,7 +2880,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <div class="laporan-title">Rekap Kehadiran Pribadi - ${REKAP_SENDIRI_DATA.namaGuru || ''}</div>
           <div class="laporan-periode">Periode: ${REKAP_SENDIRI_DATA.periodeLabel || ''}</div>
           <table>
-            <thead><tr><th>No.</th>${kolomTampil.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+            <thead><tr><th width="4%">No.</th>${kolomTampil.map(h => `<th width="${lebarKolomCetak(h)}">${h}</th>`).join('')}</tr></thead>
             <tbody>
       `;
       REKAP_SENDIRI_DATA.data.forEach((row, idx) => {
@@ -3585,6 +3585,26 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
    * atas - dipakai di lembar cetak Rekap Kehadiran pribadi. Layout: 3 kolom
    * (2 baris) secara default, otomatis jadi 1 baris (6 kolom) di layar/kertas
    * lebih lebar lewat media query di dalam <style> lembar cetak itu sendiri. */
+  /** Lebar kolom (persen) untuk tabel cetak PDF, dipasangkan dengan CSS
+   * `table-layout: fixed` - tanpa ini, browser akan menyamakan rata lebar
+   * SEMUA kolom (mengabaikan jenis datanya), tetap kurang rapi. Dicocokkan
+   * lewat awalan nama kolom karena beda jenis laporan punya sedikit variasi
+   * nama header (mis. "Tanggal Lapor", "Nama Guru", "Status Kehadiran"). */
+  function lebarKolomCetak(header) {
+    const h = String(header).trim();
+    if (h === 'No.') return '4%';
+    if (h.startsWith('Tanggal')) return '9%';
+    if (h === 'Hari') return '7%';
+    if (h.startsWith('Nama')) return '15%';
+    if (h === 'Jam Pulang') return '8%';
+    if (h.startsWith('Jarak Pulang')) return '9%';
+    if (h.startsWith('Jarak')) return '8%';
+    if (h === 'Jam') return '7%';
+    if (h.startsWith('Status')) return '9%';
+    if (h === 'Keterangan' || h === 'Catatan') return '22%';
+    return '10%';
+  }
+
   function buildRekapCardsHtmlCetak(counter) {
     const items = [
       { key: 'Hadir', warna: '#198754' }, { key: 'Terlambat', warna: '#fd7e14' },
@@ -3815,9 +3835,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
             .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
             .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 5px; color: #555; }
-            table { font-size: 11px !important; width: 100%; border-collapse: collapse; }
-            th { background-color: #f2f2f2 !important; color: #000 !important; font-weight: bold; text-transform: uppercase; border: 1px solid #000 !important; text-align: center; vertical-align: middle;}
-            td { border: 1px solid #000 !important; padding: 4px !important; text-align: center; vertical-align: middle;}
+            table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th { background-color: #f2f2f2 !important; color: #000 !important; font-weight: bold; text-transform: uppercase; border: 1px solid #000 !important; text-align: center; vertical-align: middle; word-wrap: break-word; overflow-wrap: break-word; }
+            td { border: 1px solid #000 !important; padding: 4px !important; text-align: center; vertical-align: middle; word-wrap: break-word; overflow-wrap: break-word; }
             .box-rekap-pdf { border: 1px solid #000; background-color: #f9f9f9; padding: 14px; margin-top: 14px; font-size: 10px; }
             /* Grid mandiri - pengganti Bootstrap CDN, supaya cetak PDF tidak macet menunggu resource eksternal di mobile */
             .row { display: flex; flex-wrap: wrap; margin: 0 -8px; }
@@ -3840,7 +3860,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <div class="laporan-periode">Periode Laporan: ${tanggalAwal} s.d ${tanggalAkhir}</div>
           <table>
             <thead><tr>
-          <th>No.</th>
+          <th width="4%">No.</th>
       `;
 
       const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
@@ -3857,7 +3877,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         kolomTampilCetak.push(h);
         if (gantiNamaJadiHariCetak && h === kolomTanggalCetak) kolomTampilCetak.push('Hari');
       });
-      kolomTampilCetak.forEach(h => { printWindowContent += `<th>${h}</th>`; });
+      kolomTampilCetak.forEach(h => { printWindowContent += `<th width="${lebarKolomCetak(h)}">${h}</th>`; });
       printWindowContent += `</tr></thead><tbody>`;
 
       LAST_REPORT_DATA.data.forEach((row, idx) => {
