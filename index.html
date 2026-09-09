@@ -2758,7 +2758,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     // ini rekap milik SATU guru saja, jadi mengulang nama yang sama di setiap
     // baris tidak perlu (nama sudah ada di judul cetak nanti). Posisi kolom
     // itu digantikan "Hari" (dihitung dari Tanggal), lebih informatif.
-    const kolomDilarang = ['id', 'nuptk', 'nama', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
+    const kolomDilarang = ['id', 'nuptk', 'nama', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'jarak (m)', 'jarak pulang (m)', 'maps link'];
     const headersAsli = res.headers || [];
     // Daftar kolom FINAL yang benar-benar dirender, sudah dalam urutan yang
     // benar (Hari disisipkan tepat setelah Tanggal, Nama tidak pernah masuk).
@@ -2830,7 +2830,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       const schWakasek = identitas.nama_wakasek || '( .................................... )';
       // Sama seperti di popup: kolom Nama dihilangkan (sudah ada di judul di
       // bawah kop surat), digantikan Hari tepat setelah Tanggal.
-      const kolomDilarang = ['id', 'nuptk', 'nama', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
+      const kolomDilarang = ['id', 'nuptk', 'nama', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'jarak (m)', 'jarak pulang (m)', 'maps link'];
       const headersAsli = REKAP_SENDIRI_DATA.headers || [];
       const kolomTampil = [];
       headersAsli.forEach(h => {
@@ -3599,7 +3599,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if (h === 'Jam Pulang') return '8%';
     if (h.startsWith('Jarak Pulang')) return '9%';
     if (h.startsWith('Jarak')) return '8%';
-    if (h === 'Jam') return '7%';
+    if (h === 'Jam Masuk' || h === 'Jam') return '8%';
     if (h.startsWith('Status')) return '9%';
     if (h === 'Keterangan' || h === 'Catatan') return '22%';
     return '10%';
@@ -3639,7 +3639,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
          tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted">Struktur tabel belum siap atau data tidak ditemukan.</td></tr>';
          return;
       }
-      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
+      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'jarak (m)', 'jarak pulang (m)', 'maps link'];
 
       // Kolom "Nama" cuma dihilangkan & digantikan "Hari" kalau memang sedang
       // difilter ke SATU guru spesifik (bukan "Semua Guru") - kalau semua
@@ -3863,7 +3863,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <th width="4%">No.</th>
       `;
 
-      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'maps link'];
+      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'jarak (m)', 'jarak pulang (m)', 'maps link'];
       // Sama seperti tampilan layar (loadReport) - kolom Nama dihilangkan &
       // digantikan Hari HANYA kalau sedang difilter ke satu guru spesifik.
       const guruSpesifikDipilihCetak = filterGuruValue && filterGuruValue !== 'ALL';

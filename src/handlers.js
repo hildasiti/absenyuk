@@ -86,7 +86,7 @@ const KEGIATAN_IDENTIK = [
 const REPORT_CONFIG = {
   ABSEN_MASUK: {
     table: 'absen_masuk',
-    headers: ['ID', 'Tanggal', 'NUPTK', 'Nama', 'Jam', 'Latitude', 'Longitude', 'Jarak (m)', 'Jam Pulang', 'Latitude Pulang', 'Longitude Pulang', 'Jarak Pulang (m)', 'Status', 'Keterangan', 'Maps Link'],
+    headers: ['ID', 'Tanggal', 'NUPTK', 'Nama', 'Jam Masuk', 'Latitude', 'Longitude', 'Jarak (m)', 'Jam Pulang', 'Latitude Pulang', 'Longitude Pulang', 'Jarak Pulang (m)', 'Status', 'Keterangan', 'Maps Link'],
     fields: ['id', 'tanggal', 'nuptk', 'nama', 'jam', 'latitude', 'longitude', 'jarak', 'jam_pulang', 'lat_pulang', 'long_pulang', 'jarak_pulang', 'status', 'keterangan', 'maps_link'],
     dateField: 'tanggal', sortField: 'jam'
   },
