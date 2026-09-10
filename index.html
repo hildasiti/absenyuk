@@ -3689,7 +3689,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
                      val = `<a href="${ekstrakUrl[1]}" target="_blank" class="btn btn-sm btn-outline-danger py-0" style="font-size:0.8rem;"><i class="bi bi-geo-alt-fill"></i> Buka Peta</a>`;
                  }
                }
-               bodyHtml += `<td>${val}</td>`;
+               const kelasRata = (h.startsWith('Nama') || h === 'Keterangan') ? ' class="text-start"' : '';
+               bodyHtml += `<td${kelasRata}>${val}</td>`;
             });
             bodyHtml += '</tr>';
 
@@ -3893,7 +3894,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           if (typeof val === 'string' && val.toUpperCase().includes('HYPERLINK') && val.includes('maps')) {
             val = "Koordinat GPS Terlampir";
           }
-          printWindowContent += `<td>${val}</td>`;
+          const gayaRataCetak = (h.startsWith('Nama') || h === 'Keterangan') ? ' style="text-align:left;"' : '';
+          printWindowContent += `<td${gayaRataCetak}>${val}</td>`;
         });
         printWindowContent += `</tr>`;
       });
