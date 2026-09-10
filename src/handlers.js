@@ -1482,7 +1482,23 @@ async function getReport(args, env) {
 
   const filterTarget = String(filterNuptk).trim();
 
+  // Urutan Laporan Absen Masuk (KHUSUS jenis laporan ini) sekarang berdasarkan
+  // STATUS (bukan murni kronologis lagi), supaya nyaman dibaca pimpinan:
+  // Tugas Dinas -> Hadir -> Terlambat -> Izin -> Sakit -> Cuti -> Tanpa
+  // Keterangan. Jenis laporan LAIN (Kegiatan Khusus, Sholat, dll) TIDAK
+  // terpengaruh - tetap murni kronologis seperti sebelumnya, karena daftar
+  // prioritas ini spesifik untuk status Absen Masuk. Status di luar daftar
+  // ini (seharusnya tidak ada untuk Absen Masuk) jatuh ke prioritas paling
+  // akhir (99) sebagai jaga-jaga. Di dalam status yang sama, urutan tetap
+  // kronologis (tanggal, lalu sortField) - rapi per kelompok status.
+  const PRIORITAS_STATUS_ABSEN_MASUK = { 'Tugas Luar': 1, 'Hadir': 2, 'Terlambat': 3, 'Izin': 4, 'Sakit': 5, 'Cuti': 6, 'Tanpa Keterangan': 7 };
+  const prioritasStatus = (status) => PRIORITAS_STATUS_ABSEN_MASUK[String(status).trim()] || 99;
+
   rows.sort((a, b) => {
+    if (type === 'ABSEN_MASUK') {
+      const pa = prioritasStatus(a.status), pb = prioritasStatus(b.status);
+      if (pa !== pb) return pa - pb;
+    }
     if (a[config.dateField] !== b[config.dateField]) return a[config.dateField] < b[config.dateField] ? -1 : 1;
     const valA = a[config.sortField], valB = b[config.sortField];
     if (valA === valB) return 0;
