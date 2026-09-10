@@ -885,6 +885,59 @@ async function getDashboardData(args, env) {
 // SETTINGS
 // ====================================================================
 
+// ====================================================================
+// ATURAN PENILAIAN (skor kinerja guru) - GLOBAL, sama untuk semua sekolah.
+// Disimpan di Cloudflare KV (env.SESSIONS, namespace yang sama dipakai untuk
+// sesi login & cache lain) sebagai satu JSON, BUKAN di tabel 'settings' -
+// sengaja begitu supaya tidak bergantung sama sekali pada asumsi skema tabel
+// 'settings' (mis. kemungkinan ada foreign key sekolah_id -> tabel sekolah,
+// yang akan gagal kalau diisi ID palsu untuk mewakili "global"). KV tidak
+// punya batasan relasional apapun, cocok untuk data lintas-sekolah begini,
+// dan TIDAK diberi expirationTtl - tersimpan permanen sampai ditimpa lagi.
+// HANYA Admin Utama yang boleh baca/ubah - supaya aturan skor memang
+// konsisten di semua sekolah, tidak bisa disetel beda-beda sendiri per sekolah.
+// ====================================================================
+const KV_KEY_ATURAN_PENILAIAN = 'ATURAN_PENILAIAN_GLOBAL';
+
+const DEFAULT_ATURAN_PENILAIAN = {
+  bobot_terlambat_kehadiran: '0.75',
+  bobot_alpa_kehadiran: '0',
+  bobot_terlambat_jp: '0.5',
+  bobot_alpa_jp: '1',
+  bonus_per_impal: '0.5',
+  maks_bonus_impal: '10',
+  predikat_sangat_baik: '90',
+  predikat_baik: '80',
+  predikat_cukup: '70'
+};
+
+async function getAturanPenilaian(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!isRole(user, 'ADMIN_UTAMA')) return {};
+  const raw = await env.SESSIONS.get(KV_KEY_ATURAN_PENILAIAN);
+  const tersimpan = raw ? JSON.parse(raw) : {};
+  // Digabung dengan default - supaya field yang belum pernah disimpan (mis.
+  // pertama kali dipakai, atau ada field baru ditambahkan belakangan) tetap
+  // punya nilai masuk akal, bukan kosong/undefined.
+  return { ...DEFAULT_ATURAN_PENILAIAN, ...tersimpan };
+}
+
+async function saveAturanPenilaian(args, env) {
+  const [token, config] = args;
+  const user = await requireUser(env, token);
+  if (!isRole(user, 'ADMIN_UTAMA')) return { success: false, message: 'Akses ditolak - aturan penilaian cuma bisa diubah Admin Utama.' };
+
+  const raw = await env.SESSIONS.get(KV_KEY_ATURAN_PENILAIAN);
+  const tersimpan = raw ? JSON.parse(raw) : {};
+  const gabungan = { ...DEFAULT_ATURAN_PENILAIAN, ...tersimpan };
+  for (const key of Object.keys(config)) {
+    if (config[key] !== undefined) gabungan[key] = String(config[key]);
+  }
+  await env.SESSIONS.put(KV_KEY_ATURAN_PENILAIAN, JSON.stringify(gabungan));
+  return { success: true, message: 'Aturan Penilaian berhasil disimpan, berlaku untuk semua sekolah.' };
+}
+
 async function getSettingsData(args, env) {
   const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
@@ -946,7 +999,7 @@ async function getUsers(args, env) {
   if (!isAdminAny(user)) return [];
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
   const result = await getUsersListCached(env, sekolahId);
-  return result.map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, email: u.email, role: u.role, status: u.status, kategori: u.kategori || 'Mengajar' }));
+  return result.map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, email: u.email, role: u.role, status: u.status, kategori: u.kategori || 'Mengajar', kewajibanMengajarJp: u.kewajiban_mengajar_jp || null }));
 }
 
 async function saveUser(args, env) {
@@ -977,7 +1030,8 @@ async function saveUser(args, env) {
     await sbInsert(env, 'users', {
       nuptk, sekolah_id: sekolahId, legacy_id: generateShortID('U'), nama: userData.nama, email: userData.email,
       password: userData.password, role: userData.role, status: 'Aktif',
-      created_at: new Date().toISOString(), kategori: userData.kategori || 'Mengajar'
+      created_at: new Date().toISOString(), kategori: userData.kategori || 'Mengajar',
+      kewajiban_mengajar_jp: userData.kewajibanMengajarJp ? parseInt(userData.kewajibanMengajarJp, 10) : null
     });
   } catch (err) {
     // NUPTK/Username adalah primary key GLOBAL (dipakai bersama di semua sekolah,
@@ -1012,7 +1066,8 @@ async function updateUser(args, env) {
 
   const dataUpdate = {
     nama: userData.nama, email: userData.email, role: userData.role,
-    status: userData.status, kategori: userData.kategori || 'Mengajar'
+    status: userData.status, kategori: userData.kategori || 'Mengajar',
+    kewajiban_mengajar_jp: userData.kewajibanMengajarJp ? parseInt(userData.kewajibanMengajarJp, 10) : null
   };
   // Password cuma diupdate kalau memang diisi ulang (kolom dikosongkan di form = tidak diubah).
   if (userData.password && String(userData.password).trim() !== '') {
@@ -2252,6 +2307,8 @@ export const handlers = {
   toggleStatusKegiatan,
   deleteJadwalKegiatan,
   getDashboardData,
+  getAturanPenilaian,
+  saveAturanPenilaian,
   getSettingsData,
   getIdentitasSekolahUntukCetak,
   saveSettingsData,

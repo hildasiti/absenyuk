@@ -502,6 +502,7 @@
           <p class='menu-section-label'>Menu Admin</p>
           <a class='menu-btn' href='#' id='sub-dashboard-admin' onclick='switchView(&apos;dashboard-admin&apos;)'><i class='bi bi-speedometer2 me-2'></i> Admin Panel</a>
           <a class='menu-btn' href='#' id='sub-notifikasi' onclick='switchView(&apos;kirim-notifikasi&apos;)'><i class='bi bi-bell-fill me-2'></i> Kirim Notifikasi</a>
+          <a class='menu-btn' href='#' id='sub-aturan-penilaian' style='display:none;' onclick='switchView(&apos;aturan-penilaian&apos;)'><i class='bi bi-award-fill me-2'></i> Aturan Penilaian</a>
           <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'></i> Kalender Libur</a>
           <a class='menu-btn' href='#' id='sub-cuti-guru' onclick='switchView(&apos;cuti-guru&apos;)'><i class='bi bi-person-x-fill me-2'></i> Cuti / Sakit Guru</a>
           <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'></i> Kelola Kegiatan Khusus</a>
@@ -1047,6 +1048,72 @@
   </div>
 </div>
 
+<div class='content-section' id='aturan-penilaian' style='display: none;'>
+  <div class='card p-4 shadow-sm border-0 border-start border-primary border-4'>
+    <h5 class='mb-2 text-secondary fw-bold'><i class='bi bi-award-fill text-primary'></i> Aturan Penilaian Kinerja Guru</h5>
+    <p class='text-muted small mb-3'>Bobot penilaian ini berlaku <strong>global untuk semua sekolah</strong> - diatur sekali di sini, otomatis konsisten dipakai di seluruh jaringan Idrisiyyah. Skor kinerja dihitung tiap periode payroll (21 - 20).</p>
+
+    <form id='form-aturan-penilaian' onsubmit='submitAturanPenilaian(event)'>
+      <h6 class='fw-bold text-secondary border-bottom pb-2 mb-3'><i class='bi bi-calendar-check-fill'></i> Skor Kehadiran <small class='text-muted fw-normal'>(dari Absen Masuk - berlaku semua guru)</small></h6>
+      <div class='row mb-4'>
+        <div class='col-md-6 mb-2'>
+          <label class='form-label fw-semibold'>Bobot Terlambat</label>
+          <input class='form-control' id='ap-bobot-terlambat-kehadiran' max='1' min='0' step='0.05' type='number'/>
+          <small class='text-muted'>0 = dianggap sama seperti Alpa, 1 = dianggap sama seperti Hadir penuh. Default 0.75.</small>
+        </div>
+        <div class='col-md-6 mb-2'>
+          <label class='form-label fw-semibold'>Bobot Tanpa Keterangan (Alpa)</label>
+          <input class='form-control' id='ap-bobot-alpa-kehadiran' max='1' min='0' step='0.05' type='number'/>
+          <small class='text-muted'>Biasanya 0 - alpa tidak dapat poin sama sekali. Sakit/Cuti/Izin/Tugas Dinas selalu dikecualikan dari perhitungan (bukan kesalahan guru).</small>
+        </div>
+      </div>
+
+      <h6 class='fw-bold text-secondary border-bottom pb-2 mb-3'><i class='bi bi-book-fill'></i> Skor Mengajar <small class='text-muted fw-normal'>(dari Rekap Jam Pelajaran - hanya guru dengan Kewajiban Mengajar)</small></h6>
+      <div class='row mb-4'>
+        <div class='col-md-6 mb-2'>
+          <label class='form-label fw-semibold'>Bobot Terlambat (per JP)</label>
+          <input class='form-control' id='ap-bobot-terlambat-jp' max='1' min='0' step='0.05' type='number'/>
+          <small class='text-muted'>Default 0.5.</small>
+        </div>
+        <div class='col-md-6 mb-2'>
+          <label class='form-label fw-semibold'>Bobot Tanpa Keterangan (per JP)</label>
+          <input class='form-control' id='ap-bobot-alpa-jp' max='1' min='0' step='0.05' type='number'/>
+          <small class='text-muted'>Default 1 (penalti penuh).</small>
+        </div>
+        <div class='col-md-6 mb-2'>
+          <label class='form-label fw-semibold'>Bonus per Sesi Impal</label>
+          <input class='form-control' id='ap-bonus-per-impal' min='0' step='0.1' type='number'/>
+          <small class='text-muted'>Berlaku untuk SEMUA guru yang jadi guru badal, termasuk yang tidak punya Kewajiban Mengajar (ditambahkan ke Skor Kehadiran mereka). Default 0.5 poin/sesi.</small>
+        </div>
+        <div class='col-md-6 mb-2'>
+          <label class='form-label fw-semibold'>Batas Maksimum Bonus Impal</label>
+          <input class='form-control' id='ap-maks-bonus-impal' min='0' step='1' type='number'/>
+          <small class='text-muted'>Default maksimum +10 poin, supaya tidak melebihi wajar.</small>
+        </div>
+      </div>
+
+      <h6 class='fw-bold text-secondary border-bottom pb-2 mb-3'><i class='bi bi-star-fill'></i> Ambang Predikat</h6>
+      <div class='row mb-3'>
+        <div class='col-md-4 mb-2'>
+          <label class='form-label fw-semibold text-success'>Sangat Baik ≥</label>
+          <input class='form-control' id='ap-predikat-sangat-baik' max='100' min='0' type='number'/>
+        </div>
+        <div class='col-md-4 mb-2'>
+          <label class='form-label fw-semibold text-primary'>Baik ≥</label>
+          <input class='form-control' id='ap-predikat-baik' max='100' min='0' type='number'/>
+        </div>
+        <div class='col-md-4 mb-2'>
+          <label class='form-label fw-semibold text-warning'>Cukup ≥</label>
+          <input class='form-control' id='ap-predikat-cukup' max='100' min='0' type='number'/>
+        </div>
+      </div>
+      <small class='text-muted d-block mb-3'>Di bawah ambang "Cukup" otomatis berpredikat "Perlu Perhatian".</small>
+
+      <button class='btn btn-primary w-100 fw-bold' type='submit'><i class='bi bi-save-fill'></i> Simpan Aturan Penilaian</button>
+    </form>
+  </div>
+</div>
+
 <div class='content-section' id='laporan' style='display: none;'>
   <script src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'></script>
 
@@ -1158,12 +1225,15 @@
                 </select>
             </div>
             <div class='col-md-2'>
-                <select class='form-select' id='u-kategori' required='required' title='Kategori Kepegawaian'>
+                <select class='form-select' id='u-kategori' onchange='toggleKewajibanMengajar(this.value, "u-kwj-wrap")' required='required' title='Kategori Kepegawaian'>
                     <option selected='selected' value='Mengajar'>Kategori: Mengajar</option>
                     <option value='Tidak Mengajar'>Kategori: Tidak Mengajar</option>
                 </select>
             </div>
             <div class='col-md-1'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
+            <div class='col-md-3' id='u-kwj-wrap'>
+                <input class='form-control' id='u-kwj-jp' min='1' max='60' placeholder='Kewajiban Mengajar (JP/minggu)' title='Kewajiban Mengajar (JP/minggu) - sesuai SK, biasanya 20-35' type='number'/>
+            </div>
         </form>
     </div>
 
@@ -2035,6 +2105,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('sub-kelola-kegiatan').style.display = 'block';
       document.getElementById('sub-data-guru').style.display = 'block';
       document.getElementById('sub-pengaturan').style.display = 'block';
+      const subAturanPenilaian = document.getElementById('sub-aturan-penilaian');
+      if (subAturanPenilaian) subAturanPenilaian.style.display = 'block';
       const subEditAbsenUtama = document.getElementById('sub-edit-absen');
       if (subEditAbsenUtama) subEditAbsenUtama.style.display = 'block';
       const menuJamPelajaranUtama = document.getElementById('sub-jam-pelajaran');
@@ -2256,6 +2328,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'rekap-jam-pelajaran') loadGuruDropdownJamPelajaran();
     if(id === 'pengaturan') loadSettings();
     if(id === 'kirim-notifikasi') loadStafUntukNotifikasi();
+    if(id === 'aturan-penilaian') loadAturanPenilaian();
   }
 
   function loadGuruDropdownJamPelajaran() {
@@ -3228,6 +3301,14 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     });
   }
 
+  /** Tampilkan/sembunyikan field Kewajiban Mengajar sesuai Kategori dipilih -
+   * cuma relevan untuk guru berkategori Mengajar. Dipakai di form Tambah Akun
+   * (u-kwj-wrap) maupun modal Edit Guru (edit-u-kwj-wrap). */
+  function toggleKewajibanMengajar(kategori, idWrap) {
+    const wrap = document.getElementById(idWrap);
+    if (wrap) wrap.classList.toggle('d-none', kategori !== 'Mengajar');
+  }
+
   function submitNewUser(e) {
     e.preventDefault();
     const data = {
@@ -3235,7 +3316,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         nama: document.getElementById('u-nama').value,
         email: '-', password: document.getElementById('u-pass').value,
         role: document.getElementById('u-role').value,
-        kategori: document.getElementById('u-kategori').value
+        kategori: document.getElementById('u-kategori').value,
+        kewajibanMengajarJp: document.getElementById('u-kategori').value === 'Mengajar' ? document.getElementById('u-kwj-jp').value : null
     };
     if (USER_DATA.role === 'ADMIN_UTAMA') {
       if (!CURRENT_SEKOLAH_ID) { Swal.fire('Pilih Sekolah Dulu', 'Pilih sekolah di pojok kiri atas sebelum menambah akun.', 'warning'); return; }
@@ -3308,10 +3390,15 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           </select>
 
           <label class="form-label small fw-semibold">Kategori</label>
-          <select id="edit-u-kategori" class="form-select mb-2">
+          <select id="edit-u-kategori" class="form-select mb-2" onchange='toggleKewajibanMengajar(this.value, "edit-u-kwj-wrap")'>
             <option value="Mengajar" ${guru.kategori === 'Mengajar' ? 'selected' : ''}>Mengajar</option>
             <option value="Tidak Mengajar" ${guru.kategori === 'Tidak Mengajar' ? 'selected' : ''}>Tidak Mengajar</option>
           </select>
+
+          <div id="edit-u-kwj-wrap" class="${guru.kategori === 'Mengajar' ? '' : 'd-none'}">
+            <label class="form-label small fw-semibold">Kewajiban Mengajar (JP/minggu)</label>
+            <input id="edit-u-kwj-jp" type="number" min="1" max="60" class="form-control mb-2" value="${guru.kewajibanMengajarJp || ''}" placeholder="Sesuai SK, biasanya 20-35" />
+          </div>
 
           <label class="form-label small fw-semibold">Status</label>
           <select id="edit-u-status" class="form-select mb-2">
@@ -3332,6 +3419,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           email: document.getElementById('edit-u-email').value || '-',
           role: document.getElementById('edit-u-role').value,
           kategori: document.getElementById('edit-u-kategori').value,
+          kewajibanMengajarJp: document.getElementById('edit-u-kategori').value === 'Mengajar' ? document.getElementById('edit-u-kwj-jp').value : null,
           status: document.getElementById('edit-u-status').value,
           password: document.getElementById('edit-u-password').value
         };
@@ -4409,6 +4497,42 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         Swal.fire(res.success ? 'Berhasil' : 'Ada Kendala', res.message, res.success ? 'success' : 'warning');
       }).kirimNotifikasiAdmin(SESSION_TOKEN, target, judul, pesan, sekolahIdUntukKirim);
     });
+  }
+
+  // ====================================================================
+  // ATURAN PENILAIAN (Admin Utama, global semua sekolah)
+  // ====================================================================
+  function loadAturanPenilaian() {
+    google.script.run.withSuccessHandler(data => {
+      document.getElementById('ap-bobot-terlambat-kehadiran').value = data.bobot_terlambat_kehadiran;
+      document.getElementById('ap-bobot-alpa-kehadiran').value = data.bobot_alpa_kehadiran;
+      document.getElementById('ap-bobot-terlambat-jp').value = data.bobot_terlambat_jp;
+      document.getElementById('ap-bobot-alpa-jp').value = data.bobot_alpa_jp;
+      document.getElementById('ap-bonus-per-impal').value = data.bonus_per_impal;
+      document.getElementById('ap-maks-bonus-impal').value = data.maks_bonus_impal;
+      document.getElementById('ap-predikat-sangat-baik').value = data.predikat_sangat_baik;
+      document.getElementById('ap-predikat-baik').value = data.predikat_baik;
+      document.getElementById('ap-predikat-cukup').value = data.predikat_cukup;
+    }).getAturanPenilaian(SESSION_TOKEN);
+  }
+
+  function submitAturanPenilaian(e) {
+    e.preventDefault();
+    const config = {
+      bobot_terlambat_kehadiran: document.getElementById('ap-bobot-terlambat-kehadiran').value,
+      bobot_alpa_kehadiran: document.getElementById('ap-bobot-alpa-kehadiran').value,
+      bobot_terlambat_jp: document.getElementById('ap-bobot-terlambat-jp').value,
+      bobot_alpa_jp: document.getElementById('ap-bobot-alpa-jp').value,
+      bonus_per_impal: document.getElementById('ap-bonus-per-impal').value,
+      maks_bonus_impal: document.getElementById('ap-maks-bonus-impal').value,
+      predikat_sangat_baik: document.getElementById('ap-predikat-sangat-baik').value,
+      predikat_baik: document.getElementById('ap-predikat-baik').value,
+      predikat_cukup: document.getElementById('ap-predikat-cukup').value
+    };
+    Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    google.script.run.withSuccessHandler(res => {
+      Swal.fire(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'error');
+    }).saveAturanPenilaian(SESSION_TOKEN, config);
   }
 
   function submitCutiGuru(e) {
