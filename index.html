@@ -511,6 +511,7 @@
           <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'></i> Laporan</a>
           <a class='menu-btn' href='#' id='sub-edit-absen' onclick='switchView(&apos;edit-absen&apos;)'><i class='bi bi-pencil-square me-2'></i> Edit Absen Masuk</a>
           <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'></i> Rekap Payroll</a>
+          <a class='menu-btn' href='#' id='sub-nilai-guru' onclick='switchView(&apos;nilai-guru&apos;)'><i class='bi bi-star-fill me-2'></i> Nilai Guru</a>
           <a class='menu-btn' href='#' id='sub-pengaturan' onclick='switchView(&apos;pengaturan&apos;)'><i class='bi bi-gear me-2'></i> Pengaturan</a>
         </div>
       </div>
@@ -1230,10 +1231,10 @@
                     <option value='Tidak Mengajar'>Kategori: Tidak Mengajar</option>
                 </select>
             </div>
-            <div class='col-md-1'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
             <div class='col-md-3' id='u-kwj-wrap'>
                 <input class='form-control' id='u-kwj-jp' min='1' max='60' placeholder='Kewajiban Mengajar (JP/minggu)' title='Kewajiban Mengajar (JP/minggu) - sesuai SK, biasanya 20-35' type='number'/>
             </div>
+            <div class='col-md-1'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
         </form>
     </div>
 
@@ -1313,6 +1314,39 @@
 
   <div class='mt-3' id='payroll-rekap-box'></div>
 </div>
+
+<div class='content-section' id='nilai-guru' style='display: none;'>
+  <div class='card p-4 shadow-sm mb-3 border-0 border-start border-warning border-4'>
+    <h6 class='mb-2 text-secondary fw-bold'><i class='bi bi-star-fill text-warning'></i> Nilai Kinerja Guru</h6>
+    <p class='text-muted small mb-3'>Skor Kehadiran dihitung dari Rekap Absen Masuk (semua staf). Skor Mengajar khusus guru yang punya Kewajiban Mengajar (Data Guru), dihitung dari Rekap Jam Pelajaran. Bobot & ambang predikat diatur lewat menu <strong>Aturan Penilaian</strong>.</p>
+    <div class='row g-2'>
+      <div class='col-md-4'><label class='form-label fw-semibold small mb-1'>Tanggal Awal</label><input class='form-control' id='nilai-start' required='required' type='date'/></div>
+      <div class='col-md-4'><label class='form-label fw-semibold small mb-1'>Tanggal Akhir</label><input class='form-control' id='nilai-end' required='required' type='date'/></div>
+      <div class='col-md-4 d-flex align-items-end'>
+        <button class='btn btn-warning w-100 text-white fw-bold' onclick='loadNilaiGuru()'><i class='bi bi-arrow-clockwise'></i> Hitung Nilai</button>
+      </div>
+    </div>
+  </div>
+
+  <div class='table-responsive bg-white shadow-sm p-3 rounded'>
+    <table class='table table-bordered table-hover text-center align-middle'>
+      <thead class='table-secondary font-weight-bold'>
+        <tr>
+          <th>No</th>
+          <th class='text-start'>Nama Guru</th>
+          <th>Skor Kehadiran</th>
+          <th>Predikat</th>
+          <th>Skor Mengajar</th>
+          <th>Predikat</th>
+        </tr>
+      </thead>
+      <tbody id='nilai-guru-body'>
+        <tr><td class='text-center text-muted py-3' colspan='6'>Tentukan rentang tanggal lalu klik &quot;Hitung Nilai&quot;</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 
 <div class='content-section' id='kalender-libur' style='display: none;'>
   <div class='card p-4 shadow-sm mb-4 border-0 border-start border-danger border-4'>
@@ -2329,6 +2363,18 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'pengaturan') loadSettings();
     if(id === 'kirim-notifikasi') loadStafUntukNotifikasi();
     if(id === 'aturan-penilaian') loadAturanPenilaian();
+    if(id === 'nilai-guru') {
+      const startEl = document.getElementById('nilai-start'), endEl = document.getElementById('nilai-end');
+      if (startEl && !startEl.value) {
+        // Default ke periode payroll berjalan (tanggal 21 - 20), sama seperti
+        // periode yang sudah dipakai fitur payroll lain di aplikasi ini.
+        const now = new Date();
+        const tgl21 = now.getDate() >= 21 ? new Date(now.getFullYear(), now.getMonth(), 21) : new Date(now.getFullYear(), now.getMonth() - 1, 21);
+        const tgl20 = new Date(tgl21.getFullYear(), tgl21.getMonth() + 1, 20);
+        startEl.value = tgl21.toISOString().slice(0, 10);
+        endEl.value = tgl20.toISOString().slice(0, 10);
+      }
+    }
   }
 
   function loadGuruDropdownJamPelajaran() {
@@ -4502,6 +4548,49 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // ====================================================================
   // ATURAN PENILAIAN (Admin Utama, global semua sekolah)
   // ====================================================================
+  /** Warna badge predikat - dipakai konsisten di seluruh tampilan Nilai Guru. */
+  function warnaPredikat(predikat) {
+    if (predikat === 'Sangat Baik') return 'success';
+    if (predikat === 'Baik') return 'primary';
+    if (predikat === 'Cukup') return 'warning';
+    if (predikat === 'Perlu Perhatian') return 'danger';
+    return 'secondary';
+  }
+
+  function loadNilaiGuru() {
+    const start = document.getElementById('nilai-start').value;
+    const end = document.getElementById('nilai-end').value;
+    if (!start || !end) return Swal.fire('Perhatian', 'Tentukan tanggal awal dan akhir terlebih dahulu.', 'warning');
+
+    const tbody = document.getElementById('nilai-guru-body');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-warning spinner-border-sm"></div> Menghitung nilai kinerja guru...</td></tr>';
+
+    google.script.run.withSuccessHandler(res => {
+      if (!res || res.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Tidak ditemukan data guru aktif pada periode ini.</td></tr>';
+        return;
+      }
+      let html = '';
+      res.forEach((row, idx) => {
+        const kehadiranTampil = row.skorKehadiran !== null ? row.skorKehadiran : '-';
+        const mengajarTampil = row.punyaKewajibanMengajar ? (row.skorMengajar !== null ? row.skorMengajar : '-') : '<span class="text-muted">-</span>';
+        const predikatKehadiranTampil = row.skorKehadiran !== null ? `<span class="badge bg-${warnaPredikat(row.predikatKehadiran)}">${row.predikatKehadiran}</span>` : '-';
+        const predikatMengajarTampil = row.punyaKewajibanMengajar && row.skorMengajar !== null ? `<span class="badge bg-${warnaPredikat(row.predikatMengajar)}">${row.predikatMengajar}</span>` : '<span class="text-muted">-</span>';
+        html += `
+          <tr>
+            <td>${idx + 1}</td>
+            <td class="text-start fw-bold">${row.nama}</td>
+            <td class="fw-bold">${kehadiranTampil}</td>
+            <td>${predikatKehadiranTampil}</td>
+            <td class="fw-bold">${mengajarTampil}</td>
+            <td>${predikatMengajarTampil}</td>
+          </tr>
+        `;
+      });
+      tbody.innerHTML = html;
+    }).getNilaiGuru(SESSION_TOKEN, start, end);
+  }
+
   function loadAturanPenilaian() {
     google.script.run.withSuccessHandler(data => {
       document.getElementById('ap-bobot-terlambat-kehadiran').value = data.bobot_terlambat_kehadiran;

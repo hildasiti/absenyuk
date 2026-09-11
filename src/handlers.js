@@ -911,16 +911,24 @@ const DEFAULT_ATURAN_PENILAIAN = {
   predikat_cukup: '70'
 };
 
+/**
+ * Baca Aturan Penilaian TANPA cek role - dipakai INTERNAL oleh fungsi lain
+ * yang perlu bobot-bobotnya untuk menghitung skor (mis. getNilaiGuru), yang
+ * aksesnya harus semewah getPayrollReport (Admin/Piket/Kepsek), BUKAN
+ * dibatasi ADMIN_UTAMA saja seperti halaman pengaturannya sendiri. Jangan
+ * diekspos langsung ke frontend - untuk itu pakai getAturanPenilaian().
+ */
+async function bacaAturanPenilaianInternal(env) {
+  const raw = await env.SESSIONS.get(KV_KEY_ATURAN_PENILAIAN);
+  const tersimpan = raw ? JSON.parse(raw) : {};
+  return { ...DEFAULT_ATURAN_PENILAIAN, ...tersimpan };
+}
+
 async function getAturanPenilaian(args, env) {
   const [token] = args;
   const user = await requireUser(env, token);
   if (!isRole(user, 'ADMIN_UTAMA')) return {};
-  const raw = await env.SESSIONS.get(KV_KEY_ATURAN_PENILAIAN);
-  const tersimpan = raw ? JSON.parse(raw) : {};
-  // Digabung dengan default - supaya field yang belum pernah disimpan (mis.
-  // pertama kali dipakai, atau ada field baru ditambahkan belakangan) tetap
-  // punya nilai masuk akal, bukan kosong/undefined.
-  return { ...DEFAULT_ATURAN_PENILAIAN, ...tersimpan };
+  return bacaAturanPenilaianInternal(env);
 }
 
 async function saveAturanPenilaian(args, env) {
@@ -1684,6 +1692,110 @@ async function getPayrollJamPelajaran(args, env) {
   return Object.values(rekapMap);
 }
 
+/**
+ * Skor Kinerja Guru - menggabungkan Rekap Absen Masuk (Skor Kehadiran, semua
+ * staf) dan Rekap Jam Pelajaran (Skor Mengajar, cuma yang punya Kewajiban
+ * Mengajar) sesuai Aturan Penilaian yang diatur Admin Utama. Periode SAMA
+ * PERSIS dengan Rekap Payroll (bukan periode terpisah).
+ *
+ * Skor Kehadiran: hari Sakit/Cuti/Izin/Tugas Dinas DIKECUALIKAN dari pembagi
+ * (bukan kesalahan guru, jadi tidak dihitung sebagai "gagal hadir") - yang
+ * dinilai murni perbandingan Hadir vs Terlambat vs Tanpa Keterangan di antara
+ * hari-hari yang memang jadi tanggung jawab guru itu untuk hadir fisik.
+ *
+ * Skor Mengajar: Kewajiban Mengajar/minggu (dari SK, field kewajiban_mengajar_jp
+ * di Data Guru) dikonversi ke kuota JP untuk periode ini berdasarkan jumlah
+ * minggu kalender dalam rentang tanggal yang diminta (bukan hari kerja - lebih
+ * sederhana dan cukup akurat karena periode payroll selalu dekat 1 bulan penuh).
+ * Sama seperti Skor Kehadiran, JP yang terkecualikan (Sakit/Izin/Tugas Dinas di
+ * level JP) dikeluarkan dari pembagi.
+ *
+ * Bonus Impal (jadi guru badal, dari getPayrollJamPelajaran) berlaku untuk
+ * SEMUA staf yang pernah impal - masuk ke Skor Mengajar untuk yang punya
+ * Kewajiban Mengajar, atau ditambahkan ke Skor Kehadiran untuk yang tidak
+ * (mis. Piket/Admin yang sesekali jadi guru badal).
+ */
+async function getNilaiGuru(args, env) {
+  const [token, startDate, endDate, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+
+  const [dataAbsen, dataJP, aturan, users] = await Promise.all([
+    getPayrollReport([token, startDate, endDate, requestedSekolahId], env),
+    getPayrollJamPelajaran([token, startDate, endDate, requestedSekolahId], env),
+    bacaAturanPenilaianInternal(env),
+    getUsersListCached(env, sekolahId)
+  ]);
+
+  const bobotTerlambatKehadiran = parseFloat(aturan.bobot_terlambat_kehadiran) || 0;
+  const bobotAlpaKehadiran = parseFloat(aturan.bobot_alpa_kehadiran) || 0;
+  const bobotTerlambatJp = parseFloat(aturan.bobot_terlambat_jp) || 0;
+  const bobotAlpaJp = parseFloat(aturan.bobot_alpa_jp) || 0;
+  const bonusPerImpal = parseFloat(aturan.bonus_per_impal) || 0;
+  const maksBonusImpal = parseFloat(aturan.maks_bonus_impal) || 0;
+  const ambangSangatBaik = parseFloat(aturan.predikat_sangat_baik) || 90;
+  const ambangBaik = parseFloat(aturan.predikat_baik) || 80;
+  const ambangCukup = parseFloat(aturan.predikat_cukup) || 70;
+
+  const kewajibanMap = {};
+  users.forEach((u) => { kewajibanMap[String(u.nuptk).trim()] = u.kewajiban_mengajar_jp || null; });
+
+  const jpMap = {};
+  dataJP.forEach((j) => { jpMap[String(j.nuptk).trim()] = j; });
+
+  // Konversi Kewajiban Mengajar/minggu -> kuota JP untuk periode ini, lewat
+  // jumlah minggu KALENDER dalam rentang tanggal (bukan hari kerja - lebih
+  // sederhana, cukup akurat untuk periode ~1 bulan).
+  const totalHariPeriode = Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+  const mingguEfektif = totalHariPeriode / 7;
+
+  const hitungPredikat = (skor) => {
+    if (skor >= ambangSangatBaik) return 'Sangat Baik';
+    if (skor >= ambangBaik) return 'Baik';
+    if (skor >= ambangCukup) return 'Cukup';
+    return 'Perlu Perhatian';
+  };
+
+  return dataAbsen.map((row) => {
+    const nuptk = String(row.nuptk).trim();
+    const totalHariKerja = row.hadir + row.terlambat + row.sakit + row.izin + row.tugasLuar + row.alpa;
+    const hariRelevan = totalHariKerja - (row.sakit + row.izin + row.tugasLuar);
+
+    let skorKehadiran = null;
+    if (hariRelevan > 0) {
+      skorKehadiran = ((row.hadir * 1) + (row.terlambat * bobotTerlambatKehadiran) + (row.alpa * bobotAlpaKehadiran)) / hariRelevan * 100;
+    }
+
+    const jp = jpMap[nuptk] || { impal: 0, terlambat: 0, sakit: 0, izin: 0, tugasLuar: 0, alpa: 0 };
+    const kewajibanMingguan = kewajibanMap[nuptk];
+    let skorMengajar = null;
+
+    if (kewajibanMingguan) {
+      const kuotaPeriode = kewajibanMingguan * mingguEfektif;
+      const jpEfektif = kuotaPeriode - (jp.sakit + jp.izin + jp.tugasLuar);
+      if (jpEfektif > 0) {
+        const bonusImpal = Math.min(jp.impal * bonusPerImpal, maksBonusImpal);
+        skorMengajar = Math.min(((jpEfektif - jp.terlambat * bobotTerlambatJp - jp.alpa * bobotAlpaJp) / jpEfektif * 100) + bonusImpal, 100);
+      }
+    } else if (jp.impal > 0 && skorKehadiran !== null) {
+      // Tidak punya Kewajiban Mengajar tapi pernah jadi guru badal - bonus
+      // kontribusinya ditambahkan ke Skor Kehadiran (satu-satunya skor mereka).
+      const bonusImpal = Math.min(jp.impal * bonusPerImpal, maksBonusImpal);
+      skorKehadiran = Math.min(skorKehadiran + bonusImpal, 100);
+    }
+
+    return {
+      nuptk, nama: row.nama,
+      punyaKewajibanMengajar: !!kewajibanMingguan,
+      skorKehadiran: skorKehadiran !== null ? Math.round(skorKehadiran * 10) / 10 : null,
+      predikatKehadiran: skorKehadiran !== null ? hitungPredikat(skorKehadiran) : '-',
+      skorMengajar: skorMengajar !== null ? Math.round(skorMengajar * 10) / 10 : null,
+      predikatMengajar: skorMengajar !== null ? hitungPredikat(skorMengajar) : '-'
+    };
+  });
+}
+
 async function saveRekapJamPelajaran(args, env) {
   const [token, tanggal, nuptkGuru, namaGuru, jamKeArray, status, guruImpalNama, guruImpalNuptk] = args;
   const user = await requireUser(env, token);
@@ -2334,6 +2446,7 @@ export const handlers = {
   getRekapJamPelajaranSendiri,
   getPayrollJamPelajaran,
   saveRekapJamPelajaran,
+  getNilaiGuru,
   simpanTokenFCM,
   kirimNotifikasiAdmin
 };
