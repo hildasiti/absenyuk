@@ -1566,7 +1566,7 @@
       <div class='row g-3'>
         <div class='col-md-6'>
           <label class='form-label fw-semibold'>Tanggal</label>
-          <input class='form-control' id='jp-tanggal' required='required' type='date'/>
+          <input class='form-control' id='jp-tanggal' onchange='loadRekapJamPelajaranList()' required='required' type='date'/>
         </div>
         <div class='col-md-6'>
           <label class='form-label fw-semibold'>Guru yang Tidak Hadir</label>
@@ -1612,6 +1612,26 @@
         </div>
       </div>
     </form>
+  </div>
+
+  <div class='card p-4 shadow-sm border-0 border-start border-warning border-4'>
+    <div class='d-flex justify-content-between align-items-center mb-3'>
+      <h6 class='mb-0 text-secondary fw-bold'><i class='bi bi-list-check'></i> Data yang Sudah Diinput <span class='text-muted fw-normal' id='jp-list-tanggal-label'></span></h6>
+      <button class='btn btn-sm btn-outline-secondary' type='button' onclick='loadRekapJamPelajaranList()'>
+        <i class='bi bi-arrow-clockwise'></i> Segarkan
+      </button>
+    </div>
+    <p class='text-muted small mb-3'>Cek dulu di sini sebelum lanjut input baru — kalau ada yang salah, edit atau hapus langsung, tanpa perlu buka menu lain.</p>
+    <div class='table-responsive'>
+      <table class='table table-sm table-hover align-middle'>
+        <thead class='table-light'>
+          <tr><th>JP</th><th>Guru</th><th>Status</th><th>Impal</th><th>Diinput Oleh</th><th class='text-center'>Aksi</th></tr>
+        </thead>
+        <tbody id='jp-list-body'>
+          <tr><td class='text-center text-muted py-3' colspan='6'>Pilih tanggal di form atas untuk melihat data.</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <div class='alert alert-info shadow-sm'>
@@ -2382,7 +2402,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       checkLockKegiatan('ap');
       muatDanMulaiLiveGPS('pesantren');
     }
-    if(id === 'rekap-jam-pelajaran') loadGuruDropdownJamPelajaran();
+    if(id === 'rekap-jam-pelajaran') { loadGuruDropdownJamPelajaran(); loadRekapJamPelajaranList(); }
     if(id === 'pengaturan') loadSettings();
     if(id === 'kirim-notifikasi') loadStafUntukNotifikasi();
     if(id === 'aturan-penilaian') loadAturanPenilaian();
@@ -2459,10 +2479,100 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       if (res.success) {
         Swal.fire('Berhasil', res.message, 'success');
         document.getElementById('form-jam-pelajaran').reset();
+        loadRekapJamPelajaranList();
       } else {
         Swal.fire('Gagal', res.message, 'error');
       }
     }).saveRekapJamPelajaran(SESSION_TOKEN, tanggal, nuptk, nama, jpTerpilih, status, impalNama, impalNuptk);
+  }
+
+  /**
+   * Tampilkan data Rekap Jam Pelajaran yang SUDAH tersimpan untuk tanggal yang
+   * dipilih di form, di bawah form input - supaya Piket bisa langsung cek &
+   * koreksi kalau ada salah input, tanpa perlu buka menu/database terpisah.
+   */
+  function loadRekapJamPelajaranList() {
+    const tgl = document.getElementById('jp-tanggal').value || new Date().toISOString().slice(0, 10);
+    document.getElementById('jp-list-tanggal-label').innerText = '(' + tgl + ')';
+    document.getElementById('jp-list-body').innerHTML = '<tr><td class="text-center text-muted py-3" colspan="6">Memuat...</td></tr>';
+
+    google.script.run.withSuccessHandler(rows => {
+      if (!rows || rows.length === 0) {
+        document.getElementById('jp-list-body').innerHTML = '<tr><td class="text-center text-muted py-3" colspan="6">Belum ada data untuk tanggal ini.</td></tr>';
+        return;
+      }
+      DATA_JP_LIST_CACHE = {};
+      rows.forEach(r => { DATA_JP_LIST_CACHE[r.id] = r; });
+      document.getElementById('jp-list-body').innerHTML = rows.map(r => `
+        <tr>
+          <td>${r.jamKe}</td>
+          <td>${r.namaGuru}</td>
+          <td><span class="badge bg-secondary">${r.status}</span></td>
+          <td>${r.guruImpal && r.guruImpal !== '-' ? r.guruImpal : '-'}</td>
+          <td class="text-muted small">${r.diinputOleh || '-'}</td>
+          <td class="text-center">
+            <button class="btn btn-sm btn-outline-primary me-1" type="button" onclick="editRekapJamPelajaran('${r.id}')" title="Edit"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-danger" type="button" onclick="hapusRekapJamPelajaran('${r.id}')" title="Hapus"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>`).join('');
+    }).withFailureHandler(() => {
+      document.getElementById('jp-list-body').innerHTML = '<tr><td class="text-center text-danger py-3" colspan="6">Gagal memuat data.</td></tr>';
+    }).getRekapJamPelajaranList(SESSION_TOKEN, tgl);
+  }
+
+  // Cache baris terakhir yang dimuat loadRekapJamPelajaranList(), dipakai
+  // editRekapJamPelajaran()/hapusRekapJamPelajaran() supaya tidak perlu
+  // menyimpan data di setiap atribut tombol satu-satu.
+  let DATA_JP_LIST_CACHE = {};
+
+  function editRekapJamPelajaran(id) {
+    const row = DATA_JP_LIST_CACHE[id];
+    if (!row) return;
+    Swal.fire({
+      title: `Edit: ${row.namaGuru} (${row.jamKe})`,
+      html: `
+        <select id="swal-jp-status" class="form-select mb-2">
+          <option value="Terlambat" ${row.status === 'Terlambat' ? 'selected' : ''}>Terlambat</option>
+          <option value="Sakit" ${row.status === 'Sakit' ? 'selected' : ''}>Sakit</option>
+          <option value="Izin" ${row.status === 'Izin' ? 'selected' : ''}>Izin</option>
+          <option value="Tugas Luar" ${row.status === 'Tugas Luar' ? 'selected' : ''}>Tugas Dinas</option>
+          <option value="Tanpa Keterangan" ${row.status === 'Tanpa Keterangan' ? 'selected' : ''}>Tanpa Keterangan (Alpa)</option>
+        </select>
+        <input id="swal-jp-impal" class="form-control" placeholder="Nama guru impal (opsional)" value="${row.guruImpal && row.guruImpal !== '-' ? row.guruImpal : ''}">
+      `,
+      confirmButtonText: 'Simpan Perubahan',
+      showCancelButton: true,
+      preConfirm: () => ({
+        status: document.getElementById('swal-jp-status').value,
+        impal: document.getElementById('swal-jp-impal').value.trim()
+      })
+    }).then(result => {
+      if (!result.isConfirmed) return;
+      Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+      google.script.run.withSuccessHandler(res => {
+        Swal.fire(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'error');
+        if (res.success) loadRekapJamPelajaranList();
+      }).updateRekapJamPelajaran(SESSION_TOKEN, row.id, result.value.status, result.value.impal || '-', row.nuptkImpal || '-');
+    });
+  }
+
+  function hapusRekapJamPelajaran(id) {
+    const row = DATA_JP_LIST_CACHE[id];
+    if (!row) return;
+    Swal.fire({
+      title: 'Hapus data ini?',
+      text: `${row.namaGuru} (${row.jamKe}) akan dihapus permanen.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      confirmButtonText: 'Ya, Hapus'
+    }).then(result => {
+      if (!result.isConfirmed) return;
+      google.script.run.withSuccessHandler(res => {
+        Swal.fire(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'error');
+        if (res.success) loadRekapJamPelajaranList();
+      }).deleteRekapJamPelajaran(SESSION_TOKEN, row.id);
+    });
   }
 
   function refreshAdminCards() {

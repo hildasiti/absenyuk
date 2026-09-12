@@ -1837,6 +1837,66 @@ async function saveRekapJamPelajaran(args, env) {
   return { success: true, message: `${jamTerurut.length} baris rekap jam pelajaran berhasil dicatat (JP ${jamTerurut.join(', ')}).` };
 }
 
+/**
+ * List rekap jam pelajaran untuk SATU tanggal, sekolah sendiri saja - dipakai
+ * untuk ditampilkan di bawah form input Rekap Jam Pelajaran supaya Piket/Admin
+ * bisa langsung koreksi entri yang salah tanpa buka menu/database terpisah.
+ * Default tanggal hari ini kalau tidak dikirim.
+ */
+async function getRekapJamPelajaranList(args, env) {
+  const [token, tanggal] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user) && !isRole(user, 'PIKET')) return [];
+
+  const dateStr = tanggal || nowJakarta().dateStr;
+  const rows = await sbSelect(env, 'rekap_jam_pelajaran',
+    `sekolah_id=eq.${user.sekolahId}&tanggal=eq.${dateStr}&order=jam_ke.asc`);
+
+  return rows.map((r) => ({
+    id: r.id, tanggal: r.tanggal, nuptk: r.nuptk, namaGuru: r.nama_guru,
+    jamKe: r.jam_ke, status: r.status, guruImpal: r.guru_impal,
+    nuptkImpal: r.nuptk_impal, diinputOleh: r.diinput_oleh, timestamp: r.timestamp
+  }));
+}
+
+/** Edit satu baris rekap jam pelajaran (koreksi salah input Piket). */
+async function updateRekapJamPelajaran(args, env) {
+  const [token, id, status, guruImpalNama, guruImpalNuptk] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user) && !isRole(user, 'PIKET')) return { success: false, message: 'Akses ditolak.' };
+  if (!id) return { success: false, message: 'Data tidak ditemukan (id kosong).' };
+
+  const rows = await sbSelect(env, 'rekap_jam_pelajaran', `id=eq.${encodeURIComponent(id)}&limit=1`);
+  const existing = rows[0];
+  if (!existing) return { success: false, message: 'Data tidak ditemukan (mungkin sudah dihapus).' };
+  if (existing.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Data ini bukan milik sekolah Anda.' };
+  }
+
+  await sbUpdate(env, 'rekap_jam_pelajaran', 'id', id, {
+    status, guru_impal: guruImpalNama || '-', nuptk_impal: guruImpalNuptk || '-'
+  });
+  return { success: true, message: `Data ${existing.nama_guru} (${existing.jam_ke}) berhasil diperbarui.` };
+}
+
+/** Hapus satu baris rekap jam pelajaran (salah input total, mis. salah guru/jam). */
+async function deleteRekapJamPelajaran(args, env) {
+  const [token, id] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user) && !isRole(user, 'PIKET')) return { success: false, message: 'Akses ditolak.' };
+  if (!id) return { success: false, message: 'Data tidak ditemukan (id kosong).' };
+
+  const rows = await sbSelect(env, 'rekap_jam_pelajaran', `id=eq.${encodeURIComponent(id)}&limit=1`);
+  const existing = rows[0];
+  if (!existing) return { success: false, message: 'Data tidak ditemukan (mungkin sudah dihapus).' };
+  if (existing.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Data ini bukan milik sekolah Anda.' };
+  }
+
+  await sbDelete(env, 'rekap_jam_pelajaran', 'id', id);
+  return { success: true, message: `Data ${existing.nama_guru} (${existing.jam_ke}) berhasil dihapus.` };
+}
+
 // ====================================================================
 // FCM / NOTIFIKASI (dipanggil dari frontend & dari cron)
 // ====================================================================
@@ -2468,6 +2528,9 @@ export const handlers = {
   getRekapJamPelajaranSendiri,
   getPayrollJamPelajaran,
   saveRekapJamPelajaran,
+  getRekapJamPelajaranList,
+  updateRekapJamPelajaran,
+  deleteRekapJamPelajaran,
   getNilaiGuru,
   simpanTokenFCM,
   kirimNotifikasiAdmin
