@@ -902,6 +902,8 @@ const KV_KEY_ATURAN_PENILAIAN = 'ATURAN_PENILAIAN_GLOBAL';
 const DEFAULT_ATURAN_PENILAIAN = {
   bobot_terlambat_kehadiran: '0.75',
   bobot_alpa_kehadiran: '0',
+  bobot_sakit: '0.1',
+  bobot_izin: '0.2',
   bobot_terlambat_jp: '0.5',
   bobot_alpa_jp: '1',
   bonus_per_impal: '0.5',
@@ -1501,7 +1503,7 @@ async function getPayrollReport(args, env) {
   const payrollMap = {};
   users.forEach((u) => {
     if (['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif') {
-      payrollMap[u.nuptk] = { nuptk: u.nuptk, nama: u.nama, hadir: 0, terlambat: 0, sakit: 0, izin: 0, tugasLuar: 0, alpa: 0 };
+      payrollMap[u.nuptk] = { nuptk: u.nuptk, nama: u.nama, hadir: 0, terlambat: 0, sakit: 0, cuti: 0, izin: 0, tugasLuar: 0, alpa: 0 };
     }
   });
 
@@ -1511,13 +1513,17 @@ async function getPayrollReport(args, env) {
     if (payrollMap[nuptk]) {
       if (status === 'Hadir') payrollMap[nuptk].hadir++;
       else if (status === 'Terlambat') payrollMap[nuptk].terlambat++;
-      // 'Cuti' digabung ke kolom sakit yang sama ("Sakit / Cuti") - baris
-      // berstatus Cuti sudah otomatis dibuatkan (backfill) oleh saveCutiGuru()
-      // untuk tiap hari kerja dalam rentang yang didaftarkan admin, jadi cukup
-      // dibaca langsung dari sini, TIDAK PERLU query ulang tabel cuti_guru
-      // secara terpisah (itu tadinya menyebabkan hitungan dobel untuk entri
-      // berstatus Sakit yang didaftarkan lewat menu Cuti/Sakit Guru).
-      else if (status === 'Sakit' || status === 'Cuti') payrollMap[nuptk].sakit++;
+      // 'Cuti' digabung ke kolom sakit yang sama ("Sakit / Cuti") untuk
+      // TAMPILAN (laporan payroll) - baris berstatus Cuti sudah otomatis
+      // dibuatkan (backfill) oleh saveCutiGuru() untuk tiap hari kerja dalam
+      // rentang yang didaftarkan admin, jadi cukup dibaca langsung dari sini,
+      // TIDAK PERLU query ulang tabel cuti_guru secara terpisah. SEKALIGUS
+      // dicatat murni di kolom 'cuti' terpisah (tidak ditampilkan di tabel
+      // manapun, cuma dipakai getNilaiGuru() untuk membedakan Cuti - yang
+      // dikecualikan total dari Skor Kehadiran - dari Sakit biasa, yang tetap
+      // punya bobot sendiri).
+      else if (status === 'Sakit') payrollMap[nuptk].sakit++;
+      else if (status === 'Cuti') { payrollMap[nuptk].sakit++; payrollMap[nuptk].cuti++; }
       else if (status === 'Izin') payrollMap[nuptk].izin++;
       else if (status === 'Tugas Luar') payrollMap[nuptk].tugasLuar++;
       else if (status === 'Tanpa Keterangan') payrollMap[nuptk].alpa++;
@@ -1698,17 +1704,22 @@ async function getPayrollJamPelajaran(args, env) {
  * Mengajar) sesuai Aturan Penilaian yang diatur Admin Utama. Periode SAMA
  * PERSIS dengan Rekap Payroll (bukan periode terpisah).
  *
- * Skor Kehadiran: hari Sakit/Cuti/Izin/Tugas Dinas DIKECUALIKAN dari pembagi
- * (bukan kesalahan guru, jadi tidak dihitung sebagai "gagal hadir") - yang
- * dinilai murni perbandingan Hadir vs Terlambat vs Tanpa Keterangan di antara
- * hari-hari yang memang jadi tanggung jawab guru itu untuk hadir fisik.
+ * Skor Kehadiran: HANYA Cuti dan Tugas Dinas yang DIKECUALIKAN dari pembagi
+ * (keduanya sepenuhnya di luar kendali guru - cuti resmi terdaftar & tugas
+ * dinas dari sekolah). Sakit dan Izin TETAP masuk pembagi dan tetap dapat
+ * poin sebagian lewat bobotnya sendiri (default Sakit 0.1, Izin 0.2) - dibuat
+ * rendah karena walau sah, terlalu sering sakit/izin tetap mengurangi
+ * kehadiran fisik guru di sekolah.
  *
  * Skor Mengajar: Kewajiban Mengajar/minggu (dari SK, field kewajiban_mengajar_jp
  * di Data Guru) dikonversi ke kuota JP untuk periode ini berdasarkan jumlah
  * minggu kalender dalam rentang tanggal yang diminta (bukan hari kerja - lebih
  * sederhana dan cukup akurat karena periode payroll selalu dekat 1 bulan penuh).
- * Sama seperti Skor Kehadiran, JP yang terkecualikan (Sakit/Izin/Tugas Dinas di
- * level JP) dikeluarkan dari pembagi.
+ * Sama seperti Skor Kehadiran, cuma Tugas Dinas (di level JP) yang dikecualikan
+ * dari pembagi - JP tidak punya konsep "Cuti" tersendiri (menu Cuti/Sakit Guru
+ * cuma memengaruhi absen_masuk harian, bukan rekap per-JP). Sakit & Izin di
+ * level JP pakai bobot yang SAMA dengan Skor Kehadiran (bobot_sakit/bobot_izin
+ * dipakai bersama di kedua formula, bukan diatur terpisah).
  *
  * Bonus Impal (jadi guru badal, dari getPayrollJamPelajaran) berlaku untuk
  * SEMUA staf yang pernah impal - masuk ke Skor Mengajar untuk yang punya
@@ -1730,6 +1741,8 @@ async function getNilaiGuru(args, env) {
 
   const bobotTerlambatKehadiran = parseFloat(aturan.bobot_terlambat_kehadiran) || 0;
   const bobotAlpaKehadiran = parseFloat(aturan.bobot_alpa_kehadiran) || 0;
+  const bobotSakit = parseFloat(aturan.bobot_sakit) || 0;
+  const bobotIzin = parseFloat(aturan.bobot_izin) || 0;
   const bobotTerlambatJp = parseFloat(aturan.bobot_terlambat_jp) || 0;
   const bobotAlpaJp = parseFloat(aturan.bobot_alpa_jp) || 0;
   const bonusPerImpal = parseFloat(aturan.bonus_per_impal) || 0;
@@ -1759,12 +1772,18 @@ async function getNilaiGuru(args, env) {
 
   return dataAbsen.map((row) => {
     const nuptk = String(row.nuptk).trim();
+    // row.sakit sudah gabungan Sakit+Cuti (untuk tampilan payroll) - di sini
+    // dipisah lagi pakai row.cuti (murni Cuti) supaya cuma Cuti yang
+    // dikecualikan, sedangkan Sakit murni tetap kena bobot sendiri.
+    const sakitMurni = row.sakit - row.cuti;
     const totalHariKerja = row.hadir + row.terlambat + row.sakit + row.izin + row.tugasLuar + row.alpa;
-    const hariRelevan = totalHariKerja - (row.sakit + row.izin + row.tugasLuar);
+    const hariRelevan = totalHariKerja - (row.cuti + row.tugasLuar);
 
     let skorKehadiran = null;
     if (hariRelevan > 0) {
-      skorKehadiran = ((row.hadir * 1) + (row.terlambat * bobotTerlambatKehadiran) + (row.alpa * bobotAlpaKehadiran)) / hariRelevan * 100;
+      skorKehadiran = ((row.hadir * 1) + (row.terlambat * bobotTerlambatKehadiran)
+        + (sakitMurni * bobotSakit) + (row.izin * bobotIzin)
+        + (row.alpa * bobotAlpaKehadiran)) / hariRelevan * 100;
     }
 
     const jp = jpMap[nuptk] || { impal: 0, terlambat: 0, sakit: 0, izin: 0, tugasLuar: 0, alpa: 0 };
@@ -1773,10 +1792,13 @@ async function getNilaiGuru(args, env) {
 
     if (kewajibanMingguan) {
       const kuotaPeriode = kewajibanMingguan * mingguEfektif;
-      const jpEfektif = kuotaPeriode - (jp.sakit + jp.izin + jp.tugasLuar);
+      const jpEfektif = kuotaPeriode - jp.tugasLuar;
       if (jpEfektif > 0) {
+        const jpHadirImplisit = jpEfektif - jp.terlambat - jp.sakit - jp.izin - jp.alpa;
         const bonusImpal = Math.min(jp.impal * bonusPerImpal, maksBonusImpal);
-        skorMengajar = Math.min(((jpEfektif - jp.terlambat * bobotTerlambatJp - jp.alpa * bobotAlpaJp) / jpEfektif * 100) + bonusImpal, 100);
+        skorMengajar = Math.min((((jpHadirImplisit * 1) + (jp.terlambat * bobotTerlambatJp)
+          + (jp.sakit * bobotSakit) + (jp.izin * bobotIzin)
+          + (jp.alpa * bobotAlpaJp)) / jpEfektif * 100) + bonusImpal, 100);
       }
     } else if (jp.impal > 0 && skorKehadiran !== null) {
       // Tidak punya Kewajiban Mengajar tapi pernah jadi guru badal - bonus

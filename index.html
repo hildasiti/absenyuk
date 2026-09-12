@@ -497,12 +497,16 @@
           <a class='menu-btn' href='#' id='sub-ganti-password' style='display:none;' onclick='switchView(&apos;ganti-password&apos;)'><i class='bi bi-key-fill me-2'></i> Ganti Password</a>
         </div>
 
+        <div id='menu-admin-utama' style='display: none;'>
+          <p class='menu-section-label'>Menu Admin Utama</p>
+          <a class='menu-btn' href='#' id='sub-aturan-penilaian' onclick='switchView(&apos;aturan-penilaian&apos;)'><i class='bi bi-award-fill me-2'></i> Aturan Penilaian</a>
+        </div>
+
         <div id='menu-admin' style='display: none;'>
           <hr class='menu-section-divider'/>
           <p class='menu-section-label'>Menu Admin</p>
           <a class='menu-btn' href='#' id='sub-dashboard-admin' onclick='switchView(&apos;dashboard-admin&apos;)'><i class='bi bi-speedometer2 me-2'></i> Admin Panel</a>
           <a class='menu-btn' href='#' id='sub-notifikasi' onclick='switchView(&apos;kirim-notifikasi&apos;)'><i class='bi bi-bell-fill me-2'></i> Kirim Notifikasi</a>
-          <a class='menu-btn' href='#' id='sub-aturan-penilaian' style='display:none;' onclick='switchView(&apos;aturan-penilaian&apos;)'><i class='bi bi-award-fill me-2'></i> Aturan Penilaian</a>
           <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'></i> Kalender Libur</a>
           <a class='menu-btn' href='#' id='sub-cuti-guru' onclick='switchView(&apos;cuti-guru&apos;)'><i class='bi bi-person-x-fill me-2'></i> Cuti / Sakit Guru</a>
           <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'></i> Kelola Kegiatan Khusus</a>
@@ -1054,7 +1058,23 @@
     <h5 class='mb-2 text-secondary fw-bold'><i class='bi bi-award-fill text-primary'></i> Aturan Penilaian Kinerja Guru</h5>
     <p class='text-muted small mb-3'>Bobot penilaian ini berlaku <strong>global untuk semua sekolah</strong> - diatur sekali di sini, otomatis konsisten dipakai di seluruh jaringan Idrisiyyah. Skor kinerja dihitung tiap periode payroll (21 - 20).</p>
 
+    <p class='text-muted small mb-3'>Bobot penilaian ini berlaku <strong>global untuk semua sekolah</strong> - diatur sekali di sini, otomatis konsisten dipakai di seluruh jaringan Idrisiyyah. Skor kinerja dihitung tiap periode payroll (21 - 20). Hanya <strong>Cuti</strong> dan <strong>Tugas Dinas</strong> yang dikecualikan total dari perhitungan (sepenuhnya di luar kendali guru) - Sakit dan Izin tetap dihitung, cuma dengan bobot sendiri yang lebih ringan.</p>
+
     <form id='form-aturan-penilaian' onsubmit='submitAturanPenilaian(event)'>
+      <h6 class='fw-bold text-secondary border-bottom pb-2 mb-3'><i class='bi bi-sliders'></i> Bobot Sakit &amp; Izin <small class='text-muted fw-normal'>(dipakai bersama di Skor Kehadiran maupun Skor Mengajar)</small></h6>
+      <div class='row mb-4'>
+        <div class='col-md-6 mb-2'>
+          <label class='form-label fw-semibold'>Bobot Sakit</label>
+          <input class='form-control' id='ap-bobot-sakit' max='1' min='0' step='0.05' type='number'/>
+          <small class='text-muted'>Default 0.1 - tetap dihitung ke pembagi (bukan dikecualikan seperti Cuti), tapi cuma dapat poin sebagian.</small>
+        </div>
+        <div class='col-md-6 mb-2'>
+          <label class='form-label fw-semibold'>Bobot Izin</label>
+          <input class='form-control' id='ap-bobot-izin' max='1' min='0' step='0.05' type='number'/>
+          <small class='text-muted'>Default 0.2.</small>
+        </div>
+      </div>
+
       <h6 class='fw-bold text-secondary border-bottom pb-2 mb-3'><i class='bi bi-calendar-check-fill'></i> Skor Kehadiran <small class='text-muted fw-normal'>(dari Absen Masuk - berlaku semua guru)</small></h6>
       <div class='row mb-4'>
         <div class='col-md-6 mb-2'>
@@ -1065,7 +1085,7 @@
         <div class='col-md-6 mb-2'>
           <label class='form-label fw-semibold'>Bobot Tanpa Keterangan (Alpa)</label>
           <input class='form-control' id='ap-bobot-alpa-kehadiran' max='1' min='0' step='0.05' type='number'/>
-          <small class='text-muted'>Biasanya 0 - alpa tidak dapat poin sama sekali. Sakit/Cuti/Izin/Tugas Dinas selalu dikecualikan dari perhitungan (bukan kesalahan guru).</small>
+          <small class='text-muted'>Biasanya 0 - alpa tidak dapat poin sama sekali. Cuti &amp; Tugas Dinas dikecualikan total dari perhitungan (lihat catatan di atas).</small>
         </div>
       </div>
 
@@ -1079,7 +1099,7 @@
         <div class='col-md-6 mb-2'>
           <label class='form-label fw-semibold'>Bobot Tanpa Keterangan (per JP)</label>
           <input class='form-control' id='ap-bobot-alpa-jp' max='1' min='0' step='0.05' type='number'/>
-          <small class='text-muted'>Default 1 (penalti penuh).</small>
+          <small class='text-muted'>Default 1 (penalti penuh). Cuma Tugas Dinas per-JP yang dikecualikan total (JP tidak punya konsep Cuti tersendiri).</small>
         </div>
         <div class='col-md-6 mb-2'>
           <label class='form-label fw-semibold'>Bonus per Sesi Impal</label>
@@ -1345,6 +1365,8 @@
       </tbody>
     </table>
   </div>
+
+  <button class='btn btn-danger w-100 mt-3 fw-bold' onclick='printNilaiGuruPDF()'><i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF Resmi</button>
 </div>
 
 
@@ -1720,6 +1742,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   let USER_DATA = null;
   let LAST_REPORT_DATA = null; 
   let LAST_PAYROLL_DATA = null; 
+  let LAST_NILAI_GURU_DATA = null;
   let LAST_PAYROLL_JENIS = 'ABSEN_MASUK';
   // Objek global baru untuk menampung kiriman daftar nama guru per kategori hari ini
   let DATA_GURU_POPUP = {
@@ -2127,6 +2150,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
     document.getElementById('menu-guru').style.display = 'none';
     document.getElementById('menu-admin').style.display = 'none';
+    document.getElementById('menu-admin-utama').style.display = 'none';
     const sekolahPickerBox = document.getElementById('sekolah-picker-box');
     if (sekolahPickerBox) sekolahPickerBox.style.display = 'none';
 
@@ -2134,13 +2158,12 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       // Admin Utama: bukan guru, jadi TIDAK ada menu absen pribadi.
       // Semua menu Admin tersedia, tapi WAJIB pilih sekolah dulu.
       document.getElementById('menu-admin').style.display = 'block';
+      document.getElementById('menu-admin-utama').style.display = 'block';
       document.getElementById('sub-kalender-libur').style.display = 'block';
       document.getElementById('sub-cuti-guru').style.display = 'block';
       document.getElementById('sub-kelola-kegiatan').style.display = 'block';
       document.getElementById('sub-data-guru').style.display = 'block';
       document.getElementById('sub-pengaturan').style.display = 'block';
-      const subAturanPenilaian = document.getElementById('sub-aturan-penilaian');
-      if (subAturanPenilaian) subAturanPenilaian.style.display = 'block';
       const subEditAbsenUtama = document.getElementById('sub-edit-absen');
       if (subEditAbsenUtama) subEditAbsenUtama.style.display = 'block';
       const menuJamPelajaranUtama = document.getElementById('sub-jam-pelajaran');
@@ -2363,18 +2386,22 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'pengaturan') loadSettings();
     if(id === 'kirim-notifikasi') loadStafUntukNotifikasi();
     if(id === 'aturan-penilaian') loadAturanPenilaian();
-    if(id === 'nilai-guru') {
-      const startEl = document.getElementById('nilai-start'), endEl = document.getElementById('nilai-end');
-      if (startEl && !startEl.value) {
-        // Default ke periode payroll berjalan (tanggal 21 - 20), sama seperti
-        // periode yang sudah dipakai fitur payroll lain di aplikasi ini.
-        const now = new Date();
-        const tgl21 = now.getDate() >= 21 ? new Date(now.getFullYear(), now.getMonth(), 21) : new Date(now.getFullYear(), now.getMonth() - 1, 21);
-        const tgl20 = new Date(tgl21.getFullYear(), tgl21.getMonth() + 1, 20);
-        startEl.value = tgl21.toISOString().slice(0, 10);
-        endEl.value = tgl20.toISOString().slice(0, 10);
-      }
-    }
+    if(id === 'nilai-guru') isiDefaultTanggalPeriodePayroll('nilai-start', 'nilai-end');
+    if(id === 'rekap-payroll') isiDefaultTanggalPeriodePayroll('pay-start', 'pay-end');
+  }
+
+  /** Isi field tanggal awal/akhir dengan periode payroll berjalan (21 bulan
+   * ini - 20 bulan depan) kalau masih kosong - dipakai Rekap Payroll & Nilai
+   * Guru, keduanya berbagi periode yang sama. Tidak menimpa kalau guru/admin
+   * sudah pernah mengisi/mengubah sendiri (cek `!startEl.value` dulu). */
+  function isiDefaultTanggalPeriodePayroll(idStart, idEnd) {
+    const startEl = document.getElementById(idStart), endEl = document.getElementById(idEnd);
+    if (!startEl || !endEl || startEl.value) return;
+    const now = new Date();
+    const tgl21 = now.getDate() >= 21 ? new Date(now.getFullYear(), now.getMonth(), 21) : new Date(now.getFullYear(), now.getMonth() - 1, 21);
+    const tgl20 = new Date(tgl21.getFullYear(), tgl21.getMonth() + 1, 20);
+    startEl.value = tgl21.toISOString().slice(0, 10);
+    endEl.value = tgl20.toISOString().slice(0, 10);
   }
 
   function loadGuruDropdownJamPelajaran() {
@@ -4110,6 +4137,13 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const end = document.getElementById('pay-end').value;
     const jenis = document.getElementById('payroll-jenis').value;
     if(!start || !end) return Swal.fire('Perhatian', 'Harap tentukan tanggal awal and akhir rekapitulasi!', 'warning');
+    // Wajib dikirim eksplisit - tanpa ini Admin Utama tidak bisa pakai fitur
+    // ini sama sekali (resolveSekolahId di backend tidak tahu sekolah mana
+    // yang sedang aktif kalau parameter ini kosong).
+    const sekolahIdUntukPayroll = (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '';
+    if (USER_DATA && USER_DATA.role === 'ADMIN_UTAMA' && !sekolahIdUntukPayroll) {
+      return Swal.fire('Pilih Sekolah Dulu', 'Pilih sekolah di pojok kiri atas sebelum menghitung rekapitulasi.', 'warning');
+    }
 
     LAST_PAYROLL_JENIS = jenis;
     document.getElementById('payroll-thead').innerHTML = (jenis === 'JAM_PELAJARAN') ? THEAD_JAM_PELAJARAN : THEAD_ABSEN_MASUK;
@@ -4177,7 +4211,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             payRekapBox.innerHTML = '';
           }
         }
-      }).getPayrollJamPelajaran(SESSION_TOKEN, start, end);
+      }).getPayrollJamPelajaran(SESSION_TOKEN, start, end, sekolahIdUntukPayroll);
       return;
     }
 
@@ -4248,7 +4282,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           payRekapBox.innerHTML = '';
         }
       }
-    }).getPayrollReport(SESSION_TOKEN, start, end);
+    }).getPayrollReport(SESSION_TOKEN, start, end, sekolahIdUntukPayroll);
   }
 
   function printPayrollPDF() {
@@ -4561,11 +4595,16 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const start = document.getElementById('nilai-start').value;
     const end = document.getElementById('nilai-end').value;
     if (!start || !end) return Swal.fire('Perhatian', 'Tentukan tanggal awal dan akhir terlebih dahulu.', 'warning');
+    const sekolahIdUntukNilai = (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '';
+    if (USER_DATA && USER_DATA.role === 'ADMIN_UTAMA' && !sekolahIdUntukNilai) {
+      return Swal.fire('Pilih Sekolah Dulu', 'Pilih sekolah di pojok kiri atas sebelum menghitung nilai guru.', 'warning');
+    }
 
     const tbody = document.getElementById('nilai-guru-body');
     tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-warning spinner-border-sm"></div> Menghitung nilai kinerja guru...</td></tr>';
 
     google.script.run.withSuccessHandler(res => {
+      LAST_NILAI_GURU_DATA = { data: res || [], start, end };
       if (!res || res.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Tidak ditemukan data guru aktif pada periode ini.</td></tr>';
         return;
@@ -4588,13 +4627,119 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         `;
       });
       tbody.innerHTML = html;
-    }).getNilaiGuru(SESSION_TOKEN, start, end);
+    }).getNilaiGuru(SESSION_TOKEN, start, end, sekolahIdUntukNilai);
+  }
+
+  function printNilaiGuruPDF() {
+    if (!LAST_NILAI_GURU_DATA || !LAST_NILAI_GURU_DATA.data || LAST_NILAI_GURU_DATA.data.length === 0) {
+      return Swal.fire('Gagal Cetak', 'Belum ada data nilai guru untuk dicetak - klik "Hitung Nilai" dulu.', 'warning');
+    }
+    Swal.fire({ title: 'Menyiapkan Dokumen...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+
+    google.script.run.withSuccessHandler(identitas => {
+      Swal.close();
+      const schName = identitas.nama_sekolah || 'SEKOLAH';
+      const schAddress = identitas.alamat_sekolah || '-';
+      const schWakasek = identitas.nama_wakasek || '( .................................... )';
+      const { data, start, end } = LAST_NILAI_GURU_DATA;
+
+      let printWindowContent = `
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Cetak Nilai Guru</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 30px; color: #000; background-color: #fff; }
+            .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
+            .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
+            .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
+            .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
+            .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 15px; color: #555; }
+            table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th { background-color: #f2f2f2 !important; color: #000 !important; font-weight: bold; text-transform: uppercase; border: 1px solid #000 !important; text-align: center; vertical-align: middle; word-wrap: break-word; }
+            td { border: 1px solid #000 !important; padding: 4px !important; text-align: center; vertical-align: middle; word-wrap: break-word; }
+            .row { display: flex; flex-wrap: wrap; margin: 0 -8px; }
+            .row.mt-5 { margin-top: 40px; }
+            .col-4 { flex: 0 0 33.333%; max-width: 33.333%; padding: 0 8px; box-sizing: border-box; }
+            .col-8 { flex: 0 0 66.666%; max-width: 66.666%; padding: 0 8px; box-sizing: border-box; }
+            .text-center { text-align: center; }
+            .fw-bold { font-weight: bold; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="kop-surat">
+            <h3 class="kop-title">${schName}</h3>
+            <p class="kop-subtitle">${schAddress}</p>
+          </div>
+          <div class="laporan-title">Nilai Kinerja Guru</div>
+          <div class="laporan-periode">Periode: ${start} s.d ${end}</div>
+          <table>
+            <thead>
+              <tr>
+                <th width="4%">No.</th>
+                <th width="24%">Nama Guru</th>
+                <th width="14%">Skor Kehadiran</th>
+                <th width="16%">Predikat</th>
+                <th width="14%">Skor Mengajar</th>
+                <th width="16%">Predikat</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      data.forEach((row, idx) => {
+        const kehadiran = row.skorKehadiran !== null ? row.skorKehadiran : '-';
+        const predKehadiran = row.skorKehadiran !== null ? row.predikatKehadiran : '-';
+        const mengajar = row.punyaKewajibanMengajar && row.skorMengajar !== null ? row.skorMengajar : '-';
+        const predMengajar = row.punyaKewajibanMengajar && row.skorMengajar !== null ? row.predikatMengajar : '-';
+        printWindowContent += `
+          <tr>
+            <td>${idx + 1}</td>
+            <td class="fw-bold" style="text-align:left;">${row.nama}</td>
+            <td class="fw-bold">${kehadiran}</td>
+            <td>${predKehadiran}</td>
+            <td class="fw-bold">${mengajar}</td>
+            <td>${predMengajar}</td>
+          </tr>
+        `;
+      });
+      printWindowContent += `
+            </tbody>
+          </table>
+          <div class="row mt-5" style="font-size: 11px;">
+            <div class="col-8"></div>
+            <div class="col-4 text-center">
+              <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p style="margin-bottom: 50px;">Wakasek Bidang SDM,</p>
+              <p class="fw-bold" style="text-decoration: underline;">${schWakasek}</p>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+                setTimeout(function() { window.close(); }, 800);
+              }, 300);
+            }
+          <\/script>
+        </body>
+        </html>
+      `;
+      const blob = new Blob([printWindowContent], { type: 'text/html' });
+      const blobUrl = URL.createObjectURL(blob);
+      const printWindow = window.open(blobUrl, '_blank');
+      if (!printWindow) {
+        Swal.fire('Pop-up Diblokir', 'Harap izinkan pop-up pada browser Anda untuk mencetak PDF.', 'warning');
+      }
+    }).getIdentitasSekolahUntukCetak(SESSION_TOKEN);
   }
 
   function loadAturanPenilaian() {
     google.script.run.withSuccessHandler(data => {
       document.getElementById('ap-bobot-terlambat-kehadiran').value = data.bobot_terlambat_kehadiran;
       document.getElementById('ap-bobot-alpa-kehadiran').value = data.bobot_alpa_kehadiran;
+      document.getElementById('ap-bobot-sakit').value = data.bobot_sakit;
+      document.getElementById('ap-bobot-izin').value = data.bobot_izin;
       document.getElementById('ap-bobot-terlambat-jp').value = data.bobot_terlambat_jp;
       document.getElementById('ap-bobot-alpa-jp').value = data.bobot_alpa_jp;
       document.getElementById('ap-bonus-per-impal').value = data.bonus_per_impal;
@@ -4610,6 +4755,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const config = {
       bobot_terlambat_kehadiran: document.getElementById('ap-bobot-terlambat-kehadiran').value,
       bobot_alpa_kehadiran: document.getElementById('ap-bobot-alpa-kehadiran').value,
+      bobot_sakit: document.getElementById('ap-bobot-sakit').value,
+      bobot_izin: document.getElementById('ap-bobot-izin').value,
       bobot_terlambat_jp: document.getElementById('ap-bobot-terlambat-jp').value,
       bobot_alpa_jp: document.getElementById('ap-bobot-alpa-jp').value,
       bonus_per_impal: document.getElementById('ap-bonus-per-impal').value,
