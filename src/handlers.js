@@ -1150,9 +1150,17 @@ async function getRiwayatAktivitas(args, env) {
   const ambil = limit;
 
   const perluDaftarSekolah = user.role === 'ADMIN_UTAMA' && !requestedSekolahId;
+  // Kecualikan status Cuti/Sakit dari kedua sumber (absen_masuk & kegiatan_umum) -
+  // ini murni entri BACKFILL dari saveCutiGuru() (lihat komentar di sana), bukan
+  // aktivitas nyata yang terjadi di suatu waktu. Cuti panjang (mis. melahirkan,
+  // bisa 3 bulan) membuat puluhan/ratusan baris bertanggal JAUH ke depan, yang
+  // kalau ikut diurutkan tanggal.desc akan selalu nangkring di atas dan
+  // menenggelamkan aktivitas guru lain hari ini. Laporan & Payroll TIDAK
+  // terdampak - filter ini cuma berlaku di tampilan Riwayat Aktivitas.
+  const kecualikanCutiSakit = 'status=not.in.(Cuti,Sakit)&';
   const [rowsAbsenMasuk, rowsKegiatan, rowsKhusus, daftarSekolah] = await Promise.all([
-    sbSelect(env, 'absen_masuk', `${filterSekolah}${filterNuptk}order=tanggal.desc,jam.desc&limit=${ambil}`),
-    sbSelect(env, 'kegiatan_umum', `${filterSekolah}${filterNuptk}order=tanggal.desc,timestamp.desc&limit=${ambil}`),
+    sbSelect(env, 'absen_masuk', `${filterSekolah}${filterNuptk}${kecualikanCutiSakit}order=tanggal.desc,jam.desc&limit=${ambil}`),
+    sbSelect(env, 'kegiatan_umum', `${filterSekolah}${filterNuptk}${kecualikanCutiSakit}order=tanggal.desc,timestamp.desc&limit=${ambil}`),
     sbSelect(env, 'absen_kegiatan_khusus', `${filterSekolah}${filterNuptk}order=tanggal_lapor.desc,waktu_lapor.desc&limit=${ambil}`),
     perluDaftarSekolah ? sbSelect(env, 'sekolah', 'order=nama.asc') : Promise.resolve([])
   ]);
