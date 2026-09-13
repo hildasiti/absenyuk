@@ -1306,6 +1306,9 @@
   </div>
 
   <div class='mb-3'>
+    <button class='btn btn-success shadow-sm me-2' onclick='exportPayrollToExcel()'>
+      <i class='bi bi-file-earmark-excel-fill'></i> Download Excel (.xlsx)
+    </button>
     <button class='btn btn-danger shadow-sm' onclick='printPayrollPDF()'>
       <i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF Payroll Resmi
     </button>
@@ -1348,6 +1351,15 @@
     </div>
   </div>
 
+  <div class='mb-3'>
+    <button class='btn btn-success shadow-sm me-2' onclick='exportNilaiGuruToExcel()'>
+      <i class='bi bi-file-earmark-excel-fill'></i> Download Excel (.xlsx)
+    </button>
+    <button class='btn btn-danger shadow-sm' onclick='printNilaiGuruPDF()'>
+      <i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF Resmi
+    </button>
+  </div>
+
   <div class='table-responsive bg-white shadow-sm p-3 rounded'>
     <table class='table table-bordered table-hover text-center align-middle'>
       <thead class='table-secondary font-weight-bold'>
@@ -1365,8 +1377,6 @@
       </tbody>
     </table>
   </div>
-
-  <button class='btn btn-danger w-100 mt-3 fw-bold' onclick='printNilaiGuruPDF()'><i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF Resmi</button>
 </div>
 
 
@@ -4051,6 +4061,85 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       const filename = `Laporan_${inputType}_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, filename);
       Swal.fire('Berhasil!', 'File Excel (.xlsx) dengan rangkuman rekapitulasi berhasil di-download.', 'success');
+    } catch (error) {
+      Swal.fire('Error', 'Gagal memproses file Excel: ' + error.message, 'error');
+    }
+  }
+
+  /** Download Excel untuk Rekap Payroll - mengikuti data yang SEDANG tampil di
+   * tabel (LAST_PAYROLL_DATA), jadi kolomnya otomatis menyesuaikan jenis rekap
+   * yang aktif (Absen Masuk vs Jam Pelajaran), sama seperti tabel di layar. */
+  function exportPayrollToExcel() {
+    if (!LAST_PAYROLL_DATA || LAST_PAYROLL_DATA.length === 0) {
+      return Swal.fire('Gagal Export', 'Belum ada data rekapitulasi aktif. Silakan lakukan proses kalkulasi terlebih dahulu.', 'warning');
+    }
+    try {
+      const isJP = (LAST_PAYROLL_JENIS === 'JAM_PELAJARAN');
+      let excelRows = [];
+
+      if (isJP) {
+        excelRows.push(['No', 'Nama Guru', 'Impal', 'Terlambat', 'Sakit', 'Izin', 'Tugas Dinas', 'Tanpa Keterangan']);
+        let totalImpal = 0, totalTerlambat = 0, totalSakit = 0, totalIzin = 0, totalTugasLuar = 0, totalAlpa = 0;
+        LAST_PAYROLL_DATA.forEach((row, idx) => {
+          excelRows.push([idx + 1, row.nama, row.impal, row.terlambat, row.sakit, row.izin, row.tugasLuar, row.alpa]);
+          totalImpal += row.impal; totalTerlambat += row.terlambat; totalSakit += row.sakit;
+          totalIzin += row.izin; totalTugasLuar += row.tugasLuar; totalAlpa += row.alpa;
+        });
+        excelRows.push(['', 'TOTAL KESELURUHAN', totalImpal, totalTerlambat, totalSakit, totalIzin, totalTugasLuar, totalAlpa]);
+      } else {
+        excelRows.push(['No', 'Nama Guru', 'Hadir', 'Terlambat', 'Sakit', 'Izin', 'Tugas Dinas', 'Tanpa Keterangan', 'Total Hari Kerja']);
+        let totalHadir = 0, totalTerlambat = 0, totalSakit = 0, totalIzin = 0, totalTugasLuar = 0, totalAlpa = 0, totalHariSemua = 0;
+        LAST_PAYROLL_DATA.forEach((row, idx) => {
+          const totalHari = row.hadir + row.terlambat + row.sakit + row.izin + row.tugasLuar + row.alpa;
+          excelRows.push([idx + 1, row.nama, row.hadir, row.terlambat, row.sakit, row.izin, row.tugasLuar, row.alpa, totalHari]);
+          totalHadir += row.hadir; totalTerlambat += row.terlambat; totalSakit += row.sakit;
+          totalIzin += row.izin; totalTugasLuar += row.tugasLuar; totalAlpa += row.alpa; totalHariSemua += totalHari;
+        });
+        excelRows.push(['', 'TOTAL KESELURUHAN', totalHadir, totalTerlambat, totalSakit, totalIzin, totalTugasLuar, totalAlpa, totalHariSemua]);
+      }
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(excelRows);
+      ws['!cols'] = excelRows[0].map(() => ({ wch: 20 }));
+      XLSX.utils.book_append_sheet(wb, ws, 'Rekap Payroll');
+      const filename = `Payroll_${isJP ? 'JamPelajaran' : 'AbsenMasuk'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      Swal.fire('Berhasil!', 'File Excel (.xlsx) Rekap Payroll berhasil di-download.', 'success');
+    } catch (error) {
+      Swal.fire('Error', 'Gagal memproses file Excel: ' + error.message, 'error');
+    }
+  }
+
+  /** Download Excel untuk Nilai Kinerja Guru - mengikuti data yang SEDANG tampil
+   * di tabel (LAST_NILAI_GURU_DATA), termasuk periode tanggal yang sedang dipakai. */
+  function exportNilaiGuruToExcel() {
+    if (!LAST_NILAI_GURU_DATA || !LAST_NILAI_GURU_DATA.data || LAST_NILAI_GURU_DATA.data.length === 0) {
+      return Swal.fire('Gagal Export', 'Belum ada data nilai guru untuk di-export - klik "Hitung Nilai" dulu.', 'warning');
+    }
+    try {
+      const { data, start, end } = LAST_NILAI_GURU_DATA;
+      let excelRows = [];
+      excelRows.push([`Nilai Kinerja Guru - Periode ${start} s/d ${end}`]);
+      excelRows.push([]);
+      excelRows.push(['No', 'Nama Guru', 'Skor Kehadiran', 'Predikat Kehadiran', 'Skor Mengajar', 'Predikat Mengajar']);
+
+      data.forEach((row, idx) => {
+        excelRows.push([
+          idx + 1, row.nama,
+          row.skorKehadiran !== null ? row.skorKehadiran : '-',
+          row.skorKehadiran !== null ? row.predikatKehadiran : '-',
+          row.punyaKewajibanMengajar && row.skorMengajar !== null ? row.skorMengajar : '-',
+          row.punyaKewajibanMengajar && row.skorMengajar !== null ? row.predikatMengajar : '-'
+        ]);
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(excelRows);
+      ws['!cols'] = [{ wch: 5 }, { wch: 25 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'Nilai Guru');
+      const filename = `NilaiGuru_${start}_sd_${end}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      Swal.fire('Berhasil!', 'File Excel (.xlsx) Nilai Kinerja Guru berhasil di-download.', 'success');
     } catch (error) {
       Swal.fire('Error', 'Gagal memproses file Excel: ' + error.message, 'error');
     }
