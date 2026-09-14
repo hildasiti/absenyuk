@@ -1150,17 +1150,27 @@ async function getRiwayatAktivitas(args, env) {
   const ambil = limit;
 
   const perluDaftarSekolah = user.role === 'ADMIN_UTAMA' && !requestedSekolahId;
-  // Kecualikan status Cuti/Sakit dari kedua sumber (absen_masuk & kegiatan_umum) -
-  // ini murni entri BACKFILL dari saveCutiGuru() (lihat komentar di sana), bukan
-  // aktivitas nyata yang terjadi di suatu waktu. Cuti panjang (mis. melahirkan,
-  // bisa 3 bulan) membuat puluhan/ratusan baris bertanggal JAUH ke depan, yang
-  // kalau ikut diurutkan tanggal.desc akan selalu nangkring di atas dan
-  // menenggelamkan aktivitas guru lain hari ini. Laporan & Payroll TIDAK
-  // terdampak - filter ini cuma berlaku di tampilan Riwayat Aktivitas.
-  const kecualikanCutiSakit = 'status=not.in.(Cuti,Sakit)&';
+  // Kecualikan baris HASIL BACKFILL saveCutiGuru() saja (bukan semua baris
+  // berstatus Cuti/Sakit) - dikenali lewat awalan ID-nya sendiri: 'AC_' untuk
+  // absen_masuk, 'KC_' untuk kegiatan_umum (lihat generateShortID() dipakai
+  // di saveCutiGuru()). Cuti panjang (mis. melahirkan, bisa 3 bulan) membuat
+  // puluhan/ratusan baris bertanggal JAUH ke depan yang kalau ikut diurutkan
+  // tanggal.desc akan selalu nangkring di atas dan menenggelamkan aktivitas
+  // guru lain hari ini.
+  //
+  // SENGAJA difilter lewat awalan ID, BUKAN lewat status='Cuti'/'Sakit' -
+  // guru tetap bisa genuinely lapor 'Sakit' sendiri (Absen Masuk maupun
+  // presensi Sholat), dan baris-baris itu ID-nya berawalan 'AB_'/'K_' (bukan
+  // hasil backfill) sehingga TETAP HARUS muncul di Riwayat Aktivitas. Kalau
+  // difilter lewat status, laporan sakit asli guru akan ikut tersembunyi
+  // tanpa disadari - persis kekhawatiran yang perlu dihindari di sini.
+  // Laporan & Payroll TIDAK terdampak sama sekali - filter ini cuma berlaku
+  // di tampilan Riwayat Aktivitas.
+  const kecualikanBackfillAbsenMasuk = 'id=not.like.AC*&';
+  const kecualikanBackfillKegiatan = 'id=not.like.KC*&';
   const [rowsAbsenMasuk, rowsKegiatan, rowsKhusus, daftarSekolah] = await Promise.all([
-    sbSelect(env, 'absen_masuk', `${filterSekolah}${filterNuptk}${kecualikanCutiSakit}order=tanggal.desc,jam.desc&limit=${ambil}`),
-    sbSelect(env, 'kegiatan_umum', `${filterSekolah}${filterNuptk}${kecualikanCutiSakit}order=tanggal.desc,timestamp.desc&limit=${ambil}`),
+    sbSelect(env, 'absen_masuk', `${filterSekolah}${filterNuptk}${kecualikanBackfillAbsenMasuk}order=tanggal.desc,jam.desc&limit=${ambil}`),
+    sbSelect(env, 'kegiatan_umum', `${filterSekolah}${filterNuptk}${kecualikanBackfillKegiatan}order=tanggal.desc,timestamp.desc&limit=${ambil}`),
     sbSelect(env, 'absen_kegiatan_khusus', `${filterSekolah}${filterNuptk}order=tanggal_lapor.desc,waktu_lapor.desc&limit=${ambil}`),
     perluDaftarSekolah ? sbSelect(env, 'sekolah', 'order=nama.asc') : Promise.resolve([])
   ]);
@@ -1852,13 +1862,14 @@ async function saveRekapJamPelajaran(args, env) {
  * Default tanggal hari ini kalau tidak dikirim.
  */
 async function getRekapJamPelajaranList(args, env) {
-  const [token, tanggal] = args;
+  const [token, tanggal, requestedSekolahId] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user) && !isRole(user, 'PIKET')) return [];
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const dateStr = tanggal || nowJakarta().dateStr;
   const rows = await sbSelect(env, 'rekap_jam_pelajaran',
-    `sekolah_id=eq.${user.sekolahId}&tanggal=eq.${dateStr}&order=jam_ke.asc`);
+    `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}&order=jam_ke.asc`);
 
   return rows.map((r) => ({
     id: r.id, tanggal: r.tanggal, nuptk: r.nuptk, namaGuru: r.nama_guru,
@@ -1867,17 +1878,21 @@ async function getRekapJamPelajaranList(args, env) {
   }));
 }
 
+const STATUS_JP_VALID = ['Terlambat', 'Sakit', 'Izin', 'Tugas Luar', 'Tanpa Keterangan'];
+
 /** Edit satu baris rekap jam pelajaran (koreksi salah input Piket). */
 async function updateRekapJamPelajaran(args, env) {
-  const [token, id, status, guruImpalNama, guruImpalNuptk] = args;
+  const [token, id, status, guruImpalNama, guruImpalNuptk, requestedSekolahId] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user) && !isRole(user, 'PIKET')) return { success: false, message: 'Akses ditolak.' };
   if (!id) return { success: false, message: 'Data tidak ditemukan (id kosong).' };
+  if (!STATUS_JP_VALID.includes(status)) return { success: false, message: 'Status tidak dikenal: ' + status };
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const rows = await sbSelect(env, 'rekap_jam_pelajaran', `id=eq.${encodeURIComponent(id)}&limit=1`);
   const existing = rows[0];
   if (!existing) return { success: false, message: 'Data tidak ditemukan (mungkin sudah dihapus).' };
-  if (existing.sekolah_id !== user.sekolahId) {
+  if (existing.sekolah_id !== sekolahId) {
     return { success: false, message: 'Akses ditolak. Data ini bukan milik sekolah Anda.' };
   }
 
@@ -1889,15 +1904,16 @@ async function updateRekapJamPelajaran(args, env) {
 
 /** Hapus satu baris rekap jam pelajaran (salah input total, mis. salah guru/jam). */
 async function deleteRekapJamPelajaran(args, env) {
-  const [token, id] = args;
+  const [token, id, requestedSekolahId] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user) && !isRole(user, 'PIKET')) return { success: false, message: 'Akses ditolak.' };
   if (!id) return { success: false, message: 'Data tidak ditemukan (id kosong).' };
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const rows = await sbSelect(env, 'rekap_jam_pelajaran', `id=eq.${encodeURIComponent(id)}&limit=1`);
   const existing = rows[0];
   if (!existing) return { success: false, message: 'Data tidak ditemukan (mungkin sudah dihapus).' };
-  if (existing.sekolah_id !== user.sekolahId) {
+  if (existing.sekolah_id !== sekolahId) {
     return { success: false, message: 'Akses ditolak. Data ini bukan milik sekolah Anda.' };
   }
 

@@ -2527,7 +2527,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </tr>`).join('');
     }).withFailureHandler(() => {
       document.getElementById('jp-list-body').innerHTML = '<tr><td class="text-center text-danger py-3" colspan="6">Gagal memuat data.</td></tr>';
-    }).getRekapJamPelajaranList(SESSION_TOKEN, tgl);
+    }).getRekapJamPelajaranList(SESSION_TOKEN, tgl, (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '');
   }
 
   // Cache baris terakhir yang dimuat loadRekapJamPelajaranList(), dipakai
@@ -2538,32 +2538,51 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   function editRekapJamPelajaran(id) {
     const row = DATA_JP_LIST_CACHE[id];
     if (!row) return;
-    Swal.fire({
-      title: `Edit: ${row.namaGuru} (${row.jamKe})`,
-      html: `
-        <select id="swal-jp-status" class="form-select mb-2">
-          <option value="Terlambat" ${row.status === 'Terlambat' ? 'selected' : ''}>Terlambat</option>
-          <option value="Sakit" ${row.status === 'Sakit' ? 'selected' : ''}>Sakit</option>
-          <option value="Izin" ${row.status === 'Izin' ? 'selected' : ''}>Izin</option>
-          <option value="Tugas Luar" ${row.status === 'Tugas Luar' ? 'selected' : ''}>Tugas Dinas</option>
-          <option value="Tanpa Keterangan" ${row.status === 'Tanpa Keterangan' ? 'selected' : ''}>Tanpa Keterangan (Alpa)</option>
-        </select>
-        <input id="swal-jp-impal" class="form-control" placeholder="Nama guru impal (opsional)" value="${row.guruImpal && row.guruImpal !== '-' ? row.guruImpal : ''}">
-      `,
-      confirmButtonText: 'Simpan Perubahan',
-      showCancelButton: true,
-      preConfirm: () => ({
-        status: document.getElementById('swal-jp-status').value,
-        impal: document.getElementById('swal-jp-impal').value.trim()
-      })
-    }).then(result => {
-      if (!result.isConfirmed) return;
-      Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-      google.script.run.withSuccessHandler(res => {
-        Swal.fire(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'error');
-        if (res.success) loadRekapJamPelajaranList();
-      }).updateRekapJamPelajaran(SESSION_TOKEN, row.id, result.value.status, result.value.impal || '-', row.nuptkImpal || '-');
-    });
+    Swal.fire({ title: 'Memuat...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    // Dropdown Guru Impal WAJIB diambil dari daftar staf sungguhan (sama
+    // seperti form input aslinya) - BUKAN kolom teks bebas. guru_impal (nama)
+    // dan nuptk_impal (dipakai getPayrollJamPelajaran() untuk menghitung
+    // kredit Skor Mengajar seseorang) harus SELALU sepasang dan konsisten;
+    // kolom teks bebas bisa membuat keduanya tidak sinkron (nama diubah tapi
+    // nuptk_impal tetap yang lama, atau sebaliknya) - salah satu penyebab
+    // ketidaksesuaian data yang dikhawatirkan.
+    google.script.run.withSuccessHandler(listStaf => {
+      let optsImpal = `<option value="-|-">Tidak ada guru pengganti</option>`;
+      listStaf.forEach(s => {
+        const label = s.role === 'GURU' ? s.nama : s.nama + ' (' + s.role.replace('_', ' ') + ')';
+        const dipilih = row.nuptkImpal && row.nuptkImpal === s.nuptk ? 'selected' : '';
+        optsImpal += `<option value="${s.nuptk}|${s.nama}" ${dipilih}>${label}</option>`;
+      });
+
+      Swal.fire({
+        title: `Edit: ${row.namaGuru} (${row.jamKe})`,
+        html: `
+          <select id="swal-jp-status" class="form-select mb-2">
+            <option value="Terlambat" ${row.status === 'Terlambat' ? 'selected' : ''}>Terlambat</option>
+            <option value="Sakit" ${row.status === 'Sakit' ? 'selected' : ''}>Sakit</option>
+            <option value="Izin" ${row.status === 'Izin' ? 'selected' : ''}>Izin</option>
+            <option value="Tugas Luar" ${row.status === 'Tugas Luar' ? 'selected' : ''}>Tugas Dinas</option>
+            <option value="Tanpa Keterangan" ${row.status === 'Tanpa Keterangan' ? 'selected' : ''}>Tanpa Keterangan (Alpa)</option>
+          </select>
+          <select id="swal-jp-impal" class="form-select">${optsImpal}</select>
+        `,
+        confirmButtonText: 'Simpan Perubahan',
+        showCancelButton: true,
+        preConfirm: () => ({
+          status: document.getElementById('swal-jp-status').value,
+          impalVal: document.getElementById('swal-jp-impal').value
+        })
+      }).then(result => {
+        if (!result.isConfirmed) return;
+        const [nuptkImpalBaru, namaImpalBaru] = result.value.impalVal.split('|');
+        Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        google.script.run.withSuccessHandler(res => {
+          Swal.fire(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'error');
+          if (res.success) loadRekapJamPelajaranList();
+        }).updateRekapJamPelajaran(SESSION_TOKEN, row.id, result.value.status, namaImpalBaru, nuptkImpalBaru, (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '');
+      });
+    }).getStafAktifUntukImpal(SESSION_TOKEN);
   }
 
   function hapusRekapJamPelajaran(id) {
@@ -2581,7 +2600,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       google.script.run.withSuccessHandler(res => {
         Swal.fire(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'error');
         if (res.success) loadRekapJamPelajaranList();
-      }).deleteRekapJamPelajaran(SESSION_TOKEN, row.id);
+      }).deleteRekapJamPelajaran(SESSION_TOKEN, row.id, (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '');
     });
   }
 
@@ -3600,7 +3619,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           </select>
 
           <label class="form-label small fw-semibold">Password Baru <span class="text-muted fw-normal">(kosongkan kalau tidak diubah)</span></label>
-          <input id="edit-u-password" type="password" class="form-control" placeholder="•••••••" />
+          <input id="edit-u-password" type="password" class="form-control"/>
         </div>
       `,
       showCancelButton: true,
