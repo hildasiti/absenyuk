@@ -1526,6 +1526,10 @@ async function getPayrollReport(args, env) {
   });
 
   const rows = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}`);
+  // Dipakai jaring pengaman di bawah - tanggal mana saja yang SUDAH ada baris
+  // (apa pun statusnya) per guru, supaya nanti tinggal dicek "tanggal kerja
+  // mana yang TIDAK ada di sini sama sekali".
+  const tanggalAdaBarisPerGuru = {};
   rows.forEach((row) => {
     const nuptk = String(row.nuptk).trim(), status = String(row.status).trim();
     if (payrollMap[nuptk]) {
@@ -1545,8 +1549,53 @@ async function getPayrollReport(args, env) {
       else if (status === 'Izin') payrollMap[nuptk].izin++;
       else if (status === 'Tugas Luar') payrollMap[nuptk].tugasLuar++;
       else if (status === 'Tanpa Keterangan') payrollMap[nuptk].alpa++;
+
+      if (!tanggalAdaBarisPerGuru[nuptk]) tanggalAdaBarisPerGuru[nuptk] = new Set();
+      tanggalAdaBarisPerGuru[nuptk].add(row.tanggal);
     }
   });
+
+  // ====================================================================
+  // JARING PENGAMAN: hari kerja yang TIDAK PUNYA BARIS SAMA SEKALI (bukan
+  // cuma status kosong, tapi memang tidak pernah ter-backfill oleh cron/
+  // trigger apa pun - mis. cron sempat gagal, atau Admin Sekolah sempat
+  // menonaktifkan Auto Alpa lalu lupa mengaktifkan lagi) dihitung sebagai
+  // Tanpa Keterangan TAMBAHAN di sini, murni saat laporan dibuat - TIDAK
+  // menulis apa pun ke database. Supaya Admin tidak perlu buka database
+  // manual tiap kali ada hari yang "terlewat" oleh mekanisme otomatis.
+  //
+  // Hari yang dihitung "kerja" = bukan hari libur mingguan sekolah ini,
+  // bukan tanggal dalam rentang libur_nasional. Guru yang memang Cuti/Sakit
+  // terdaftar TETAP AMAN - hari itu sudah pasti ada barisnya sendiri dari
+  // backfill saveCutiGuru(), jadi tidak akan pernah dianggap "tidak ada
+  // baris" di sini.
+  //
+  // KETERBATASAN yang disadari: tidak mengecek tanggal guru mulai bekerja
+  // (data itu belum ada di sistem) - guru yang baru direkrut PERTENGAHAN
+  // periode bisa saja ikut ketandai alpa untuk hari-hari SEBELUM dia
+  // sungguhan mulai bekerja. Sama seperti auto-alfa cron yang sudah ada,
+  // bukan keterbatasan baru dari fitur ini.
+  const [settingsSekolah, liburSekolah] = await Promise.all([
+    getSettingsMap(env, sekolahId),
+    getLiburListCached(env, sekolahId)
+  ]);
+  const liburRanges = liburSekolah.map((l) => ({ start: new Date(l.tgl_mulai).getTime(), end: new Date(l.tgl_selesai).getTime() }));
+  const isHariLiburSekolah = (waktuMs, dayOfWeek) => {
+    if (isHariLiburMingguan(settingsSekolah, dayOfWeek)) return true;
+    return liburRanges.some((r) => waktuMs >= r.start && waktuMs <= r.end);
+  };
+
+  const sMs = new Date(sDateStr).getTime();
+  const eMs = new Date(eDateStr).getTime();
+  for (let t = sMs; t <= eMs; t += 86400000) {
+    const d = new Date(t);
+    if (isHariLiburSekolah(t, d.getDay())) continue;
+    const tanggalStr = toDateStr(d);
+    Object.keys(payrollMap).forEach((nuptk) => {
+      const sudahAda = tanggalAdaBarisPerGuru[nuptk] && tanggalAdaBarisPerGuru[nuptk].has(tanggalStr);
+      if (!sudahAda) payrollMap[nuptk].alpa++;
+    });
+  }
 
   return Object.values(payrollMap);
 }

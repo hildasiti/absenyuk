@@ -463,7 +463,7 @@
       </div>
       <div class='mb-4 text-start'>
         <label class='form-label'>Password</label>
-        <input class='form-control' id='password' placeholder='Masukkan Password' required='required' type='password'/>
+        <input class='form-control' id='password' placeholder='Masukkan Password' required='required' type='password' autocomplete='current-password'/>
       </div>
       <button class='btn btn-primary w-100 mb-3' style='background-color: var(--primary-color);' type='submit'>LOGIN</button>
     </form>
@@ -784,16 +784,16 @@
     <form id='form-ganti-password' onsubmit='submitGantiPassword(event)'>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Password Saat Ini</label>
-        <input class='form-control' id='gp-password-lama' required='required' type='password'/>
+        <input class='form-control' id='gp-password-lama' required='required' type='password' autocomplete='current-password'/>
       </div>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Password Baru</label>
-        <input class='form-control' id='gp-password-baru-1' minlength='6' required='required' type='password'/>
+        <input class='form-control' id='gp-password-baru-1' minlength='6' required='required' type='password' autocomplete='new-password' readonly onfocus='this.removeAttribute("readonly")'/>
         <small class='text-muted'>Minimal 6 karakter.</small>
       </div>
       <div class='mb-3'>
         <label class='form-label fw-semibold'>Konfirmasi Password Baru</label>
-        <input class='form-control' id='gp-password-baru-2' minlength='6' required='required' type='password'/>
+        <input class='form-control' id='gp-password-baru-2' minlength='6' required='required' type='password' autocomplete='new-password' readonly onfocus='this.removeAttribute("readonly")'/>
       </div>
       <button class='btn btn-primary w-100 fw-bold shadow-sm' style='background-color: var(--primary-color);' type='submit'>
         <i class='bi bi-check-circle-fill me-2'></i> Simpan Password Baru
@@ -1236,7 +1236,7 @@
         <form class='row g-2' onsubmit='submitNewUser(event)'>
             <div class='col-md-2'><input class='form-control' id='u-nuptk' placeholder='NUPTK / Username' required='required' type='text'/></div>
             <div class='col-md-3'><input class='form-control' id='u-nama' placeholder='Nama Lengkap' required='required' type='text'/></div>
-            <div class='col-md-2'><input class='form-control' id='u-pass' placeholder='Password' required='required' type='password'/></div>
+            <div class='col-md-2'><input class='form-control' id='u-pass' placeholder='Password' required='required' type='password' autocomplete='new-password' readonly onfocus='this.removeAttribute("readonly")'/></div>
             <div class='col-md-2'>
                 <select class='form-select' id='u-role' required='required' title='Role Akses Akun'>
                     <option selected='selected' value='GURU'>Role: GURU</option>
@@ -3619,7 +3619,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           </select>
 
           <label class="form-label small fw-semibold">Password Baru <span class="text-muted fw-normal">(kosongkan kalau tidak diubah)</span></label>
-          <input id="edit-u-password" type="password" class="form-control"/>
+          <input id="edit-u-password" type="password" class="form-control" placeholder="•••••••" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')" />
         </div>
       `,
       showCancelButton: true,
@@ -3636,8 +3636,28 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           password: document.getElementById('edit-u-password').value
         };
       }
-    }).then((result) => {
+    }).then(async (result) => {
       if (!result.isConfirmed) return;
+
+      // Pengaman tambahan (di luar trik readonly di atas, yang sudah mencegah
+      // browser mengisi otomatis) - kalau field password ternyata TETAP terisi
+      // (mis. admin memang sengaja mau ganti, atau ada browser yang lolos dari
+      // trik readonly), minta konfirmasi eksplisit dulu SEBELUM disimpan. Ini
+      // aksi yang bisa mengunci guru dari sistemnya sendiri kalau keliru, jadi
+      // pantas dapat satu langkah konfirmasi tambahan.
+      if (result.value.password && result.value.password.trim() !== '') {
+        const konfirmasi = await Swal.fire({
+          icon: 'warning',
+          title: 'Ganti Password?',
+          html: `Password untuk <strong>${guru.nama}</strong> akan diganti. Guru ini harus login pakai password BARU setelah ini.<br><br>Kalau Abang tidak sengaja mengisi kolom password tadi (mis. terisi otomatis oleh browser), klik <strong>Batal</strong> - data lain tetap tersimpan tanpa mengubah password.`,
+          showCancelButton: true,
+          confirmButtonText: 'Ya, Ganti Password',
+          cancelButtonText: 'Batal, Jangan Ganti Password',
+          confirmButtonColor: '#dc3545'
+        });
+        if (!konfirmasi.isConfirmed) result.value.password = '';
+      }
+
       Swal.fire({ title: 'Menyimpan...', didOpen: () => Swal.showLoading() });
       google.script.run.withSuccessHandler(res => {
         if (res.success) {
