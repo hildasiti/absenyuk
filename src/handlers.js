@@ -453,6 +453,12 @@ async function saveAbsenPulang(args, env) {
   // sendiri - kalaupun gagal, tidak mempengaruhi keberhasilan Absen Pulang ini.
   await trigerAutoAlpaOportunistik(env, sekolahId);
 
+  // Efek samping lain dari momen yang sama: ada guru yang sudah pulang berarti
+  // sudah masuk "sore hari" di sekolah ini - momen pas untuk sekalian
+  // mengingatkan guru LAIN yang belum Sholat Dzuhur/Ashar dan/atau belum
+  // Absen Pulang. Lihat komentar lengkap di trigerPengingatPulangOportunistik().
+  await trigerPengingatPulangOportunistik(env, sekolahId);
+
   return { success: true, message: `Absen Pulang berhasil disimpan pada pukul ${timeStr} WIB. Hati-hati di jalan, sampai jumpa besok!` };
 }
 
@@ -2301,6 +2307,85 @@ async function trigerAutoAlpaOportunistik(env, sekolahId) {
     }
   } catch (err) {
     console.error(`[trigerAutoAlpaOportunistik] Gagal (sekolah ${sekolahId}):`, err.message);
+  }
+}
+
+/**
+ * Push notification pengingat "Absen Pulang & Sholat Dzuhur/Ashar" - dipicu
+ * OPORTUNISTIK oleh aktivitas nyata (ada guru yang Absen Pulang di sekolah
+ * itu), BUKAN oleh jadwal cron - sama seperti trigerAutoAlpaOportunistik(),
+ * memanfaatkan momen ada guru pulang sebagai sinyal "sudah sore, waktunya
+ * ingatkan yang lain" tanpa perlu slot Cron Trigger tambahan.
+ *
+ * PENGAMAN ANTI-SPAM (paling penting di fungsi ini): tanpa ini, notifikasi
+ * yang SAMA akan terkirim berkali-kali sehari - setiap satu guru pulang,
+ * semua guru lain yang belum pulang/sholat kebanjiran notifikasi identik.
+ * Makanya dijaga lewat KV (env.SESSIONS) dengan kunci per sekolah PER HARI -
+ * begitu batch pengingat ini sukses terkirim SEKALI untuk sekolah & tanggal
+ * tertentu, ditandai dan tidak akan dikirim ulang lagi hari itu, walau ada
+ * puluhan guru lain yang menyusul pulang setelahnya. Penanda ditulis SEBELUM
+ * proses kirim selesai (bukan sesudah) supaya 2 guru yang pulang nyaris
+ * bersamaan tidak sama-sama lolos memicu pengiriman ganda.
+ *
+ * Guru yang diingatkan: yang hari ini Hadir/Terlambat (hadir fisik) TAPI
+ * belum Absen Pulang, dan/atau belum tercatat Sholat Dzuhur, dan/atau belum
+ * Sholat Ashar - pesannya menyesuaikan persis kombinasi apa saja yang masih
+ * kurang dari orang itu (tidak menyebut yang sudah beres).
+ */
+async function trigerPengingatPulangOportunistik(env, sekolahId) {
+  try {
+    const { dateStr } = nowJakarta();
+    const kunciSudahKirim = `PENGINGAT_PULANG_TERKIRIM_${sekolahId}_${dateStr}`;
+    if (await env.SESSIONS.get(kunciSudahKirim)) return; // sudah pernah dikirim hari ini untuk sekolah ini
+
+    // Ditandai SEKARANG (sebelum proses kirim benar-benar selesai) - jaga-jaga
+    // 2 guru pulang nyaris bersamaan, supaya cuma 1 yang lolos memicu kirim.
+    await env.SESSIONS.put(kunciSudahKirim, '1', { expirationTtl: 43200 }); // 12 jam cukup, besok reset sendiri lewat tanggal yang beda di kunci
+
+    const [users, absenHariIni, sholatDzuhurHariIni, sholatAsharHariIni] = await Promise.all([
+      getUsersListCached(env, sekolahId),
+      sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`),
+      sbSelect(env, 'kegiatan_umum', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}&jenis_kegiatan=eq.SHOLAT_DZUHUR`),
+      sbSelect(env, 'kegiatan_umum', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}&jenis_kegiatan=eq.SHOLAT_ASHAR`)
+    ]);
+
+    const absenMasukMap = {};
+    absenHariIni.forEach((r) => { absenMasukMap[String(r.nuptk).trim()] = r; });
+    const sudahDzuhurSet = new Set(sholatDzuhurHariIni.map((r) => String(r.nuptk).trim()));
+    const sudahAsharSet = new Set(sholatAsharHariIni.map((r) => String(r.nuptk).trim()));
+
+    let jumlahDikirim = 0;
+    for (const u of users) {
+      const uRole = String(u.role).trim(), uStatus = String(u.status).trim(), nuptk = String(u.nuptk).trim();
+      if (!['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(uRole) || uStatus !== 'Aktif' || !u.fcm_token) continue;
+
+      const rowMasuk = absenMasukMap[nuptk];
+      // Cuma relevan untuk yang memang hadir fisik hari ini - yang Sakit/Izin/
+      // Tugas Dinas/Tanpa Keterangan/belum absen sama sekali tidak perlu (dan
+      // tidak masuk akal) diingatkan soal pulang/sholat di sekolah.
+      if (!rowMasuk || !['Hadir', 'Terlambat'].includes(String(rowMasuk.status).trim())) continue;
+
+      const kurang = [];
+      if (!sudahDzuhurSet.has(nuptk)) kurang.push('Sholat Dzuhur');
+      if (!sudahAsharSet.has(nuptk)) kurang.push('Sholat Ashar');
+      if (!rowMasuk.jam_pulang) kurang.push('Absen Pulang');
+      if (kurang.length === 0) continue; // sudah lengkap semua, tidak perlu diingatkan
+
+      try {
+        const hasil = await kirimNotifikasiKeSatuHP(env, u.fcm_token, 'Pengingat Sore 🔔',
+          `Halo ${u.nama}, jangan lupa absen: ${kurang.join(', ')} sebelum meninggalkan sekolah ya!`);
+        if (hasil.success) {
+          jumlahDikirim++;
+        } else if (hasil.tokenTidakValid) {
+          await sbUpdate(env, 'users', 'nuptk', nuptk, { fcm_token: null });
+        }
+      } catch (err) {
+        console.error(`[trigerPengingatPulangOportunistik] Gagal kirim ke ${u.nama}:`, err.message);
+      }
+    }
+    console.log(`[trigerPengingatPulangOportunistik] ${sekolahId}: ${jumlahDikirim} pengingat terkirim.`);
+  } catch (err) {
+    console.error(`[trigerPengingatPulangOportunistik] Gagal (sekolah ${sekolahId}):`, err.message);
   }
 }
 
