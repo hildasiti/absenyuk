@@ -1205,6 +1205,23 @@ async function getRiwayatAktivitas(args, env) {
       status: r.status, keterangan: r.keterangan,
       urut: `${r.tanggal} ${jam}`
     });
+
+    // Absen Pulang BELUM PERNAH punya entri Riwayat Aktivitas sendiri sebelum
+    // ini - baris absen_masuk yang sama dipakai untuk masuk MAUPUN pulang
+    // (1 baris per hari, kolom jam_pulang diisi belakangan lewat UPDATE, lihat
+    // saveAbsenPulang()), jadi tanpa ini pulangnya guru tidak pernah muncul di
+    // sini sama sekali. Dikecualikan kalau jam_pulang = '--:--' - itu bukan
+    // aktivitas guru sungguhan, melainkan tanda "Tidak Absen Pulang" yang
+    // ditandai OTOMATIS oleh cron (lihat prosesAutoTidakAbsenPulangSatuSekolah()).
+    if (r.jam_pulang && r.jam_pulang !== '--:--') {
+      gabungan.push({
+        jenis: 'Absen Pulang', icon: 'bi-door-closed-fill', warna: 'info',
+        tanggal: r.tanggal, jam: r.jam_pulang,
+        nuptk: r.nuptk, nama: r.nama, sekolahId: r.sekolah_id, sekolahNama: namaSekolahMap[r.sekolah_id] || '',
+        status: r.status, keterangan: r.keterangan,
+        urut: `${r.tanggal} ${r.jam_pulang}`
+      });
+    }
   });
   rowsKegiatan.forEach((r) => {
     const jam = jamWibDariTimestamp(r.timestamp);
@@ -2373,7 +2390,7 @@ async function trigerPengingatPulangOportunistik(env, sekolahId) {
 
       try {
         const hasil = await kirimNotifikasiKeSatuHP(env, u.fcm_token, 'Pengingat Sore 🔔',
-          `Halo ${u.nama}, jangan lupa absen: ${kurang.join(', ')} sebelum meninggalkan sekolah ya!`);
+          `Halo ${u.nama}, jangan lupa: ${kurang.join(', ')} sebelum meninggalkan sekolah ya!`);
         if (hasil.success) {
           jumlahDikirim++;
         } else if (hasil.tokenTidakValid) {

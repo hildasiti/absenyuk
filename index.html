@@ -2657,7 +2657,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const thSekolah = document.getElementById('th-riwayat-sekolah');
     if (thSekolah) thSekolah.style.display = tampilkanSemuaSekolah ? '' : 'none';
 
-    const warnaBadge = { primary: 'primary', success: 'success', warning: 'warning' };
+    const warnaBadge = { primary: 'primary', success: 'success', warning: 'warning', info: 'info', danger: 'danger', secondary: 'secondary' };
 
     function renderBaris(r, sertakanSekolah) {
       const w = warnaBadge[r.warna] || 'secondary';
