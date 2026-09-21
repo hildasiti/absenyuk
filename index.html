@@ -3546,11 +3546,22 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }).saveUser(SESSION_TOKEN, data);
   }
 
+  // Cache daftar guru terakhir yang dimuat loadGuruList(), dipakai
+  // bukaModalEditGuru()/hapusGuru() lewat INDEX saja (bukan JSON.stringify(guru)
+  // atau nama guru mentah ditaruh langsung di atribut onclick). Kalau data guru
+  // (terutama "nama") ditaruh langsung di onclick='...' atau onclick="...", satu
+  // tanda kutip di dalam nama (mis. "In'am") akan menutup atribut/string JS lebih
+  // awal -> HTML rusak -> "Uncaught SyntaxError: Invalid or unexpected token" di
+  // console, dan tombol Edit/Hapus jadi tidak berfungsi sama sekali untuk guru
+  // itu. Index array selalu berupa angka polos, jadi aman dari masalah ini.
+  let GURU_LIST_CACHE = [];
+
   function loadGuruList() {
     const tbody = document.getElementById('tbody-guru');
     tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm" role="status"></div><br>Mengambil data...</td></tr>';
     google.script.run.withSuccessHandler(res => {
         let html = '';
+        GURU_LIST_CACHE = res || [];
         if(res.length === 0) {
             html = '<tr><td colspan="6" class="text-center text-muted py-3">Belum ada data guru.</td></tr>';
         } else {
@@ -3565,11 +3576,11 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
                     <td class="text-center"><span class="badge bg-secondary">${guru.role.replace('_', ' ')}</span></td>
                     <td class="text-center"><span class="badge ${statusBadge}">${guru.status}</span></td>
                     <td class="text-center">
-                        <button class="btn btn-sm btn-outline-primary shadow-sm me-1" onclick='bukaModalEditGuru(${JSON.stringify(guru)})'>
+                        <button class="btn btn-sm btn-outline-primary shadow-sm me-1" onclick='bukaModalEditGuru(${index})'>
                             <i class="bi bi-pencil-square"></i> Edit
                         </button>
                         ${isAdminRow && USER_DATA.role !== 'ADMIN_UTAMA' ? '' : `
-                        <button class="btn btn-sm btn-danger shadow-sm" onclick="hapusGuru('${guru.nuptk}', '${guru.nama}')">
+                        <button class="btn btn-sm btn-danger shadow-sm" onclick="hapusGuru(${index})">
                             <i class="bi bi-trash"></i> Hapus
                         </button>`}
                     </td>
@@ -3581,7 +3592,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }).getUsers(SESSION_TOKEN);
   }
 
-  function bukaModalEditGuru(guru) {
+  function bukaModalEditGuru(index) {
+    const guru = GURU_LIST_CACHE[index];
+    if (!guru) return;
     const bisaUbahRoleAdmin = USER_DATA.role === 'ADMIN_UTAMA';
     Swal.fire({
       title: 'Edit Data: ' + guru.nama,
@@ -3672,10 +3685,12 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     });
   }
 
-  function hapusGuru(rowNumber, namaGuru) {
+  function hapusGuru(index) {
+    const guru = GURU_LIST_CACHE[index];
+    if (!guru) return;
     Swal.fire({
         title: 'Hapus Guru?',
-        text: `Hapus akun "${namaGuru}"?`,
+        text: `Hapus akun "${guru.nama}"?`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#dc3545',
@@ -3689,7 +3704,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
                 } else {
                     Swal.fire('Gagal', res.message, 'error');
                 }
-            }).deleteUser(SESSION_TOKEN, rowNumber);
+            }).deleteUser(SESSION_TOKEN, guru.nuptk);
         }
     });
   }
