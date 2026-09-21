@@ -462,6 +462,24 @@ async function saveAbsenPulang(args, env) {
   return { success: true, message: `Absen Pulang berhasil disimpan pada pukul ${timeStr} WIB. Hati-hati di jalan, sampai jumpa besok!` };
 }
 
+/**
+ * Dulu cuma query langsung ke tabel absen_masuk - jadi kalau auto-absen "Tanpa
+ * Keterangan" gagal jalan untuk seorang guru (lihat prosesAutoAlpaSatuSekolah:
+ * bisa gagal karena error Supabase, limit subrequest Worker, dll), guru itu
+ * TIDAK PUNYA BARIS SAMA SEKALI untuk tanggal itu, sehingga tidak pernah muncul
+ * di sini - admin terpaksa buka Supabase manual untuk menambahkan barisnya.
+ *
+ * Sekarang mulai dari ROSTER staf aktif sekolah (kriteria kelayakan SAMA
+ * PERSIS seperti prosesAutoAlpaSatuSekolah: role GURU/KEPALA_SEKOLAH/PIKET/
+ * ADMIN_SEKOLAH + status Aktif), lalu digabung dengan baris absen_masuk yang
+ * memang sudah ada. Guru yang TIDAK punya baris (dan sedang TIDAK cuti/sakit -
+ * guru cuti seharusnya sudah dapat baris asli lewat backfill saveCutiGuru,
+ * ini cuma jaring pengaman kalau backfill itu kebetulan gagal) ditampilkan
+ * sebagai baris "placeholder" dengan docId null, status default 'Tanpa
+ * Keterangan', dan flag belumAdaData - updateAbsenMasuk() akan INSERT baris
+ * baru (bukan UPDATE) kalau docId dikirim kosong. Baris placeholder ditaruh
+ * PALING ATAS hasil supaya langsung kelihatan admin tanpa perlu scroll/cari.
+ */
 async function getAbsenMasukUntukEdit(args, env) {
   const [token, tanggal, filterNuptk, requestedSekolahId] = args;
   const user = await requireUser(env, token);
@@ -469,24 +487,84 @@ async function getAbsenMasukUntukEdit(args, env) {
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const dateStr = tanggal || nowJakarta().dateStr;
-  const rows = await sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`);
-  const filterTarget = String(filterNuptk || 'ALL').trim();
+  const [users, rows, guruCutiMap] = await Promise.all([
+    getUsersListCached(env, sekolahId),
+    sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`),
+    getGuruCutiAktifHariIni(env, sekolahId, dateStr)
+  ]);
 
-  return rows
+  const rowByNuptk = {};
+  rows.forEach((r) => { rowByNuptk[String(r.nuptk).trim()] = r; });
+
+  const hasil = [];
+  users.forEach((u) => {
+    const userRole = String(u.role).trim(), userStatus = String(u.status).trim(), nuptk = String(u.nuptk).trim();
+    if (!['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(userRole) || userStatus !== 'Aktif') return;
+
+    const existing = rowByNuptk[nuptk];
+    if (existing) {
+      hasil.push({
+        docId: existing.id, nuptk: existing.nuptk, nama: existing.nama, tanggal: existing.tanggal,
+        jam: existing.jam, status: existing.status, keterangan: existing.keterangan, belumAdaData: false
+      });
+    } else if (!guruCutiMap[nuptk]) {
+      hasil.push({
+        docId: null, nuptk, nama: u.nama, tanggal: dateStr, jam: null, status: 'Tanpa Keterangan',
+        keterangan: 'Belum ada data absen (auto-absen kemungkinan gagal) - isi manual di sini.', belumAdaData: true
+      });
+    }
+  });
+
+  const filterTarget = String(filterNuptk || 'ALL').trim();
+  return hasil
     .filter((r) => filterTarget === 'ALL' || String(r.nuptk).trim() === filterTarget)
-    .sort((a, b) => String(a.jam).localeCompare(String(b.jam)))
-    .map((r) => ({ docId: r.id, nuptk: r.nuptk, nama: r.nama, tanggal: r.tanggal, jam: r.jam, status: r.status, keterangan: r.keterangan }));
+    .sort((a, b) => {
+      if (a.belumAdaData !== b.belumAdaData) return a.belumAdaData ? -1 : 1;
+      return String(a.jam).localeCompare(String(b.jam));
+    });
 }
 
 async function updateAbsenMasuk(args, env) {
-  const [token, docId, jamBaru, statusBaru, keteranganBaru] = args;
+  const [token, docId, jamBaru, statusBaru, keteranganBaru, nuptkBaru, tanggalBaru] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak. Hanya Admin yang bisa mengubah data absen.' };
-  if (!docId) return { success: false, message: 'Data absen tidak ditemukan (docId kosong).' };
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(jamBaru).trim())) {
     return { success: false, message: 'Format jam tidak valid. Gunakan format HH:mm, contoh 07:15.' };
   }
   if (!STATUS_ABSEN_VALID.includes(statusBaru)) return { success: false, message: 'Status tidak dikenal: ' + statusBaru };
+
+  // docId kosong = baris placeholder dari getAbsenMasukUntukEdit() (guru belum
+  // punya baris sama sekali untuk tanggal ini) - INSERT baru, bukan UPDATE.
+  // nuptkBaru/tanggalBaru WAJIB dikirim frontend di kasus ini karena tidak ada
+  // baris existing untuk diambil datanya.
+  if (!docId) {
+    if (!nuptkBaru || !tanggalBaru) {
+      return { success: false, message: 'Data guru/tanggal tidak lengkap untuk membuat baris absen baru.' };
+    }
+    const staf = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(nuptkBaru)}&limit=1`);
+    const target = staf[0];
+    if (!target) return { success: false, message: 'Data guru tidak ditemukan.' };
+    if (user.role === 'ADMIN_SEKOLAH' && target.sekolah_id !== user.sekolahId) {
+      return { success: false, message: 'Akses ditolak. Guru ini bukan dari sekolah Anda.' };
+    }
+
+    // Cek dulu barangkali barisnya keburu dibuat sistem (mis. auto-absen jalan
+    // tepat di detik yang sama saat admin sedang membuka modal ini) - hindari
+    // duplicate key, sekalian update kalau ternyata sudah ada.
+    const sudahAda = await sbSelect(env, 'absen_masuk',
+      `sekolah_id=eq.${target.sekolah_id}&tanggal=eq.${tanggalBaru}&nuptk=eq.${encodeURIComponent(nuptkBaru)}&limit=1`);
+    if (sudahAda.length) {
+      await sbUpdate(env, 'absen_masuk', 'id', sudahAda[0].id, { jam: String(jamBaru).trim(), status: statusBaru, keterangan: keteranganBaru || '-' });
+    } else {
+      await sbInsert(env, 'absen_masuk', {
+        id: generateShortID('AE'), sekolah_id: target.sekolah_id, tanggal: tanggalBaru, nuptk: nuptkBaru, nama: target.nama,
+        jam: String(jamBaru).trim(), latitude: null, longitude: null, jarak: null,
+        status: statusBaru, keterangan: keteranganBaru || '-', maps_link: '-'
+      });
+    }
+    await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${target.sekolah_id}`);
+    return { success: true, message: `Data absen ${target.nama} tanggal ${tanggalBaru} berhasil dibuat.` };
+  }
 
   const rows = await sbSelect(env, 'absen_masuk', `id=eq.${encodeURIComponent(docId)}&limit=1`);
   const existing = rows[0];

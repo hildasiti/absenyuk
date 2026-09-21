@@ -3662,7 +3662,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         const konfirmasi = await Swal.fire({
           icon: 'warning',
           title: 'Ganti Password?',
-          html: `Password untuk <strong>${guru.nama}</strong> akan diganti. Guru ini harus login pakai password BARU setelah ini.<br><br>Kalau Abang tidak sengaja mengisi kolom password tadi (mis. terisi otomatis oleh browser), klik <strong>Batal</strong> - data lain tetap tersimpan tanpa mengubah password.`,
+          html: `Password untuk <strong>${guru.nama}</strong> akan diganti. Guru ini harus login pakai password BARU setelah ini.<br>`,
           showCancelButton: true,
           confirmButtonText: 'Ya, Ganti Password',
           cancelButtonText: 'Batal, Jangan Ganti Password',
@@ -3779,15 +3779,22 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       let html = '';
       _editAbsenRows = res;
       res.forEach((row, idx) => {
+        // belumAdaData: guru ini belum punya baris SAMA SEKALI di database untuk
+        // tanggal ini (kemungkinan besar auto-absen "Tanpa Keterangan" gagal jalan) -
+        // ditandai baris kuning + label khusus, supaya admin langsung sadar dan bisa
+        // isi manual di sini tanpa perlu buka Supabase.
         html += `
-          <tr>
+          <tr${row.belumAdaData ? ' class="table-warning"' : ''}>
             <td class="fw-bold">${row.nama}</td>
             <td>${row.jam || '-'}</td>
-            <td><span class="badge bg-secondary">${row.status}</span></td>
+            <td>
+              <span class="badge bg-secondary">${row.status}</span>
+              ${row.belumAdaData ? '<span class="badge bg-warning text-dark ms-1">Belum Ada Data</span>' : ''}
+            </td>
             <td>${row.keterangan || '-'}</td>
             <td>
               <button class="btn btn-sm btn-outline-primary" onclick='bukaEditAbsenModal(${idx})'>
-                <i class="bi bi-pencil-fill"></i> Edit
+                <i class="bi bi-pencil-fill"></i> ${row.belumAdaData ? 'Isi' : 'Edit'}
               </button>
             </td>
           </tr>
@@ -3814,8 +3821,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     let optionsHtml = statusOptions.map(s => `<option value="${s}" ${s === row.status ? 'selected' : ''}>${labelStatusOptions[s] || s}</option>`).join('');
 
     Swal.fire({
-      title: `Edit Absen: ${escAttr(row.nama)}`,
+      title: row.belumAdaData ? `Isi Data Absen Baru: ${escAttr(row.nama)}` : `Edit Absen: ${escAttr(row.nama)}`,
       html: `
+        ${row.belumAdaData ? '<div class="alert alert-warning py-2 small text-start">Guru ini belum punya data absen sama sekali untuk tanggal ini. Isi jam &amp; status di bawah untuk membuat datanya.</div>' : ''}
         <div class="text-start">
           <label class="form-label small fw-bold mb-1">Tanggal</label>
           <input class="form-control mb-2" value="${row.tanggal}" disabled>
@@ -3859,7 +3867,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         }
       }).withFailureHandler(err => {
         Swal.fire('Gagal', 'Terjadi kesalahan: ' + err.message, 'error');
-      }).updateAbsenMasuk(SESSION_TOKEN, row.docId, jam, status, keterangan);
+      }).updateAbsenMasuk(SESSION_TOKEN, row.docId, jam, status, keterangan, row.nuptk, row.tanggal);
     });
   }
 
