@@ -1019,7 +1019,7 @@ async function getDashboardCharts(args, env) {
     getSettingsMap(env, sekolahId),
     sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${tujuhHariLaluStr}&tanggal=lte.${todayStr}`),
     sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${periodeStartStr}&tanggal=lte.${periodeEndEfektifStr}`),
-    sbSelect(env, 'kegiatan_umum', `sekolah_id=eq.${sekolahId}&tanggal=gte.${tujuhHariLaluStr}&tanggal=lte.${todayStr}&jenis_kegiatan=in.(PENDAMPINGAN_DHUHA,SHOLAT_DZUHUR,SHOLAT_ASHAR)`)
+    sbSelect(env, 'kegiatan_umum', `sekolah_id=eq.${sekolahId}&tanggal=gte.${tujuhHariLaluStr}&tanggal=lte.${todayStr}&jenis_kegiatan=in.(BRIEFING_TAWASUL,SHOLAT_DZUHUR,SHOLAT_ASHAR)`)
   ]);
 
   const totalStafAktif = users.filter((u) =>
@@ -1076,17 +1076,24 @@ async function getDashboardCharts(args, env) {
   });
   const distribusiJam = Object.keys(bucketJam).sort().map((label) => ({ label, jumlah: bucketJam[label] }));
 
-  // --- 4) KEPATUHAN KEGIATAN RUTIN MINGGUAN (Dhuha/Dzuhur/Ashar) ---
+  // --- 4) KEPATUHAN KEGIATAN RUTIN MINGGUAN (Briefing & Tawasul/Dzuhur/Ashar) ---
+  // Dhuha SENGAJA tidak dipakai di sini - jadwalnya beda-beda per guru (bukan
+  // satu waktu bersama seperti sholat), jadi tidak relevan dijadikan metrik
+  // kepatuhan bersama. Briefing & Tawasul dipakai sebagai gantinya karena
+  // sifatnya wajib sama seperti Dzuhur/Ashar - datanya diambil dari
+  // kegiatan_umum jenis BRIEFING_TAWASUL, yang otomatis tercatat saat guru
+  // pilih "Hadir & Tawasul" di Absen Masuk (lihat saveAbsenMasuk, ikutTawasul).
+  //
   // Penyebutnya SENGAJA seluruh staf aktif x hari kerja (bukan cuma yang lapor) -
   // guru yang tidak pernah lapor sama sekali (mis. lupa) HARUS ikut menurunkan
   // persentase, bukan hilang begitu saja seperti masalah di getAbsenMasukUntukEdit
   // sebelum diperbaiki - di sini justru itu yang diinginkan (metrik kepatuhan).
   const JENIS_KEGIATAN_RUTIN = [
-    { key: 'PENDAMPINGAN_DHUHA', label: 'Dhuha' },
+    { key: 'BRIEFING_TAWASUL', label: 'Briefing & Tawasul' },
     { key: 'SHOLAT_DZUHUR', label: 'Dzuhur' },
     { key: 'SHOLAT_ASHAR', label: 'Ashar' }
   ];
-  const kepatuhanCount = { PENDAMPINGAN_DHUHA: 0, SHOLAT_DZUHUR: 0, SHOLAT_ASHAR: 0 };
+  const kepatuhanCount = { BRIEFING_TAWASUL: 0, SHOLAT_DZUHUR: 0, SHOLAT_ASHAR: 0 };
   rowsKegiatanMingguan.forEach((r) => {
     if (String(r.status).trim() === 'Hadir' && kepatuhanCount.hasOwnProperty(r.jenis_kegiatan)) {
       kepatuhanCount[r.jenis_kegiatan]++;
