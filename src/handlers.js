@@ -984,6 +984,131 @@ async function getDashboardData(args, env) {
   return data;
 }
 
+/**
+ * Data untuk 4 chart di Admin Panel: tren kehadiran mingguan, ranking guru
+ * paling sering telat/alpa (periode payroll berjalan), distribusi jam
+ * datang, dan kepatuhan kegiatan rutin (Dhuha/Dzuhur/Ashar) mingguan.
+ * Sengaja dipisah dari getDashboardData() karena rentang tanggalnya SELALU
+ * tetap (7 hari terakhir / periode payroll berjalan) - tidak ikut filter
+ * tanggal kartu status di atasnya, jadi lebih jelas kalau independen.
+ */
+async function getDashboardCharts(args, env) {
+  const [token, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!user || (!isAdminAny(user) && !isRole(user, 'PIKET', 'KEPALA_SEKOLAH'))) return null;
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+
+  const { dateStr: todayStr } = nowJakarta();
+  const today = new Date(todayStr);
+
+  // 7 hari terakhir (termasuk hari ini).
+  const tujuhHariLaluObj = new Date(today);
+  tujuhHariLaluObj.setUTCDate(today.getUTCDate() - 6);
+  const tujuhHariLaluStr = toDateStr(tujuhHariLaluObj);
+
+  // Periode payroll berjalan (21 - 20), dipotong sampai HARI INI saja
+  // (jangan sampai tanggal-tanggal masa depan yang belum ada datanya ikut
+  // dihitung sebagai "0 kejadian" yang menyesatkan).
+  const periode = getPeriodeBerjalan();
+  const periodeStartStr = toDateStr(periode.start);
+  const periodeEndStrFull = toDateStr(periode.end);
+  const periodeEndEfektifStr = todayStr < periodeEndStrFull ? todayStr : periodeEndStrFull;
+
+  const [users, settingsChart, rowsMingguan, rowsPeriode, rowsKegiatanMingguan] = await Promise.all([
+    getUsersListCached(env, sekolahId),
+    getSettingsMap(env, sekolahId),
+    sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${tujuhHariLaluStr}&tanggal=lte.${todayStr}`),
+    sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${periodeStartStr}&tanggal=lte.${periodeEndEfektifStr}`),
+    sbSelect(env, 'kegiatan_umum', `sekolah_id=eq.${sekolahId}&tanggal=gte.${tujuhHariLaluStr}&tanggal=lte.${todayStr}&jenis_kegiatan=in.(PENDAMPINGAN_DHUHA,SHOLAT_DZUHUR,SHOLAT_ASHAR)`)
+  ]);
+
+  const totalStafAktif = users.filter((u) =>
+    ['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif'
+  ).length;
+
+  // --- 1) TREN KEHADIRAN MINGGUAN: per tanggal -> jumlah Hadir/Terlambat/Tanpa Keterangan ---
+  const NAMA_HARI_SINGKAT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+  const trenMap = {};
+  const urutanTanggal = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(tujuhHariLaluObj);
+    d.setUTCDate(tujuhHariLaluObj.getUTCDate() + i);
+    const ds = toDateStr(d);
+    urutanTanggal.push(ds);
+    trenMap[ds] = { tanggal: ds, label: NAMA_HARI_SINGKAT[d.getUTCDay()] + ' ' + d.getUTCDate(), hadir: 0, terlambat: 0, alpa: 0 };
+  }
+  rowsMingguan.forEach((r) => {
+    const bucket = trenMap[r.tanggal];
+    if (!bucket) return;
+    const st = String(r.status).trim();
+    if (st === 'Hadir') bucket.hadir++;
+    else if (st === 'Terlambat') bucket.terlambat++;
+    else if (st === 'Tanpa Keterangan') bucket.alpa++;
+  });
+  const trenMingguan = urutanTanggal.map((ds) => trenMap[ds]);
+
+  // --- 2) RANKING GURU PALING SERING TELAT/ALPA (periode payroll berjalan) ---
+  const rankMap = {};
+  rowsPeriode.forEach((r) => {
+    const st = String(r.status).trim();
+    if (st !== 'Terlambat' && st !== 'Tanpa Keterangan') return;
+    const nuptk = String(r.nuptk).trim();
+    if (!rankMap[nuptk]) rankMap[nuptk] = { nuptk, nama: r.nama || nuptk, terlambat: 0, alpa: 0 };
+    if (st === 'Terlambat') rankMap[nuptk].terlambat++; else rankMap[nuptk].alpa++;
+  });
+  const rankingTelatAlpa = Object.values(rankMap)
+    .map((r) => ({ ...r, total: r.terlambat + r.alpa }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 8);
+
+  // --- 3) DISTRIBUSI JAM DATANG (bucket 30 menit) - dari jam masuk NYATA saja
+  // (status Hadir/Terlambat, bukan Sakit/Izin/dst yang jam-nya bukan representasi
+  // jam datang fisik), diambil dari periode payroll berjalan biar datanya cukup banyak.
+  const bucketJam = {};
+  rowsPeriode.forEach((r) => {
+    const st = String(r.status).trim();
+    if (st !== 'Hadir' && st !== 'Terlambat') return;
+    const m = String(r.jam || '').trim().match(/^(\d{2}):(\d{2})/);
+    if (!m) return;
+    const menitBucket = parseInt(m[2], 10) < 30 ? '00' : '30';
+    const label = m[1] + ':' + menitBucket;
+    bucketJam[label] = (bucketJam[label] || 0) + 1;
+  });
+  const distribusiJam = Object.keys(bucketJam).sort().map((label) => ({ label, jumlah: bucketJam[label] }));
+
+  // --- 4) KEPATUHAN KEGIATAN RUTIN MINGGUAN (Dhuha/Dzuhur/Ashar) ---
+  // Penyebutnya SENGAJA seluruh staf aktif x hari kerja (bukan cuma yang lapor) -
+  // guru yang tidak pernah lapor sama sekali (mis. lupa) HARUS ikut menurunkan
+  // persentase, bukan hilang begitu saja seperti masalah di getAbsenMasukUntukEdit
+  // sebelum diperbaiki - di sini justru itu yang diinginkan (metrik kepatuhan).
+  const JENIS_KEGIATAN_RUTIN = [
+    { key: 'PENDAMPINGAN_DHUHA', label: 'Dhuha' },
+    { key: 'SHOLAT_DZUHUR', label: 'Dzuhur' },
+    { key: 'SHOLAT_ASHAR', label: 'Ashar' }
+  ];
+  const kepatuhanCount = { PENDAMPINGAN_DHUHA: 0, SHOLAT_DZUHUR: 0, SHOLAT_ASHAR: 0 };
+  rowsKegiatanMingguan.forEach((r) => {
+    if (String(r.status).trim() === 'Hadir' && kepatuhanCount.hasOwnProperty(r.jenis_kegiatan)) {
+      kepatuhanCount[r.jenis_kegiatan]++;
+    }
+  });
+  let hariKerjaDalamSeminggu = 0;
+  for (const ds of urutanTanggal) {
+    const dow = new Date(ds).getUTCDay();
+    if (isHariLiburMingguan(settingsChart, dow)) continue;
+    const libur = await checkApakahHariLibur(env, sekolahId, ds);
+    if (libur) continue;
+    hariKerjaDalamSeminggu++;
+  }
+  const penyebutKepatuhan = Math.max(1, totalStafAktif * hariKerjaDalamSeminggu);
+  const kepatuhanKegiatan = JENIS_KEGIATAN_RUTIN.map((j) => ({
+    label: j.label,
+    persen: Math.round((kepatuhanCount[j.key] / penyebutKepatuhan) * 100)
+  }));
+
+  return { trenMingguan, rankingTelatAlpa, distribusiJam, kepatuhanKegiatan };
+}
+
 // ====================================================================
 // SETTINGS
 // ====================================================================
@@ -2854,6 +2979,7 @@ export const handlers = {
   saveAbsenMasuk,
   getStatusAbsenHariIni,
   saveAbsenPulang,
+  getDashboardCharts,
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
   checkSudahAbsenKegiatan,

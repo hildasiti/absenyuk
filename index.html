@@ -505,17 +505,24 @@
         <div id='menu-admin' style='display: none;'>
           <hr class='menu-section-divider'/>
           <p class='menu-section-label'>Menu Admin</p>
+
           <a class='menu-btn' href='#' id='sub-dashboard-admin' onclick='switchView(&apos;dashboard-admin&apos;)'><i class='bi bi-speedometer2 me-2'></i> Admin Panel</a>
-          <a class='menu-btn' href='#' id='sub-notifikasi' onclick='switchView(&apos;kirim-notifikasi&apos;)'><i class='bi bi-bell-fill me-2'></i> Kirim Notifikasi</a>
-          <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'></i> Kalender Libur</a>
-          <a class='menu-btn' href='#' id='sub-cuti-guru' onclick='switchView(&apos;cuti-guru&apos;)'><i class='bi bi-person-x-fill me-2'></i> Cuti / Sakit Guru</a>
-          <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'></i> Kelola Kegiatan Khusus</a>
-          <a class='menu-btn' href='#' id='sub-data-guru' onclick='switchView(&apos;data-guru&apos;)'><i class='bi bi-people me-2'></i> Data Guru</a>
+
+          <p class='menu-section-label' style='font-size: 0.68rem; opacity: 0.7; margin-top: 0.5rem;'>Operasional Harian</p>
           <a class='menu-btn' href='#' id='sub-jam-pelajaran' onclick='switchView(&apos;rekap-jam-pelajaran&apos;)'><i class='bi bi-journal-x me-2'></i> Rekap Jam Pelajaran</a>
-          <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'></i> Laporan</a>
           <a class='menu-btn' href='#' id='sub-edit-absen' onclick='switchView(&apos;edit-absen&apos;)'><i class='bi bi-pencil-square me-2'></i> Edit Absen Masuk</a>
+          <a class='menu-btn' href='#' id='sub-cuti-guru' onclick='switchView(&apos;cuti-guru&apos;)'><i class='bi bi-person-x-fill me-2'></i> Cuti / Sakit Guru</a>
+
+          <p class='menu-section-label' style='font-size: 0.68rem; opacity: 0.7; margin-top: 0.5rem;'>Laporan &amp; Payroll (Periodik)</p>
+          <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'></i> Laporan</a>
           <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'></i> Rekap Payroll</a>
           <a class='menu-btn' href='#' id='sub-nilai-guru' onclick='switchView(&apos;nilai-guru&apos;)'><i class='bi bi-star-fill me-2'></i> Nilai Guru</a>
+
+          <p class='menu-section-label' style='font-size: 0.68rem; opacity: 0.7; margin-top: 0.5rem;'>Manajemen &amp; Setup</p>
+          <a class='menu-btn' href='#' id='sub-data-guru' onclick='switchView(&apos;data-guru&apos;)'><i class='bi bi-people me-2'></i> Data Guru</a>
+          <a class='menu-btn' href='#' id='sub-kalender-libur' onclick='switchView(&apos;kalender-libur&apos;)'><i class='bi bi-calendar-x-fill me-2'></i> Kalender Libur</a>
+          <a class='menu-btn' href='#' id='sub-kelola-kegiatan' onclick='switchView(&apos;kelola-kegiatan&apos;)'><i class='bi bi-card-checklist me-2'></i> Kelola Kegiatan Khusus</a>
+          <a class='menu-btn' href='#' id='sub-notifikasi' onclick='switchView(&apos;kirim-notifikasi&apos;)'><i class='bi bi-bell-fill me-2'></i> Kirim Notifikasi</a>
           <a class='menu-btn' href='#' id='sub-pengaturan' onclick='switchView(&apos;pengaturan&apos;)'><i class='bi bi-gear me-2'></i> Pengaturan</a>
         </div>
       </div>
@@ -821,57 +828,89 @@
     </div>
   </div>
 
-  <!-- BARIS ATAS: Kartu Guru Aktif berdampingan dengan Grafik (masing-masing col-6) -->
-  <div class='row g-2 mb-3'>
-    <div class='col-6'>
-      <div class='card card-stat p-3 text-center bg-white shadow-sm h-100' style='border-left: 5px solid var(--primary-color) !important;'>
-        <h2 class='fw-bold mb-1 text-dark' id='ad-total'>0</h2>
-        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.75rem; letter-spacing: 0.5px;'>Total Pendidik &amp; Tenaga Kependidikan Aktif</small>
-      </div>
-    </div>
-    <div class='col-6'>
-      <div class='card p-2 shadow-sm h-100 d-flex align-items-center justify-content-center'>
-        <canvas height='100' id='adminChart'></canvas>
+  <!-- Total staf aktif - strip tipis sendirian (pie chart yang dulu di sampingnya
+       sudah dibuang, digantikan 4 chart tren/ranking/distribusi/kepatuhan di bawah,
+       yang jauh lebih informatif daripada breakdown status sesaat). -->
+  <div class='row g-2 mb-2'>
+    <div class='col-12'>
+      <div class='card card-stat p-2 text-center bg-white shadow-sm d-flex flex-row align-items-center justify-content-center gap-2' style='border-left: 5px solid var(--primary-color) !important;'>
+        <h4 class='fw-bold mb-0 text-dark' id='ad-total'>0</h4>
+        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.72rem; letter-spacing: 0.5px;'>Total Pendidik &amp; Tenaga Kependidikan Aktif</small>
       </div>
     </div>
   </div>
 
-  <!-- BARIS BAWAH: 6 Kartu Status Kehadiran Hari Ini (Simetris 3 Kolom di HP / 6 Kolom di Desktop) -->
+  <!-- 6 Kartu Status Kehadiran (periode/rentang sesuai filter) - dibuat lebih kecil
+       (p-2, h5, label lebih ringkas) supaya lebih banyak ruang untuk chart di bawah. -->
+  <div class='row g-2 mb-3'>
+    <div class='col-4 col-md-2'>
+      <div class='card card-stat p-2 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Hadir&apos;)' style='border-left: 4px solid #198754 !important;'>
+        <h5 class='fw-bold mb-0 text-success' id='ad-hadir'>0</h5>
+        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.62rem; letter-spacing: 0.2px;'>Hadir</small>
+      </div>
+    </div>
+    <div class='col-4 col-md-2'>
+      <div class='card card-stat p-2 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Terlambat&apos;)' style='border-left: 4px solid #ffc107 !important;'>
+        <h5 class='fw-bold mb-0 text-warning' id='ad-telat'>0</h5>
+        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.62rem; letter-spacing: 0.2px;'>Terlambat</small>
+      </div>
+    </div>
+    <div class='col-4 col-md-2'>
+      <div class='card card-stat p-2 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Tugas Luar&apos;)' style='border-left: 4px solid #0d6efd !important;'>
+        <h5 class='fw-bold mb-0 text-primary' id='ad-tugas'>0</h5>
+        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.62rem; letter-spacing: 0.2px;'>Tugas Dinas</small>
+      </div>
+    </div>
+    <div class='col-4 col-md-2'>
+      <div class='card card-stat p-2 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Sakit&apos;)' style='border-left: 4px solid #0dcaf0 !important;'>
+        <h5 class='fw-bold mb-0 text-info' id='ad-sakit'>0</h5>
+        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.62rem; letter-spacing: 0.2px;'>Sakit/Cuti</small>
+      </div>
+    </div>
+    <div class='col-4 col-md-2'>
+      <div class='card card-stat p-2 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Izin&apos;)' style='border-left: 4px solid #6c757d !important;'>
+        <h5 class='fw-bold mb-0 text-secondary' id='ad-izin'>0</h5>
+        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.62rem; letter-spacing: 0.2px;'>Izin</small>
+      </div>
+    </div>
+    <div class='col-4 col-md-2'>
+      <div class='card card-stat p-2 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Tanpa Keterangan&apos;)' style='border-left: 4px solid #dc3545 !important;'>
+        <h5 class='fw-bold mb-0 text-danger' id='ad-belum'>0</h5>
+        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.62rem; letter-spacing: 0.2px;'>Tanpa Ket.</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 CHART BARU: tren mingguan, ranking telat/alpa, distribusi jam datang,
+       kepatuhan kegiatan rutin - datanya dari getDashboardCharts(), SELALU 7 hari
+       terakhir / periode payroll berjalan (tidak ikut filter tanggal di atas). -->
+  <div class='row g-2 mb-3'>
+    <div class='col-12'>
+      <div class='card p-3 shadow-sm'>
+        <h6 class='text-secondary fw-bold mb-2' style='font-size: 0.85rem;'><i class='bi bi-graph-up'></i> Tren Kehadiran 7 Hari Terakhir</h6>
+        <div style='position: relative; height: 220px;'><canvas id='chartTrenMingguan'></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class='row g-2 mb-3'>
+    <div class='col-md-6'>
+      <div class='card p-3 shadow-sm h-100'>
+        <h6 class='text-secondary fw-bold mb-2' style='font-size: 0.85rem;'><i class='bi bi-bar-chart-line'></i> Paling Sering Telat/Alpa (Periode Berjalan)</h6>
+        <div style='position: relative; height: 220px;'><canvas id='chartRankingTelatAlpa'></canvas></div>
+      </div>
+    </div>
+    <div class='col-md-6'>
+      <div class='card p-3 shadow-sm h-100'>
+        <h6 class='text-secondary fw-bold mb-2' style='font-size: 0.85rem;'><i class='bi bi-clock-history'></i> Distribusi Jam Datang (Periode Berjalan)</h6>
+        <div style='position: relative; height: 220px;'><canvas id='chartDistribusiJam'></canvas></div>
+      </div>
+    </div>
+  </div>
   <div class='row g-2 mb-4'>
-    <div class='col-4 col-md-2'>
-      <div class='card card-stat p-3 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Hadir&apos;)' style='border-left: 5px solid #198754 !important;'>
-        <h2 class='fw-bold mb-1 text-success' id='ad-hadir'>0</h2>
-        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.72rem; letter-spacing: 0.3px;'>Hadir Tepat Waktu</small>
-      </div>
-    </div>
-    <div class='col-4 col-md-2'>
-      <div class='card card-stat p-3 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Terlambat&apos;)' style='border-left: 5px solid #ffc107 !important;'>
-        <h2 class='fw-bold mb-1 text-warning' id='ad-telat'>0</h2>
-        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.72rem; letter-spacing: 0.3px;'>Hadir Terlambat</small>
-      </div>
-    </div>
-    <div class='col-4 col-md-2'>
-      <div class='card card-stat p-3 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Tugas Luar&apos;)' style='border-left: 5px solid #0d6efd !important;'>
-        <h2 class='fw-bold mb-1 text-primary' id='ad-tugas'>0</h2>
-        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.72rem; letter-spacing: 0.3px;'>Tugas Dinas</small>
-      </div>
-    </div>
-    <div class='col-4 col-md-2'>
-      <div class='card card-stat p-3 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Sakit&apos;)' style='border-left: 5px solid #0dcaf0 !important;'>
-        <h2 class='fw-bold mb-1 text-info' id='ad-sakit'>0</h2>
-        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.72rem; letter-spacing: 0.3px;'>Sakit / Cuti</small>
-      </div>
-    </div>
-    <div class='col-4 col-md-2'>
-      <div class='card card-stat p-3 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Izin&apos;)' style='border-left: 5px solid #6c757d !important;'>
-        <h2 class='fw-bold mb-1 text-secondary' id='ad-izin'>0</h2>
-        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.72rem; letter-spacing: 0.3px;'>Izin</small>
-      </div>
-    </div>
-    <div class='col-4 col-md-2'>
-      <div class='card card-stat p-3 text-center bg-white shadow-sm' onclick='tampilkanPopupGuru(&apos;Tanpa Keterangan&apos;)' style='border-left: 5px solid #dc3545 !important;'>
-        <h2 class='fw-bold mb-1 text-danger' id='ad-belum'>0</h2>
-        <small class='text-uppercase text-muted fw-bold' style='font-size: 0.72rem; letter-spacing: 0.3px;'>Tanpa Keterangan</small>
+    <div class='col-12'>
+      <div class='card p-3 shadow-sm'>
+        <h6 class='text-secondary fw-bold mb-2' style='font-size: 0.85rem;'><i class='bi bi-moon-stars'></i> Kepatuhan Kegiatan Rutin - Dhuha/Dzuhur/Ashar (7 Hari Terakhir)</h6>
+        <div style='position: relative; height: 180px;'><canvas id='chartKepatuhanKegiatan'></canvas></div>
       </div>
     </div>
   </div>
@@ -1675,7 +1714,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'getDashboardData', 'getAbsenMasukUntukEdit', 'saveJadwalKegiatan', 'getJadwalKegiatan',
   'getSettingsData', 'saveSettingsData', 'getUsers', 'saveHariLibur', 'getLiburList',
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
-  'getGuruMengajarList', 'getStafAktifUntukImpal'
+  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts'
 ];
 
 (function () {
@@ -2799,10 +2838,122 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           }
         }
         
-        initChart(data.adHadir, data.adTerlambat, data.adSakit, data.adIzin, data.adTugasLuar, data.adBelum);
+        loadDashboardCharts();
       }
       if (onComplete) onComplete();
     }).getDashboardData(SESSION_TOKEN, startDate, endDate);
+  }
+
+  // ====================================================================
+  // 4 CHART DASHBOARD ADMIN (tren mingguan, ranking telat/alpa, distribusi
+  // jam datang, kepatuhan kegiatan rutin) - menggantikan pie chart lama yang
+  // cuma snapshot sesaat. Datanya SELALU 7 hari terakhir / periode payroll
+  // berjalan, independen dari filter tanggal kartu status di atasnya -
+  // makanya dipanggil tanpa parameter tanggal sama sekali.
+  // ====================================================================
+  let chartTren, chartRanking, chartJam, chartKepatuhan;
+
+  function loadDashboardCharts() {
+    if (!document.getElementById('chartTrenMingguan')) return;
+    google.script.run.withSuccessHandler(data => {
+      if (!data) return;
+      renderChartTrenMingguan(data.trenMingguan || []);
+      renderChartRankingTelatAlpa(data.rankingTelatAlpa || []);
+      renderChartDistribusiJam(data.distribusiJam || []);
+      renderChartKepatuhanKegiatan(data.kepatuhanKegiatan || []);
+    }).withFailureHandler(err => {
+      console.warn('Gagal memuat chart dashboard:', err.message);
+    }).getDashboardCharts(SESSION_TOKEN);
+  }
+
+  function renderChartTrenMingguan(rows) {
+    const cEl = document.getElementById('chartTrenMingguan');
+    if (!cEl) return;
+    if (chartTren) chartTren.destroy();
+    chartTren = new Chart(cEl.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: rows.map(r => r.label),
+        datasets: [
+          { label: 'Hadir', data: rows.map(r => r.hadir), borderColor: '#198754', backgroundColor: '#198754', tension: 0.25 },
+          { label: 'Terlambat', data: rows.map(r => r.terlambat), borderColor: '#ffc107', backgroundColor: '#ffc107', tension: 0.25 },
+          { label: 'Tanpa Keterangan', data: rows.map(r => r.alpa), borderColor: '#dc3545', backgroundColor: '#dc3545', tension: 0.25 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } }
+      }
+    });
+  }
+
+  function renderChartRankingTelatAlpa(rows) {
+    const cEl = document.getElementById('chartRankingTelatAlpa');
+    if (!cEl) return;
+    if (chartRanking) chartRanking.destroy();
+    if (!rows.length) {
+      cEl.parentElement.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-muted small">Belum ada data telat/alpa periode ini. Alhamdulillah.</div>';
+      return;
+    }
+    chartRanking = new Chart(cEl.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.nama),
+        datasets: [
+          { label: 'Terlambat', data: rows.map(r => r.terlambat), backgroundColor: '#ffc107' },
+          { label: 'Tanpa Keterangan', data: rows.map(r => r.alpa), backgroundColor: '#dc3545' }
+        ]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }, y: { stacked: true, ticks: { font: { size: 10 } } } },
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } }
+      }
+    });
+  }
+
+  function renderChartDistribusiJam(rows) {
+    const cEl = document.getElementById('chartDistribusiJam');
+    if (!cEl) return;
+    if (chartJam) chartJam.destroy();
+    if (!rows.length) {
+      cEl.parentElement.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-muted small">Belum ada data jam datang periode ini.</div>';
+      return;
+    }
+    chartJam = new Chart(cEl.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.label),
+        datasets: [{ label: 'Jumlah', data: rows.map(r => r.jumlah), backgroundColor: '#0d6efd' }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { font: { size: 9 } } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  function renderChartKepatuhanKegiatan(rows) {
+    const cEl = document.getElementById('chartKepatuhanKegiatan');
+    if (!cEl) return;
+    if (chartKepatuhan) chartKepatuhan.destroy();
+    chartKepatuhan = new Chart(cEl.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.label),
+        datasets: [{ label: '% Kehadiran', data: rows.map(r => r.persen), backgroundColor: ['#0d6efd', '#20c997', '#6f42c1'] }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        scales: { x: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ctx.parsed.x + '% dari staf aktif' } }
+        }
+      }
+    });
   }
 
   // ====================================================================
@@ -5396,34 +5547,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }).toggleStatusKegiatan(SESSION_TOKEN, row, statusSekarang);
   }
 
-  let adChart;
-  function initChart(hadir, telat, sakit, izin, tugas, alpa) {
-    const cEl = document.getElementById('adminChart');
-    if(!cEl) return;
-    if(adChart) adChart.destroy();
-    
-    adChart = new Chart(cEl.getContext('2d'), {
-      type: 'pie',
-      data: { 
-        labels: ['Hadir', 'Terlambat', 'Sakit / Cuti', 'Izin', 'Tugas Dinas', 'Tanpa Keterangan'], 
-        datasets: [{ 
-          data: [hadir, telat, sakit, izin, tugas, alpa], 
-          backgroundColor: ['#198754', '#ffc107', '#0dcaf0', '#6c757d', '#0d6efd', '#dc3545'] 
-        }] 
-      },
-      options: { 
-        responsive: true, 
-        maintainAspectRatio: false, 
-        radius: '100%',
-        plugins: { 
-          legend: { 
-            position: 'right',
-            labels: { boxWidth: 15, font: { size: 11 } }
-          }
-        } 
-      }
-    });
-  }
 
 //]]></script>
 
