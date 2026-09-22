@@ -3600,6 +3600,12 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       title: 'Edit Data: ' + guru.nama,
       html: `
         <div class="text-start">
+          <label class="form-label small fw-semibold">NUPTK / Username</label>
+          <div class="input-group mb-2">
+            <input class="form-control" value="${guru.nuptk}" disabled />
+            <button class="btn btn-outline-secondary" type="button" onclick="bukaModalGantiUsername(${index})">Ganti</button>
+          </div>
+
           <label class="form-label small fw-semibold">Nama Lengkap</label>
           <input id="edit-u-nama" class="form-control mb-2" value="${guru.nama}" />
 
@@ -3662,7 +3668,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         const konfirmasi = await Swal.fire({
           icon: 'warning',
           title: 'Ganti Password?',
-          html: `Password untuk <strong>${guru.nama}</strong> akan diganti. Guru ini harus login pakai password BARU setelah ini.<br>`,
+          html: `Password untuk <strong>${guru.nama}</strong> akan diganti. Guru ini harus login pakai password BARU setelah ini.<br><br>Kalau Abang tidak sengaja mengisi kolom password tadi (mis. terisi otomatis oleh browser), klik <strong>Batal</strong> - data lain tetap tersimpan tanpa mengubah password.`,
           showCancelButton: true,
           confirmButtonText: 'Ya, Ganti Password',
           cancelButtonText: 'Batal, Jangan Ganti Password',
@@ -3682,6 +3688,60 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       }).withFailureHandler(err => {
         Swal.fire('Gagal', err.message, 'error');
       }).updateUser(SESSION_TOKEN, guru.nuptk, result.value);
+    });
+  }
+
+  // Ganti NUPTK/Username SENGAJA dibuat sebagai alur terpisah dari "Simpan
+  // Perubahan" utama (bukan satu field yang ikut disave bersamaan) - ini
+  // operasi berisiko (menyentuh nuptk di banyak tabel sekaligus di backend,
+  // lihat changeUsername() di handlers.js), jadi pantas dapat konfirmasi
+  // eksplisit sendiri, seperti pola ganti password di atas.
+  function bukaModalGantiUsername(index) {
+    const guru = GURU_LIST_CACHE[index];
+    if (!guru) return;
+    Swal.fire({
+      title: 'Ganti Username: ' + guru.nama,
+      html: `
+        <div class="text-start">
+          <p class="small text-muted mb-2">Username lama <strong>${guru.nuptk}</strong> akan diganti. Seluruh riwayat absen, kegiatan, cuti, dan rekap jam pelajaran guru ini akan ikut dipindahkan otomatis - tidak ada data yang hilang.</p>
+          <label class="form-label small fw-semibold">Username Baru</label>
+          <input id="ganti-username-baru" class="form-control" placeholder="Username/NUPTK baru" />
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Lanjutkan',
+      cancelButtonText: 'Batal',
+      preConfirm: () => {
+        const baru = document.getElementById('ganti-username-baru').value.trim();
+        if (!baru) { Swal.showValidationMessage('Username baru wajib diisi.'); return false; }
+        return baru;
+      }
+    }).then(async (result) => {
+      if (!result.isConfirmed) return;
+      const usernameBaru = result.value;
+
+      const konfirmasi = await Swal.fire({
+        icon: 'warning',
+        title: 'Yakin Ganti Username?',
+        html: `Username <strong>${guru.nuptk}</strong> akan diganti menjadi <strong>${usernameBaru}</strong>. Guru ini harus login pakai username BARU setelah ini (kalau sedang login, minta dia logout lalu login ulang).`,
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Ganti Username',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#dc3545'
+      });
+      if (!konfirmasi.isConfirmed) return;
+
+      Swal.fire({ title: 'Memindahkan data...', didOpen: () => Swal.showLoading() });
+      google.script.run.withSuccessHandler(res => {
+        if (res.success) {
+          Swal.fire('Berhasil', res.message, 'success');
+          loadGuruList(); refreshDashboard();
+        } else {
+          Swal.fire('Gagal', res.message, 'error');
+        }
+      }).withFailureHandler(err => {
+        Swal.fire('Gagal', err.message, 'error');
+      }).changeUsername(SESSION_TOKEN, guru.nuptk, usernameBaru);
     });
   }
 

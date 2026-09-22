@@ -1173,6 +1173,106 @@ async function updateUser(args, env) {
   return { success: true, message: `Data ${target.nama} berhasil diperbarui.` };
 }
 
+/**
+ * Ganti NUPTK/Username akun TANPA kehilangan data historis.
+ *
+ * nuptk dipakai sebagai primary key tabel 'users' DAN sebagai penanda
+ * kepemilikan data di HAMPIR SEMUA tabel lain: absen_masuk, kegiatan_umum,
+ * absen_kegiatan_khusus, cuti_guru, rekap_jam_pelajaran (termasuk kolom
+ * nuptk_impal - baris di mana guru ini jadi GURU PENGGANTI, bukan guru
+ * utamanya). Kalau nuptk cuma diganti di tabel 'users' saja, semua riwayat
+ * lama itu jadi "yatim" - tetap ada di database, tapi tidak akan pernah
+ * muncul lagi di Rekap/Laporan/Payroll/Riwayat Aktivitas guru ybs (semuanya
+ * query berdasarkan nuptk sesi login, yaitu nuptk yang BARU).
+ *
+ * Karena tidak diketahui pasti apakah tabel-tabel ini punya FOREIGN KEY
+ * constraint sungguhan ke users.nuptk di level Postgres (arsitektur app ini
+ * menjoin manual lewat kode, bukan lewat FK relasional), urutan di bawah
+ * SENGAJA dibuat aman untuk KEDUA kemungkinan (ada FK maupun tidak):
+ *   1. INSERT dulu baris users BARU (salinan persis baris lama, cuma nuptk-
+ *      nya diganti) - supaya nuptk lama MAUPUN nuptk baru sama-sama valid/
+ *      ada di tabel users selama proses migrasi berlangsung (tidak pernah
+ *      ada momen salah satunya "tidak ada" - andai ada FK constraint,
+ *      langkah 2 di bawah tidak akan pernah ditolak karena user tujuannya
+ *      belum ada).
+ *   2. Migrasikan seluruh tabel riwayat dari nuptk lama -> nuptk baru.
+ *   3. Baru TERAKHIR, hapus baris users yang lama.
+ * Kalau di tengah proses ada yang gagal (mis. koneksi ke Supabase putus),
+ * akun TETAP BISA dipakai login dengan username LAMA (baris lama belum
+ * sempat dihapus) - tidak pernah ada momen akun "hilang" total. Aman
+ * dijalankan ulang (idempotent): baris yang sudah kepindah nuptk-nya tidak
+ * akan ketemu lagi oleh filter nuptk lama di percobaan berikutnya, jadi
+ * cuma sisa yang belum sempat pindah yang diproses ulang.
+ *
+ * CATATAN: kalau guru ybs SEDANG LOGIN (sesi aktif tersimpan di Workers KV)
+ * saat username-nya diganti, sesi itu masih menyimpan nuptk LAMA sampai dia
+ * logout & login ulang - sebaiknya minta guru itu logout dulu sebelum
+ * username-nya diganti, atau logout ulang sesudahnya.
+ */
+async function changeUsername(args, env) {
+  const [token, nuptkLama, nuptkBaruRaw] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+
+  const lama = String(nuptkLama || '').trim();
+  const baru = String(nuptkBaruRaw || '').trim();
+  if (!lama || !baru) return { success: false, message: 'Username lama/baru tidak boleh kosong.' };
+  if (lama === baru) return { success: false, message: 'Username baru sama dengan yang lama.' };
+
+  const rowsLama = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(lama)}&limit=1`);
+  const target = rowsLama[0];
+  if (!target) return { success: false, message: 'Akun dengan username tersebut tidak ditemukan.' };
+  if (user.role !== 'ADMIN_UTAMA' && target.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Akun ini bukan dari sekolah Anda.' };
+  }
+
+  const rowsBaru = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(baru)}&limit=1`);
+  if (rowsBaru[0]) {
+    return { success: false, message: `Username "${baru}" sudah dipakai akun lain (NUPTK/Username unik di seluruh sistem, lintas sekolah).` };
+  }
+
+  // Langkah 1: salin baris users ke nuptk baru (baris lama TETAP ADA dulu).
+  const salinan = { ...target, nuptk: baru };
+  delete salinan.id; // jaga-jaga kalau ada kolom id auto-generate terpisah dari nuptk - biarkan Supabase generate ulang, jangan dobel PK
+  await sbInsert(env, 'users', salinan);
+
+  // Langkah 2: migrasikan riwayat di semua tabel yang menyimpan nuptk guru ini.
+  const TABEL_RIWAYAT_NUPTK = ['absen_masuk', 'kegiatan_umum', 'absen_kegiatan_khusus', 'cuti_guru', 'rekap_jam_pelajaran'];
+  const gagal = [];
+  for (const tabel of TABEL_RIWAYAT_NUPTK) {
+    try {
+      await sbUpdate(env, tabel, 'nuptk', lama, { nuptk: baru });
+    } catch (err) {
+      gagal.push(`${tabel}: ${err.message}`);
+    }
+  }
+  try {
+    // Kolom terpisah khusus rekap_jam_pelajaran - baris di mana guru ini
+    // tercatat sebagai GURU PENGGANTI (impal), bukan guru utama barisnya.
+    await sbUpdate(env, 'rekap_jam_pelajaran', 'nuptk_impal', lama, { nuptk_impal: baru });
+  } catch (err) {
+    gagal.push(`rekap_jam_pelajaran (kolom guru pengganti): ${err.message}`);
+  }
+
+  if (gagal.length) {
+    return {
+      success: false,
+      message: `Username BELUM sepenuhnya diganti - sebagian riwayat gagal dipindahkan: ${gagal.join('; ')}. `
+        + `Username LAMA "${lama}" masih aktif dan bisa dipakai login seperti biasa (belum dihapus). `
+        + `Coba jalankan ulang Ganti Username ini - bagian yang sudah berhasil pindah tidak akan diproses ulang.`
+    };
+  }
+
+  // Langkah 3: sekarang aman, hapus baris users yang lama.
+  await sbDelete(env, 'users', 'nuptk', lama);
+  await invalidate(env, `USERS_CACHE_${target.sekolah_id}`);
+
+  return {
+    success: true,
+    message: `Username berhasil diganti dari "${lama}" menjadi "${baru}". Seluruh riwayat absen, kegiatan, cuti, dan rekap jam pelajaran tetap utuh dan sudah ikut dipindahkan. Kalau guru ybs sedang login, minta dia logout lalu login ulang pakai username baru.`
+  };
+}
+
 async function getGuruList(args, env) {
   const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
@@ -2764,6 +2864,7 @@ export const handlers = {
   getUsers,
   saveUser,
   updateUser,
+  changeUsername,
   getGuruList,
   getGuruMengajarList,
   getRiwayatAktivitas,
