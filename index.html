@@ -4066,7 +4066,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <select class="form-select mb-2" id="swal-ea-status">${optionsHtml}</select>
 
           <label class="form-label small fw-bold mb-1">Keterangan</label>
-          <input class="form-control" id="swal-ea-keterangan" type="text" value="${row.keterangan && row.keterangan !== '-' ? escAttr(row.keterangan) : ''}" placeholder="Opsional">
+          <input class="form-control" id="swal-ea-keterangan" type="text" value="${!row.belumAdaData && row.keterangan && row.keterangan !== '-' ? escAttr(row.keterangan) : ''}" placeholder="${row.belumAdaData ? 'Isi keterangan (opsional)' : 'Opsional'}">
         </div>
       `,
       showCancelButton: true,
