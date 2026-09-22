@@ -2398,7 +2398,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     hentikanLiveGPS();
 
     if(id === 'data-guru') loadGuruList();
-    if(id === 'laporan') loadGuruForReport();
+    if(id === 'laporan') { isiDefaultTanggalHariIniLaporan('rep-start', 'rep-end'); loadGuruForReport(); }
     if(id === 'edit-absen') initEditAbsenView();
     if(id === 'kalender-libur') loadLiburList();
     if(id === 'cuti-guru') { loadCutiGuruList(); loadDropdownGuruUntukCuti(); }
@@ -2420,6 +2420,20 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'rekap-payroll') isiDefaultTanggalPeriodePayroll('pay-start', 'pay-end');
   }
 
+  /** Format Date jadi 'yyyy-MM-dd' berdasarkan tanggal LOKAL browser (bukan
+   * UTC). `.toISOString()` langsung TIDAK BOLEH dipakai untuk ini - dia
+   * mengonversi ke UTC dulu, dan untuk zona waktu positif seperti WIB
+   * (UTC+7), tengah malam tanggal 21 versi lokal = jam 17:00 tanggal 20
+   * versi UTC, jadi hasilnya kegeser mundur satu hari (ini persis penyebab
+   * bug "21 Sept - 20 Okt" muncul jadi "20 Sept - 19 Okt" di Rekap Payroll).
+   * Dikoreksi dengan menggeser waktunya sebesar offset zona waktu browser
+   * dulu sebelum dikonversi - pola yang sudah dipakai di initEditAbsenView(). */
+  function tanggalLokalStr(d) {
+    const offset = d.getTimezoneOffset();
+    const local = new Date(d.getTime() - offset * 60000);
+    return local.toISOString().slice(0, 10);
+  }
+
   /** Isi field tanggal awal/akhir dengan periode payroll berjalan (21 bulan
    * ini - 20 bulan depan) kalau masih kosong - dipakai Rekap Payroll & Nilai
    * Guru, keduanya berbagi periode yang sama. Tidak menimpa kalau guru/admin
@@ -2430,8 +2444,18 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const now = new Date();
     const tgl21 = now.getDate() >= 21 ? new Date(now.getFullYear(), now.getMonth(), 21) : new Date(now.getFullYear(), now.getMonth() - 1, 21);
     const tgl20 = new Date(tgl21.getFullYear(), tgl21.getMonth() + 1, 20);
-    startEl.value = tgl21.toISOString().slice(0, 10);
-    endEl.value = tgl20.toISOString().slice(0, 10);
+    startEl.value = tanggalLokalStr(tgl21);
+    endEl.value = tanggalLokalStr(tgl20);
+  }
+
+  /** Isi field tanggal awal & akhir Laporan dengan tanggal hari ini kalau
+   * masih kosong - tidak menimpa kalau sudah pernah diisi/diubah sendiri. */
+  function isiDefaultTanggalHariIniLaporan(idStart, idEnd) {
+    const startEl = document.getElementById(idStart), endEl = document.getElementById(idEnd);
+    if (!startEl || !endEl || startEl.value) return;
+    const hariIni = tanggalLokalStr(new Date());
+    startEl.value = hariIni;
+    endEl.value = hariIni;
   }
 
   function loadGuruDropdownJamPelajaran() {
@@ -3668,7 +3692,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         const konfirmasi = await Swal.fire({
           icon: 'warning',
           title: 'Ganti Password?',
-          html: `Password untuk <strong>${guru.nama}</strong> akan diganti. Guru ini harus login pakai password BARU setelah ini.<br><br>Kalau Abang tidak sengaja mengisi kolom password tadi (mis. terisi otomatis oleh browser), klik <strong>Batal</strong> - data lain tetap tersimpan tanpa mengubah password.`,
+          html: `Password untuk <strong>${guru.nama}</strong> akan diganti. Guru ini harus login pakai password BARU setelah ini.`,
           showCancelButton: true,
           confirmButtonText: 'Ya, Ganti Password',
           cancelButtonText: 'Batal, Jangan Ganti Password',
@@ -3800,11 +3824,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   function initEditAbsenView() {
     const tglInput = document.getElementById('ea-tanggal');
     if (!tglInput.value) {
-      // Default ke tanggal hari ini (zona waktu lokal browser)
-      const now = new Date();
-      const offset = now.getTimezoneOffset();
-      const local = new Date(now.getTime() - offset * 60000);
-      tglInput.value = local.toISOString().slice(0, 10);
+      tglInput.value = tanggalLokalStr(new Date()); // default ke tanggal hari ini (zona waktu lokal browser)
     }
 
     const selectGuru = document.getElementById('ea-guru');

@@ -7,6 +7,25 @@ import { nowJakarta, getPeriodeBerjalan, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
 
+/**
+ * Ambil jam (HH:mm) dalam WIB dari sebuah timestamp yang disimpan pakai
+ * `new Date().toISOString()` (UTC) - dipakai di kolom "timestamp" tabel
+ * kegiatan_umum & absen_kegiatan_khusus (lihat saveKegiatan,
+ * saveAbsenKegiatanKhusus). WIB = UTC+7 SELALU (tidak ada DST di Indonesia),
+ * jadi cukup ditambah 7 jam manual - TIDAK BOLEH cuma parse timestamp lalu
+ * .toISOString() lagi tanpa penyesuaian ini, itu akan mengembalikan jam
+ * UTC-nya (mis. absen jam 07:15 WIB tersimpan sebagai 00:15Z, kalau dibaca
+ * ulang tanpa +7 jam akan tampil "00:15" - persis bug "waktunya dini hari
+ * padahal absen jam 7 pagi" yang dilaporkan guru).
+ */
+function jamWibDariTimestamp(ts) {
+  if (!ts) return '00:00';
+  try {
+    const wib = new Date(new Date(ts).getTime() + 7 * 60 * 60 * 1000);
+    return wib.toISOString().substr(11, 5);
+  } catch (e) { return '00:00'; }
+}
+
 function generateShortID(prefix) {
   const karakter = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let hasil = '';
@@ -600,7 +619,7 @@ async function checkSudahAbsenKegiatan(args, env) {
 
   const row = rows[0];
   const statusField = config.fields.includes('status_kehadiran') ? 'status_kehadiran' : 'status';
-  const waktu = row.timestamp ? new Date(row.timestamp).toISOString().slice(11, 16) : (row.waktu_lapor || '');
+  const waktu = row.timestamp ? jamWibDariTimestamp(row.timestamp) : (row.waktu_lapor || '');
   return { sudah: true, status: row[statusField], waktu };
 }
 
@@ -1365,14 +1384,6 @@ async function getRiwayatAktivitas(args, env) {
   /** Konversi timestamp ISO (UTC) ke jam WIB "HH:MM" - supaya format 'urut' konsisten
    *  dengan field 'jam'/'waktu_lapor' dari 2 sumber lain (yang memang disimpan WIB),
    *  jadi pengurutan gabungan lintas 3 sumber akurat, bukan cuma kebetulan benar. */
-  function jamWibDariTimestamp(ts) {
-    if (!ts) return '00:00';
-    try {
-      const wib = new Date(new Date(ts).getTime() + 7 * 60 * 60 * 1000);
-      return wib.toISOString().substr(11, 5);
-    } catch (e) { return '00:00'; }
-  }
-
   const gabungan = [];
   rowsAbsenMasuk.forEach((r) => {
     const jam = r.jam || '00:00';
