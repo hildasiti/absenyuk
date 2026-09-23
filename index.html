@@ -1055,6 +1055,17 @@
         <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Instansi / Sekolah</label><input class='form-control' id='set-nama-sekolah' placeholder='Contoh: SDIT IDRISIYYAH TAMANSARI' required='required' type='text'/></div>
         <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Wakasek Bidang SDM</label><input class='form-control' id='set-nama-wakasek' placeholder='Contoh: Hilda Siti Awaliyah, S.Pd.' required='required' type='text'/></div>
         <div class='col-12 mb-3'><label class='form-label fw-semibold'>Alamat Lengkap Sekolah</label><textarea class='form-control' id='set-alamat-sekolah' placeholder='Tulis alamat lengkap untuk kop surat resmi...' required='required' rows='2'></textarea></div>
+        <div class='col-12 mb-3'>
+          <label class='form-label fw-semibold'>Gambar Kop Surat (JPG/PNG)</label>
+          <small class='text-muted d-block mb-2'>Disimpan ke Google Drive, otomatis dipakai di semua Cetak PDF (Payroll, Laporan, Nilai Guru, Rekap Kehadiran). Maks 5MB.</small>
+          <div class='d-flex align-items-center gap-3 flex-wrap'>
+            <img id='preview-kop-surat' src='' style='display:none; max-height: 80px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
+            <div class='flex-grow-1' style='min-width: 220px;'>
+              <input class='form-control' id='input-kop-surat' type='file' accept='image/png,image/jpeg' onchange='uploadKopSuratUI(this)'/>
+              <small id='status-kop-surat' class='text-muted'></small>
+            </div>
+          </div>
+        </div>
       </div>
       
       <button class='btn btn-primary w-100 mt-2' type='submit'><i class='bi bi-save-fill'></i> Simpan Seluruh Pengaturan</button>
@@ -1714,7 +1725,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'getDashboardData', 'getAbsenMasukUntukEdit', 'saveJadwalKegiatan', 'getJadwalKegiatan',
   'getSettingsData', 'saveSettingsData', 'getUsers', 'saveHariLibur', 'getLiburList',
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
-  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts'
+  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadKopSurat'
 ];
 
 (function () {
@@ -3334,6 +3345,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </head>
         <body>
           <div class="kop-surat">
+            ${kopSuratImgHtml(identitas.kop_surat_url)}
             <h3 class="kop-title">${schName}</h3>
             <p class="kop-subtitle">${schAddress}</p>
           </div>
@@ -3598,7 +3610,53 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.querySelectorAll('.cek-hari-libur').forEach(cb => {
         cb.checked = hariLiburArr.includes(cb.value);
       });
+
+      const previewKop = document.getElementById('preview-kop-surat');
+      if (data.kop_surat_url) { previewKop.src = data.kop_surat_url; previewKop.style.display = 'inline-block'; }
+      else { previewKop.style.display = 'none'; }
     }).getSettingsData(SESSION_TOKEN);
+  }
+
+  // Upload Kop Surat: baca file jadi base64 di browser, kirim ke backend
+  // (uploadKopSurat) yang meneruskannya ke Google Drive lewat service
+  // account - lihat drive.js & README untuk setup foldernya. URL hasilnya
+  // langsung tersimpan ke settings sekolah begitu upload sukses (tidak perlu
+  // klik "Simpan Pengaturan" terpisah).
+  function uploadKopSuratUI(inputEl) {
+    const file = inputEl.files[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      Swal.fire('Format Tidak Didukung', 'File harus JPG atau PNG.', 'error');
+      inputEl.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      Swal.fire('File Terlalu Besar', 'Ukuran file maksimal 5MB. Coba kompres gambarnya dulu.', 'error');
+      inputEl.value = '';
+      return;
+    }
+    const statusEl = document.getElementById('status-kop-surat');
+    statusEl.textContent = 'Mengupload ke Google Drive...';
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64Data = reader.result.split(',')[1]; // buang prefix "data:image/png;base64,"
+      google.script.run.withSuccessHandler(res => {
+        if (res.success) {
+          statusEl.textContent = 'Berhasil diupload.';
+          const previewKop = document.getElementById('preview-kop-surat');
+          previewKop.src = res.url; previewKop.style.display = 'inline-block';
+          Swal.fire('Berhasil', 'Kop surat berhasil diupload dan langsung dipakai di semua Cetak PDF.', 'success');
+        } else {
+          statusEl.textContent = '';
+          Swal.fire('Gagal', res.message, 'error');
+        }
+      }).withFailureHandler(err => {
+        statusEl.textContent = '';
+        Swal.fire('Gagal', err.message, 'error');
+      }).uploadKopSurat(SESSION_TOKEN, base64Data, file.type);
+    };
+    reader.readAsDataURL(file);
   }
 
   function saveSettings(e) {
@@ -4039,6 +4097,14 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // atribut HTML seperti value="..." di dalam modal SweetAlert - mencegah tanda
   // kutip di dalam teks guru merusak atribut, dengan semangat yang sama seperti
   // perbaikan indeks di atas (jangan biarkan data guru bisa mematahkan markup).
+  /** HTML <img> kop surat sekolah (hasil upload di Pengaturan > Identitas Kop),
+   * dipakai di semua fungsi Cetak PDF. String kosong kalau belum pernah
+   * diupload - kop surat tetap tampil (teks saja) seperti sebelumnya. */
+  function kopSuratImgHtml(url) {
+    if (!url) return '';
+    return `<img src="${escAttr(url)}" style="max-height: 90px; margin-bottom: 6px;" onerror="this.style.display='none'"/>`;
+  }
+
   function escAttr(teks) {
     return String(teks == null ? '' : teks)
       .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -4507,6 +4573,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </head>
         <body>
           <div class="kop-surat">
+            ${kopSuratImgHtml(settings.kop_surat_url)}
             <h3 class="kop-title">${schName}</h3>
             <p class="kop-subtitle">${schAddress}</p>
           </div>
@@ -4829,6 +4896,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </head>
         <body>
           <div class="kop-container">
+            ${kopSuratImgHtml(settings.kop_surat_url)}
             <h4 class="kop-institusi">${schName}</h4>
             <p class="kop-sub">${schAddress}</p>
           </div>
@@ -5161,6 +5229,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </head>
         <body>
           <div class="kop-surat">
+            ${kopSuratImgHtml(identitas.kop_surat_url)}
             <h3 class="kop-title">${schName}</h3>
             <p class="kop-subtitle">${schAddress}</p>
           </div>

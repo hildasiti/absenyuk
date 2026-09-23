@@ -6,6 +6,7 @@ import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
 import { nowJakarta, getPeriodeBerjalan, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
+import { uploadFileKeDrive } from './drive.js';
 
 /**
  * Ambil jam (HH:mm) dalam WIB dari sebuah timestamp yang disimpan pakai
@@ -1208,8 +1209,53 @@ async function getIdentitasSekolahUntukCetak(args, env) {
   return {
     nama_sekolah: settings.nama_sekolah || '',
     alamat_sekolah: settings.alamat_sekolah || '',
-    nama_wakasek: settings.nama_wakasek || ''
+    nama_wakasek: settings.nama_wakasek || '',
+    kop_surat_url: settings.kop_surat_url || ''
   };
+}
+
+/**
+ * Upload gambar kop surat (JPG/PNG) sekolah ke Google Drive (lewat service
+ * account yang sama dipakai FCM - lihat drive.js untuk setup foldernya),
+ * lalu simpan URL hasilnya langsung ke settings sekolah (key kop_surat_url) -
+ * admin tidak perlu klik "Simpan Pengaturan" terpisah setelah upload.
+ */
+async function uploadKopSurat(args, env) {
+  const [token, base64Data, mimeType, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+
+  if (!env.DRIVE_KOP_FOLDER_ID) {
+    return { success: false, message: 'DRIVE_KOP_FOLDER_ID belum di-set di Worker Secrets - lihat catatan setup di drive.js.' };
+  }
+  const mimeBersih = String(mimeType || '').trim().toLowerCase();
+  if (!/^image\/(png|jpe?g)$/.test(mimeBersih)) {
+    return { success: false, message: 'Format file harus JPG atau PNG.' };
+  }
+  if (!base64Data || base64Data.length > 7000000) { // ~5MB file asli (base64 lebih besar ~1.37x dari ukuran biner)
+    return { success: false, message: 'File kosong atau terlalu besar (maksimal sekitar 5MB).' };
+  }
+
+  const ekstensi = mimeBersih === 'image/png' ? 'png' : 'jpg';
+  const namaFile = `kop-surat-${sekolahId}.${ekstensi}`;
+
+  let hasil;
+  try {
+    hasil = await uploadFileKeDrive(env, base64Data, mimeBersih, namaFile);
+  } catch (err) {
+    return { success: false, message: 'Gagal upload ke Google Drive: ' + err.message };
+  }
+
+  const existingRows = await sbSelect(env, 'settings', `sekolah_id=eq.${sekolahId}&key=eq.kop_surat_url&limit=1`);
+  if (existingRows.length > 0) {
+    await sbUpdateWhere(env, 'settings', { sekolah_id: sekolahId, key: 'kop_surat_url' }, { value: hasil.url });
+  } else {
+    await sbInsert(env, 'settings', { sekolah_id: sekolahId, key: 'kop_surat_url', value: hasil.url });
+  }
+  await invalidate(env, `SETTINGS_CACHE_${sekolahId}`);
+
+  return { success: true, url: hasil.url, message: 'Kop surat berhasil diupload dan disimpan.' };
 }
 
 async function saveSettingsData(args, env) {
@@ -2987,6 +3033,7 @@ export const handlers = {
   getStatusAbsenHariIni,
   saveAbsenPulang,
   getDashboardCharts,
+  uploadKopSurat,
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
   checkSudahAbsenKegiatan,
