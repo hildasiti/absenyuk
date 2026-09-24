@@ -3797,7 +3797,13 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     });
     if (!permRes.ok) throw new Error('File terupload tapi gagal diset publik: ' + await permRes.text());
 
-    return `https://drive.google.com/uc?export=view&id=${fileId}`;
+    // "uc?export=view" sering tidak reliable dipakai langsung sebagai <img
+    // src> (kadang diarahkan ke halaman konfirmasi, bukan bytes gambarnya) -
+    // endpoint "thumbnail" ini yang dipakai Google sendiri secara internal
+    // untuk menampilkan gambar Drive publik di Docs/Sites/dll, jauh lebih
+    // konsisten untuk kebutuhan ini. sz=w1000 minta resolusi cukup tinggi
+    // untuk kualitas cetak PDF.
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
   }
 
   /**
