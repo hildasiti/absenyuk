@@ -1076,8 +1076,9 @@
           <div class='d-flex align-items-center gap-3 flex-wrap'>
             <img id='preview-logo-kiri' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
             <div class='flex-grow-1' style='min-width: 180px;'>
-              <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadLogoUI(this, &quot;kiri&quot;)'/>
-              <small id='status-logo-kiri' class='text-muted'></small>
+              <button class='btn btn-outline-secondary btn-sm' onclick='mulaiUploadLogo(&quot;kiri&quot;)' type='button'><i class='bi bi-google'></i> Pilih &amp; Upload Logo Kiri</button>
+              <input accept='image/png,image/jpeg' id='file-logo-kiri' onchange='lanjutkanUploadLogo(this, &quot;kiri&quot;)' style='display:none' type='file'/>
+              <small class='text-muted d-block' id='status-logo-kiri'></small>
             </div>
           </div>
         </div>
@@ -1087,8 +1088,9 @@
           <div class='d-flex align-items-center gap-3 flex-wrap'>
             <img id='preview-logo-kanan' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
             <div class='flex-grow-1' style='min-width: 180px;'>
-              <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadLogoUI(this, &quot;kanan&quot;)'/>
-              <small id='status-logo-kanan' class='text-muted'></small>
+              <button class='btn btn-outline-secondary btn-sm' onclick='mulaiUploadLogo(&quot;kanan&quot;)' type='button'><i class='bi bi-google'></i> Pilih &amp; Upload Logo Kanan</button>
+              <input accept='image/png,image/jpeg' id='file-logo-kanan' onchange='lanjutkanUploadLogo(this, &quot;kanan&quot;)' style='display:none' type='file'/>
+              <small class='text-muted d-block' id='status-logo-kanan'></small>
             </div>
           </div>
         </div>
@@ -3794,10 +3796,35 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     return `https://drive.google.com/uc?export=view&id=${fileId}`;
   }
 
-  /** Handler tombol upload logo kiri/kanan di Pengaturan. Setelah file
-   * benar-benar ada di Drive admin, URL-nya disimpan ke settings sekolah
-   * lewat saveSettingsData biasa (tidak perlu endpoint backend khusus). */
-  async function uploadLogoUI(inputEl, sisi) {
+  /**
+   * Tahap 1 - dipanggil LANGSUNG dari klik tombol "Pilih & Upload Logo...".
+   * SENGAJA minta izin Google DULU di sini (bukan setelah file dipilih) -
+   * popup consent Google (window.open) cuma diizinkan browser kalau dipicu
+   * LANGSUNG dari gestur klik pengguna yang masih "segar"/sinkron. Kalau
+   * popup itu baru dicoba dibuka SETELAH event onchange file input selesai
+   * (urutan yang dipakai sebelumnya), Chrome menganggap masih ada "active
+   * file chooser" dan memblokir popup-nya sama sekali tanpa pesan error yang
+   * jelas ke pengguna - persis gejala yang dilaporkan ("tidak ada reaksi").
+   * Baru SETELAH izin didapat, file picker dibuka programatik (langkah 2).
+   */
+  function mulaiUploadLogo(sisi) {
+    const statusEl = document.getElementById('status-logo-' + sisi);
+    statusEl.textContent = 'Menghubungkan ke Google Drive Anda...';
+    pastikanGoogleDriveSiap().then(() => {
+      statusEl.textContent = 'Terhubung. Silakan pilih file gambar...';
+      document.getElementById('file-logo-' + sisi).click();
+    }).catch(err => {
+      statusEl.textContent = '';
+      Swal.fire('Gagal', err.message, 'error');
+    });
+  }
+
+  /** Tahap 2 - dipanggil setelah file dipilih di file picker (langkah 1
+   * sudah beres, googleDriveAccessToken sudah ada di memori - upload di sini
+   * TIDAK akan minta popup lagi). Setelah file benar-benar ada di Drive
+   * admin, URL-nya disimpan ke settings sekolah lewat saveSettingsData biasa
+   * (tidak perlu endpoint backend khusus). */
+  async function lanjutkanUploadLogo(inputEl, sisi) {
     const file = inputEl.files[0];
     if (!file) return;
     if (!['image/png', 'image/jpeg'].includes(file.type)) {
@@ -3811,7 +3838,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       return;
     }
     const statusEl = document.getElementById('status-logo-' + sisi);
-    statusEl.textContent = 'Menghubungkan ke Google Drive Anda...';
+    statusEl.textContent = 'Mengupload ke Google Drive Anda...';
 
     try {
       const ekstensi = file.type === 'image/png' ? 'png' : 'jpg';
