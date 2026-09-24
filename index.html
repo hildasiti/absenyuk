@@ -16,6 +16,11 @@
 <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
 <script src='https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js'></script>
 <script src='https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js'></script>
+<!-- Google Identity Services - dipakai admin untuk login LANGSUNG ke akun
+     Google pribadinya saat upload logo kop surat, supaya file benar-benar
+     tersimpan ke Drive-nya sendiri (bukan lewat service account backend,
+     yang tidak punya kuota Drive sama sekali di project non-Workspace). -->
+<script src='https://accounts.google.com/gsi/client' async defer></script>
 
 <style>/*<![CDATA[*/
 
@@ -1055,16 +1060,40 @@
         <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Instansi / Sekolah</label><input class='form-control' id='set-nama-sekolah' placeholder='Contoh: SDIT IDRISIYYAH TAMANSARI' required='required' type='text'/></div>
         <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Wakasek Bidang SDM</label><input class='form-control' id='set-nama-wakasek' placeholder='Contoh: Hilda Siti Awaliyah, S.Pd.' required='required' type='text'/></div>
         <div class='col-12 mb-3'><label class='form-label fw-semibold'>Alamat Lengkap Sekolah</label><textarea class='form-control' id='set-alamat-sekolah' placeholder='Tulis alamat lengkap untuk kop surat resmi...' required='required' rows='2'></textarea></div>
-        <div class='col-12 mb-3'>
-          <label class='form-label fw-semibold'>Gambar Kop Surat (JPG/PNG)</label>
-          <small class='text-muted d-block mb-2'>Disimpan ke Google Drive, otomatis dipakai di semua Cetak PDF (Payroll, Laporan, Nilai Guru, Rekap Kehadiran). Maks 5MB.</small>
+        <div class='col-md-6 mb-3'>
+          <label class='form-label fw-semibold'>Baris Atas 1 (opsional)</label>
+          <input class='form-control' id='set-kop-baris1' placeholder='Contoh: YAYASAN PENDIDIKAN IDRISIYYAH' type='text'/>
+        </div>
+        <div class='col-md-6 mb-3'>
+          <label class='form-label fw-semibold'>Baris Atas 2 (opsional)</label>
+          <input class='form-control' id='set-kop-baris2' placeholder='Contoh: TERAKREDITASI A' type='text'/>
+          <small class='text-muted'>Kedua baris ini tampil di ATAS nama sekolah pada kop surat cetak.</small>
+        </div>
+        <div class='col-12'><hr/></div>
+        <div class='col-md-6 mb-3'>
+          <label class='form-label fw-semibold'>Logo Kiri (JPG/PNG)</label>
+          <small class='text-muted d-block mb-2'>Disimpan ke Google Drive. Maks 5MB.</small>
           <div class='d-flex align-items-center gap-3 flex-wrap'>
-            <img id='preview-kop-surat' src='' style='display:none; max-height: 80px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
-            <div class='flex-grow-1' style='min-width: 220px;'>
-              <input class='form-control' id='input-kop-surat' type='file' accept='image/png,image/jpeg' onchange='uploadKopSuratUI(this)'/>
-              <small id='status-kop-surat' class='text-muted'></small>
+            <img id='preview-logo-kiri' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
+            <div class='flex-grow-1' style='min-width: 180px;'>
+              <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadLogoUI(this, &quot;kiri&quot;)'/>
+              <small id='status-logo-kiri' class='text-muted'></small>
             </div>
           </div>
+        </div>
+        <div class='col-md-6 mb-3'>
+          <label class='form-label fw-semibold'>Logo Kanan (JPG/PNG)</label>
+          <small class='text-muted d-block mb-2'>Disimpan ke Google Drive. Maks 5MB.</small>
+          <div class='d-flex align-items-center gap-3 flex-wrap'>
+            <img id='preview-logo-kanan' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
+            <div class='flex-grow-1' style='min-width: 180px;'>
+              <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadLogoUI(this, &quot;kanan&quot;)'/>
+              <small id='status-logo-kanan' class='text-muted'></small>
+            </div>
+          </div>
+        </div>
+        <div class='col-12'>
+          <small class='text-muted'>Logo otomatis dipakai di kiri &amp; kanan kop surat pada semua Cetak PDF (Payroll, Laporan, Nilai Guru, Rekap Kehadiran) - kalau belum diupload, kop surat tetap tampil (cuma teks, tanpa logo).</small>
         </div>
       </div>
       
@@ -1725,10 +1754,30 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'getDashboardData', 'getAbsenMasukUntukEdit', 'saveJadwalKegiatan', 'getJadwalKegiatan',
   'getSettingsData', 'saveSettingsData', 'getUsers', 'saveHariLibur', 'getLiburList',
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
-  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadKopSurat'
+  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadLogoKop'
 ];
 
 (function () {
+  /**
+   * fetch() ke Worker dengan retry otomatis. "Failed to fetch" /
+   * net::ERR_NETWORK_CHANGED itu KEGAGALAN JARINGAN SESAAT (WiFi <-> data
+   * seluler berpindah, sinyal putus sebentar, dsb) di tengah request masih
+   * berjalan - BUKAN error dari kode/Worker (kalau Worker-nya yang error,
+   * fetch tetap SUKSES dapat response, cuma isinya {success:false,...},
+   * itu ditangani terpisah di .then di bawah, bukan di sini). Request yang
+   * lebih lama (mis. upload gambar logo) lebih rawan kena ini karena jendela
+   * waktunya lebih lebar. Dicoba ulang sampai 2x (jeda singkat) sebelum
+   * benar-benar menyerah dan memanggil failureHandler.
+   */
+  function fetchDenganRetry(url, opsi, sisaPercobaan) {
+    if (sisaPercobaan === undefined) sisaPercobaan = 2;
+    return fetch(url, opsi).catch(function (err) {
+      if (sisaPercobaan <= 0) throw err;
+      return new Promise(function (resolve) { setTimeout(resolve, 900); })
+        .then(function () { return fetchDenganRetry(url, opsi, sisaPercobaan - 1); });
+    });
+  }
+
   function buatRunner(successHandler, failureHandler) {
     return new Proxy({}, {
       get: function (target, propName) {
@@ -1749,7 +1798,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             args = args.concat([typeof CURRENT_SEKOLAH_ID !== 'undefined' ? CURRENT_SEKOLAH_ID : null]);
           }
 
-          fetch(WORKER_API_URL, {
+          fetchDenganRetry(WORKER_API_URL, {
             method: 'POST',
             // text/plain dipakai supaya browser tidak perlu kirim preflight
             // request (OPTIONS) sebelum request sesungguhnya - sedikit lebih
@@ -3320,6 +3369,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
             .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
             .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
+            .kop-baris-atas { font-size: 11px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
             .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
             .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 5px; color: #555; }
             table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -3345,9 +3395,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </head>
         <body>
           <div class="kop-surat">
-            ${kopSuratImgHtml(identitas.kop_surat_url)}
-            <h3 class="kop-title">${schName}</h3>
-            <p class="kop-subtitle">${schAddress}</p>
+            ${bungkusKopSurat(identitas, `<h3 class="kop-title">${schName}</h3><p class="kop-subtitle">${schAddress}</p>`)}
           </div>
           <div class="laporan-title">Rekap Kehadiran Pribadi - ${REKAP_SENDIRI_DATA.namaGuru || ''}</div>
           <div class="laporan-periode">Periode: ${REKAP_SENDIRI_DATA.periodeLabel || ''}</div>
@@ -3600,6 +3648,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('set-nama-sekolah').value = data.nama_sekolah || '';
       document.getElementById('set-alamat-sekolah').value = data.alamat_sekolah || '';
       document.getElementById('set-nama-wakasek').value = data.nama_wakasek || '';
+      document.getElementById('set-kop-baris1').value = data.kop_baris1 || '';
+      document.getElementById('set-kop-baris2').value = data.kop_baris2 || '';
       document.getElementById('set-auto-alpa').value = data.status_auto_alpa || 'Aktif';
       document.getElementById('set-jam-cutoff-alpa').value = data.jam_cutoff_alpa || '12:20';
       document.getElementById('set-jam-boleh-pulang').value = data.jam_boleh_pulang || '15:30';
@@ -3611,18 +3661,143 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         cb.checked = hariLiburArr.includes(cb.value);
       });
 
-      const previewKop = document.getElementById('preview-kop-surat');
-      if (data.kop_surat_url) { previewKop.src = data.kop_surat_url; previewKop.style.display = 'inline-block'; }
-      else { previewKop.style.display = 'none'; }
+      const previewKiri = document.getElementById('preview-logo-kiri');
+      if (data.logo_kiri_url) { previewKiri.src = data.logo_kiri_url; previewKiri.style.display = 'inline-block'; }
+      else { previewKiri.style.display = 'none'; }
+      const previewKanan = document.getElementById('preview-logo-kanan');
+      if (data.logo_kanan_url) { previewKanan.src = data.logo_kanan_url; previewKanan.style.display = 'inline-block'; }
+      else { previewKanan.style.display = 'none'; }
     }).getSettingsData(SESSION_TOKEN);
   }
 
-  // Upload Kop Surat: baca file jadi base64 di browser, kirim ke backend
-  // (uploadKopSurat) yang meneruskannya ke Google Drive lewat service
-  // account - lihat drive.js & README untuk setup foldernya. URL hasilnya
-  // langsung tersimpan ke settings sekolah begitu upload sukses (tidak perlu
-  // klik "Simpan Pengaturan" terpisah).
-  function uploadKopSuratUI(inputEl) {
+  // ========================================================================
+  // UPLOAD LOGO KE GOOGLE DRIVE - LANGSUNG DARI BROWSER ADMIN (OAuth), BUKAN
+  // LEWAT BACKEND/SERVICE ACCOUNT.
+  //
+  // Kenapa: service account backend TIDAK PUNYA KUOTA PENYIMPANAN DRIVE SAMA
+  // SEKALI di project Google Cloud pribadi/non-Workspace - walau folder
+  // tujuannya sudah di-share Editor sekalipun, upload lewat dia SELALU gagal
+  // (storageQuotaExceeded), makanya file tidak pernah benar-benar muncul di
+  // Drive. Solusinya: admin login LANGSUNG ke akun Google pribadinya di
+  // browser (lewat Google Identity Services), lalu file diupload atas nama
+  // & kuota akun itu sendiri - persis "pakai Google Drive saya".
+  //
+  // SETUP SEKALI SAJA (manual, oleh Abang, di luar kode):
+  //   1. Buka Google Cloud Console -> APIs & Services -> OAuth consent screen.
+  //      Pilih "External", isi info dasar. Di bagian Scopes, tambahkan scope
+  //      ".../auth/drive.file". Di bagian Test users, tambahkan alamat Gmail
+  //      SETIAP admin yang akan upload logo (selama status masih "Testing",
+  //      cuma email yang terdaftar di sini yang bisa login).
+  //   2. APIs & Services -> Credentials -> Create Credentials -> OAuth
+  //      client ID -> Application type: "Web application". Di "Authorized
+  //      JavaScript origins" tambahkan domain situs ini (mis.
+  //      https://absenyuk.idrisiyyah.my.id).
+  //   3. Salin "Client ID" yang muncul (formatnya diakhiri
+  //      .apps.googleusercontent.com), tempel ke GOOGLE_OAUTH_CLIENT_ID di
+  //      bawah ini. Client ID BUKAN rahasia (aman ditaruh di kode frontend) -
+  //      yang menjaga keamanannya adalah daftar "Authorized origins" di atas.
+  //   4. (Boleh dilewati) Worker Secret DRIVE_KOP_FOLDER_ID dari setup
+  //      sebelumnya sudah TIDAK DIPAKAI lagi, boleh dihapus.
+  // ========================================================================
+  const GOOGLE_OAUTH_CLIENT_ID = '842486377837-mfda8ae53nlsu1j34u3cn93ssdn9fa1i.apps.googleusercontent.com';
+
+  let googleDriveTokenClient = null;
+  let googleDriveAccessToken = null;
+
+  /** Minta izin akses Drive dari akun Google admin (munculkan popup consent
+   * Google kalau belum pernah/token sudah kedaluwarsa dalam sesi ini). */
+  function pastikanGoogleDriveSiap() {
+    return new Promise((resolve, reject) => {
+      if (googleDriveAccessToken) { resolve(googleDriveAccessToken); return; }
+      if (GOOGLE_OAUTH_CLIENT_ID.indexOf('GANTI_DENGAN') === 0) {
+        reject(new Error('GOOGLE_OAUTH_CLIENT_ID belum diisi di index.html - lihat catatan setup di atas fungsi ini.'));
+        return;
+      }
+      if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
+        reject(new Error('Google Identity Services belum termuat. Coba muat ulang halaman lalu coba lagi.'));
+        return;
+      }
+      if (!googleDriveTokenClient) {
+        googleDriveTokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE_OAUTH_CLIENT_ID,
+          scope: 'https://www.googleapis.com/auth/drive.file',
+          callback: (resp) => {
+            if (resp.error) { reject(new Error('Login/izin akses Google Drive dibatalkan atau gagal.')); return; }
+            googleDriveAccessToken = resp.access_token;
+            resolve(googleDriveAccessToken);
+          }
+        });
+      }
+      googleDriveTokenClient.requestAccessToken();
+    });
+  }
+
+  /** Cari folder "AbsenYuk - Kop Surat" di Drive admin (dibuat otomatis kalau
+   * belum ada) - scope drive.file cuma bisa "melihat" file/folder yang
+   * dibuat lewat app ini sendiri, jadi aman dipakai tanpa mengekspos Drive
+   * pribadi admin yang lain. */
+  async function cariAtauBuatFolderKopSurat(accessToken) {
+    const q = encodeURIComponent("name='AbsenYuk - Kop Surat' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+    const cariRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    const cariJson = await cariRes.json();
+    if (cariJson.files && cariJson.files.length) return cariJson.files[0].id;
+
+    const buatRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'AbsenYuk - Kop Surat', mimeType: 'application/vnd.google-apps.folder' })
+    });
+    if (!buatRes.ok) throw new Error('Gagal membuat folder di Google Drive: ' + await buatRes.text());
+    const buatJson = await buatRes.json();
+    return buatJson.id;
+  }
+
+  /** Upload 1 file gambar ke Drive admin (folder "AbsenYuk - Kop Surat"),
+   * set izin publik "siapa saja yang punya link bisa lihat" (supaya kop
+   * surat tetap tampil untuk guru lain yang browser-nya TIDAK login ke akun
+   * Google admin), lalu kembalikan URL gambar langsungnya. */
+  async function uploadFileKeGoogleDriveBrowser(file, namaFile) {
+    const accessToken = await pastikanGoogleDriveSiap();
+    const folderId = await cariAtauBuatFolderKopSurat(accessToken);
+
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = () => reject(new Error('Gagal membaca file.'));
+      reader.readAsDataURL(file);
+    });
+
+    const metadata = { name: namaFile, parents: [folderId] };
+    const boundary = 'absenyuk-' + Date.now();
+    const body =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+      `--${boundary}\r\nContent-Type: ${file.type}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64Data}\r\n` +
+      `--${boundary}--`;
+
+    const uploadRes = await fetchDenganRetry('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body
+    });
+    if (!uploadRes.ok) throw new Error('Upload ke Google Drive gagal: ' + await uploadRes.text());
+    const { id: fileId } = await uploadRes.json();
+
+    const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' })
+    });
+    if (!permRes.ok) throw new Error('File terupload tapi gagal diset publik: ' + await permRes.text());
+
+    return `https://drive.google.com/uc?export=view&id=${fileId}`;
+  }
+
+  /** Handler tombol upload logo kiri/kanan di Pengaturan. Setelah file
+   * benar-benar ada di Drive admin, URL-nya disimpan ke settings sekolah
+   * lewat saveSettingsData biasa (tidak perlu endpoint backend khusus). */
+  async function uploadLogoUI(inputEl, sisi) {
     const file = inputEl.files[0];
     if (!file) return;
     if (!['image/png', 'image/jpeg'].includes(file.type)) {
@@ -3635,28 +3810,30 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       inputEl.value = '';
       return;
     }
-    const statusEl = document.getElementById('status-kop-surat');
-    statusEl.textContent = 'Mengupload ke Google Drive...';
+    const statusEl = document.getElementById('status-logo-' + sisi);
+    statusEl.textContent = 'Menghubungkan ke Google Drive Anda...';
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Data = reader.result.split(',')[1]; // buang prefix "data:image/png;base64,"
-      google.script.run.withSuccessHandler(res => {
-        if (res.success) {
-          statusEl.textContent = 'Berhasil diupload.';
-          const previewKop = document.getElementById('preview-kop-surat');
-          previewKop.src = res.url; previewKop.style.display = 'inline-block';
-          Swal.fire('Berhasil', 'Kop surat berhasil diupload dan langsung dipakai di semua Cetak PDF.', 'success');
-        } else {
-          statusEl.textContent = '';
-          Swal.fire('Gagal', res.message, 'error');
-        }
+    try {
+      const ekstensi = file.type === 'image/png' ? 'png' : 'jpg';
+      const sekolahIdUntukNama = (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : (USER_DATA ? USER_DATA.sekolahId : 'sekolah');
+      const url = await uploadFileKeGoogleDriveBrowser(file, `logo-${sisi}-${sekolahIdUntukNama}.${ekstensi}`);
+
+      statusEl.textContent = 'Berhasil diupload, menyimpan...';
+      const previewEl = document.getElementById('preview-logo-' + sisi);
+      previewEl.src = url; previewEl.style.display = 'inline-block';
+
+      google.script.run.withSuccessHandler(() => {
+        statusEl.textContent = 'Berhasil diupload.';
+        Swal.fire('Berhasil', `Logo ${sisi} berhasil diupload ke Google Drive Anda dan langsung dipakai di semua Cetak PDF.`, 'success');
       }).withFailureHandler(err => {
         statusEl.textContent = '';
-        Swal.fire('Gagal', err.message, 'error');
-      }).uploadKopSurat(SESSION_TOKEN, base64Data, file.type);
-    };
-    reader.readAsDataURL(file);
+        Swal.fire('Sebagian Gagal', 'File sudah terupload ke Drive, tapi gagal menyimpan link-nya ke pengaturan: ' + err.message + '. Coba upload ulang.', 'warning');
+      }).saveSettingsData(SESSION_TOKEN, { ['logo_' + sisi + '_url']: url });
+    } catch (err) {
+      statusEl.textContent = '';
+      Swal.fire('Gagal', err.message, 'error');
+    }
+    inputEl.value = '';
   }
 
   function saveSettings(e) {
@@ -3671,6 +3848,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       nama_sekolah: document.getElementById('set-nama-sekolah').value,
       alamat_sekolah: document.getElementById('set-alamat-sekolah').value,
       nama_wakasek: document.getElementById('set-nama-wakasek').value,
+      kop_baris1: document.getElementById('set-kop-baris1').value,
+      kop_baris2: document.getElementById('set-kop-baris2').value,
       status_auto_alpa: document.getElementById('set-auto-alpa').value,
       jam_cutoff_alpa: document.getElementById('set-jam-cutoff-alpa').value || '12:20',
       jam_boleh_pulang: document.getElementById('set-jam-boleh-pulang').value || '15:30',
@@ -4097,12 +4276,28 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // atribut HTML seperti value="..." di dalam modal SweetAlert - mencegah tanda
   // kutip di dalam teks guru merusak atribut, dengan semangat yang sama seperti
   // perbaikan indeks di atas (jangan biarkan data guru bisa mematahkan markup).
-  /** HTML <img> kop surat sekolah (hasil upload di Pengaturan > Identitas Kop),
-   * dipakai di semua fungsi Cetak PDF. String kosong kalau belum pernah
-   * diupload - kop surat tetap tampil (teks saja) seperti sebelumnya. */
-  function kopSuratImgHtml(url) {
-    if (!url) return '';
-    return `<img src="${escAttr(url)}" style="max-height: 90px; margin-bottom: 6px;" onerror="this.style.display='none'"/>`;
+  /**
+   * Bungkus konten kop surat (judul instansi + alamat, dkk - beda sedikit
+   * per fungsi cetak, dikirim lewat kontenTengahHtml) dengan layout kop surat
+   * resmi: logo KIRI - teks tengah (2 baris custom opsional + konten) - logo
+   * KANAN, mengikuti bentuk kop surat lembaga di Indonesia pada umumnya.
+   * Logo/baris yang belum diisi cuma dilewati (bukan ditampilkan kosong) -
+   * jadi sekolah yang belum sempat upload logo tetap dapat kop surat teks
+   * biasa, rapi seperti sebelumnya, bukan ada ruang kosong aneh.
+   */
+  function bungkusKopSurat(identitas, kontenTengahHtml) {
+    const baris1 = identitas.kop_baris1 ? `<p class="kop-baris-atas">${escAttr(identitas.kop_baris1)}</p>` : '';
+    const baris2 = identitas.kop_baris2 ? `<p class="kop-baris-atas">${escAttr(identitas.kop_baris2)}</p>` : '';
+    const logoHtml = (url) => url
+      ? `<img src="${escAttr(url)}" style="width:100%; max-width:70px; max-height:70px; object-fit:contain;" onerror="this.parentElement.style.visibility='hidden'"/>`
+      : '';
+    return `
+      <div style="display:flex; align-items:center; justify-content:center; gap:14px;">
+        <div style="width:70px; flex-shrink:0; text-align:center;">${logoHtml(identitas.logo_kiri_url)}</div>
+        <div style="flex:1;">${baris1}${baris2}${kontenTengahHtml}</div>
+        <div style="width:70px; flex-shrink:0; text-align:center;">${logoHtml(identitas.logo_kanan_url)}</div>
+      </div>
+    `;
   }
 
   function escAttr(teks) {
@@ -4553,6 +4748,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
             .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
             .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
+            .kop-baris-atas { font-size: 11px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
             .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
             .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 5px; color: #555; }
             table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -4573,9 +4769,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </head>
         <body>
           <div class="kop-surat">
-            ${kopSuratImgHtml(settings.kop_surat_url)}
-            <h3 class="kop-title">${schName}</h3>
-            <p class="kop-subtitle">${schAddress}</p>
+            ${bungkusKopSurat(settings, `<h3 class="kop-title">${schName}</h3><p class="kop-subtitle">${schAddress}</p>`)}
           </div>
           <div class="laporan-title">${judulRekap}</div>
           <div class="laporan-periode">Periode Laporan: ${tanggalAwal} s.d ${tanggalAkhir}</div>
@@ -4874,6 +5068,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-container { border-bottom: 3px double #000; padding-bottom: 8px; margin-bottom: 20px; text-align: center; }
             .kop-institusi { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; letter-spacing: 1px; }
             .kop-sub { font-size: 12px; margin: 4px 0 0 0; color: #333; }
+            .kop-baris-atas { font-size: 11px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
             .doc-header { text-align: center; margin-bottom: 25px; }
             .doc-title { font-size: 14px; font-weight: bold; text-transform: uppercase; margin: 0 0 5px 0; letter-spacing: 0.5px; }
             .doc-periode { font-size: 12px; margin: 0; color: #222; }
@@ -4896,9 +5091,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </head>
         <body>
           <div class="kop-container">
-            ${kopSuratImgHtml(settings.kop_surat_url)}
-            <h4 class="kop-institusi">${schName}</h4>
-            <p class="kop-sub">${schAddress}</p>
+            ${bungkusKopSurat(settings, `<h4 class="kop-institusi">${schName}</h4><p class="kop-sub">${schAddress}</p>`)}
           </div>
           <div class="doc-header">
             <h5 class="doc-title">${judulDokumen}</h5>
@@ -5213,6 +5406,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
             .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
             .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
+            .kop-baris-atas { font-size: 11px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
             .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
             .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 15px; color: #555; }
             table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -5229,9 +5423,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </head>
         <body>
           <div class="kop-surat">
-            ${kopSuratImgHtml(identitas.kop_surat_url)}
-            <h3 class="kop-title">${schName}</h3>
-            <p class="kop-subtitle">${schAddress}</p>
+            ${bungkusKopSurat(identitas, `<h3 class="kop-title">${schName}</h3><p class="kop-subtitle">${schAddress}</p>`)}
           </div>
           <div class="laporan-title">Nilai Kinerja Guru</div>
           <div class="laporan-periode">Periode: ${start} s.d ${end}</div>

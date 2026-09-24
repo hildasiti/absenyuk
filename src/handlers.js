@@ -6,7 +6,6 @@ import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
 import { nowJakarta, getPeriodeBerjalan, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
-import { uploadFileKeDrive } from './drive.js';
 
 /**
  * Ambil jam (HH:mm) dalam WIB dari sebuah timestamp yang disimpan pakai
@@ -1210,53 +1209,21 @@ async function getIdentitasSekolahUntukCetak(args, env) {
     nama_sekolah: settings.nama_sekolah || '',
     alamat_sekolah: settings.alamat_sekolah || '',
     nama_wakasek: settings.nama_wakasek || '',
-    kop_surat_url: settings.kop_surat_url || ''
+    kop_baris1: settings.kop_baris1 || '',
+    kop_baris2: settings.kop_baris2 || '',
+    logo_kiri_url: settings.logo_kiri_url || '',
+    logo_kanan_url: settings.logo_kanan_url || ''
   };
 }
 
-/**
- * Upload gambar kop surat (JPG/PNG) sekolah ke Google Drive (lewat service
- * account yang sama dipakai FCM - lihat drive.js untuk setup foldernya),
- * lalu simpan URL hasilnya langsung ke settings sekolah (key kop_surat_url) -
- * admin tidak perlu klik "Simpan Pengaturan" terpisah setelah upload.
- */
-async function uploadKopSurat(args, env) {
-  const [token, base64Data, mimeType, requestedSekolahId] = args;
-  const user = await requireUser(env, token);
-  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
-  const sekolahId = resolveSekolahId(user, requestedSekolahId);
-
-  if (!env.DRIVE_KOP_FOLDER_ID) {
-    return { success: false, message: 'DRIVE_KOP_FOLDER_ID belum di-set di Worker Secrets - lihat catatan setup di drive.js.' };
-  }
-  const mimeBersih = String(mimeType || '').trim().toLowerCase();
-  if (!/^image\/(png|jpe?g)$/.test(mimeBersih)) {
-    return { success: false, message: 'Format file harus JPG atau PNG.' };
-  }
-  if (!base64Data || base64Data.length > 7000000) { // ~5MB file asli (base64 lebih besar ~1.37x dari ukuran biner)
-    return { success: false, message: 'File kosong atau terlalu besar (maksimal sekitar 5MB).' };
-  }
-
-  const ekstensi = mimeBersih === 'image/png' ? 'png' : 'jpg';
-  const namaFile = `kop-surat-${sekolahId}.${ekstensi}`;
-
-  let hasil;
-  try {
-    hasil = await uploadFileKeDrive(env, base64Data, mimeBersih, namaFile);
-  } catch (err) {
-    return { success: false, message: 'Gagal upload ke Google Drive: ' + err.message };
-  }
-
-  const existingRows = await sbSelect(env, 'settings', `sekolah_id=eq.${sekolahId}&key=eq.kop_surat_url&limit=1`);
-  if (existingRows.length > 0) {
-    await sbUpdateWhere(env, 'settings', { sekolah_id: sekolahId, key: 'kop_surat_url' }, { value: hasil.url });
-  } else {
-    await sbInsert(env, 'settings', { sekolah_id: sekolahId, key: 'kop_surat_url', value: hasil.url });
-  }
-  await invalidate(env, `SETTINGS_CACHE_${sekolahId}`);
-
-  return { success: true, url: hasil.url, message: 'Kop surat berhasil diupload dan disimpan.' };
-}
+// Upload logo kop surat TIDAK lagi lewat backend/service account - service
+// account di project Google Cloud pribadi/non-Workspace tidak punya kuota
+// Drive sama sekali, jadi upload lewat dia SELALU gagal (storageQuotaExceeded)
+// walau folder tujuannya sudah di-share Editor sekalipun. Sekarang browser
+// admin upload LANGSUNG ke Google Drive-nya sendiri pakai OAuth (Google
+// Identity Services) - lihat uploadFileKeGoogleDriveBrowser() di index.html.
+// Backend cuma perlu menyimpan URL hasilnya, dan itu sudah bisa lewat
+// saveSettingsData() yang sudah ada - tidak perlu endpoint baru sama sekali.
 
 async function saveSettingsData(args, env) {
   const [token, config, requestedSekolahId] = args;
@@ -3033,7 +3000,6 @@ export const handlers = {
   getStatusAbsenHariIni,
   saveAbsenPulang,
   getDashboardCharts,
-  uploadKopSurat,
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
   checkSudahAbsenKegiatan,
