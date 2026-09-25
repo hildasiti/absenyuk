@@ -16,11 +16,6 @@
 <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
 <script src='https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js'></script>
 <script src='https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js'></script>
-<!-- Google Identity Services - dipakai admin untuk login LANGSUNG ke akun
-     Google pribadinya saat upload logo kop surat, supaya file benar-benar
-     tersimpan ke Drive-nya sendiri (bukan lewat service account backend,
-     yang tidak punya kuota Drive sama sekali di project non-Workspace). -->
-<script src='https://accounts.google.com/gsi/client' async defer></script>
 
 <style>/*<![CDATA[*/
 
@@ -1072,25 +1067,23 @@
         <div class='col-12'><hr/></div>
         <div class='col-md-6 mb-3'>
           <label class='form-label fw-semibold'>Logo Kiri (JPG/PNG)</label>
-          <small class='text-muted d-block mb-2'>Disimpan ke Google Drive. Maks 5MB.</small>
+          <small class='text-muted d-block mb-2'>Disimpan otomatis ke Google Drive. Maks 5MB.</small>
           <div class='d-flex align-items-center gap-3 flex-wrap'>
             <img id='preview-logo-kiri' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
             <div class='flex-grow-1' style='min-width: 180px;'>
-              <button class='btn btn-outline-secondary btn-sm' onclick='mulaiUploadLogo(&quot;kiri&quot;)' type='button'><i class='bi bi-google'></i> Pilih &amp; Upload Logo Kiri</button>
-              <input accept='image/png,image/jpeg' id='file-logo-kiri' onchange='lanjutkanUploadLogo(this, &quot;kiri&quot;)' style='display:none' type='file'/>
-              <small class='text-muted d-block' id='status-logo-kiri'></small>
+              <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadLogoUI(this, &quot;kiri&quot;)'/>
+              <small id='status-logo-kiri' class='text-muted'></small>
             </div>
           </div>
         </div>
         <div class='col-md-6 mb-3'>
           <label class='form-label fw-semibold'>Logo Kanan (JPG/PNG)</label>
-          <small class='text-muted d-block mb-2'>Disimpan ke Google Drive. Maks 5MB.</small>
+          <small class='text-muted d-block mb-2'>Disimpan otomatis ke Google Drive. Maks 5MB.</small>
           <div class='d-flex align-items-center gap-3 flex-wrap'>
             <img id='preview-logo-kanan' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
             <div class='flex-grow-1' style='min-width: 180px;'>
-              <button class='btn btn-outline-secondary btn-sm' onclick='mulaiUploadLogo(&quot;kanan&quot;)' type='button'><i class='bi bi-google'></i> Pilih &amp; Upload Logo Kanan</button>
-              <input accept='image/png,image/jpeg' id='file-logo-kanan' onchange='lanjutkanUploadLogo(this, &quot;kanan&quot;)' style='display:none' type='file'/>
-              <small class='text-muted d-block' id='status-logo-kanan'></small>
+              <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadLogoUI(this, &quot;kanan&quot;)'/>
+              <small id='status-logo-kanan' class='text-muted'></small>
             </div>
           </div>
         </div>
@@ -1779,10 +1772,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         .then(function () { return fetchDenganRetry(url, opsi, sisaPercobaan - 1); });
     });
   }
-  // Fungsi ini dipakai juga dari script block lain (uploadFileKeGoogleDriveBrowser
-  // di bagian Pengaturan) - fungsi yang dideklarasikan di dalam IIFE ini SENGAJA
-  // privat/tidak terlihat dari luar kecuali diekspos manual seperti ini.
-  window.fetchDenganRetry = fetchDenganRetry;
+
 
   function buatRunner(successHandler, failureHandler) {
     return new Proxy({}, {
@@ -3677,164 +3667,17 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   }
 
   // ========================================================================
-  // UPLOAD LOGO KE GOOGLE DRIVE - LANGSUNG DARI BROWSER ADMIN (OAuth), BUKAN
-  // LEWAT BACKEND/SERVICE ACCOUNT.
-  //
-  // Kenapa: service account backend TIDAK PUNYA KUOTA PENYIMPANAN DRIVE SAMA
-  // SEKALI di project Google Cloud pribadi/non-Workspace - walau folder
-  // tujuannya sudah di-share Editor sekalipun, upload lewat dia SELALU gagal
-  // (storageQuotaExceeded), makanya file tidak pernah benar-benar muncul di
-  // Drive. Solusinya: admin login LANGSUNG ke akun Google pribadinya di
-  // browser (lewat Google Identity Services), lalu file diupload atas nama
-  // & kuota akun itu sendiri - persis "pakai Google Drive saya".
-  //
-  // SETUP SEKALI SAJA (manual, oleh Abang, di luar kode):
-  //   1. Buka Google Cloud Console -> APIs & Services -> OAuth consent screen.
-  //      Pilih "External", isi info dasar. Di bagian Scopes, tambahkan scope
-  //      ".../auth/drive.file". Di bagian Test users, tambahkan alamat Gmail
-  //      SETIAP admin yang akan upload logo (selama status masih "Testing",
-  //      cuma email yang terdaftar di sini yang bisa login).
-  //   2. APIs & Services -> Credentials -> Create Credentials -> OAuth
-  //      client ID -> Application type: "Web application". Di "Authorized
-  //      JavaScript origins" tambahkan domain situs ini (mis.
-  //      https://absenyuk.idrisiyyah.my.id).
-  //   3. Salin "Client ID" yang muncul (formatnya diakhiri
-  //      .apps.googleusercontent.com), tempel ke GOOGLE_OAUTH_CLIENT_ID di
-  //      bawah ini. Client ID BUKAN rahasia (aman ditaruh di kode frontend) -
-  //      yang menjaga keamanannya adalah daftar "Authorized origins" di atas.
-  //   4. (Boleh dilewati) Worker Secret DRIVE_KOP_FOLDER_ID dari setup
-  //      sebelumnya sudah TIDAK DIPAKAI lagi, boleh dihapus.
+  // UPLOAD LOGO KOP SURAT - langsung ke backend (uploadLogoKop), yang
+  // meneruskannya ke Google Drive PEMILIK APLIKASI (lewat refresh_token,
+  // lihat drive.js & googleAuth.js) - BUKAN service account (kuotanya nol
+  // di project non-Workspace, selalu gagal storageQuotaExceeded) dan BUKAN
+  // login OAuth per-admin (ribet, admin sekolah lain harus didaftarkan satu
+  // per satu sebagai Test user). Admin sekolah cukup pilih file - upload
+  // berjalan otomatis di balik layar tanpa perlu login/pilih akun Google
+  // apa pun. URL hasilnya langsung tersimpan ke settings sekolah begitu
+  // upload sukses (tidak perlu klik "Simpan Pengaturan" terpisah).
   // ========================================================================
-  const GOOGLE_OAUTH_CLIENT_ID = '842486377837-mfda8ae53nlsu1j34u3cn93ssdn9fa1i.apps.googleusercontent.com';
-
-  let googleDriveTokenClient = null;
-  let googleDriveAccessToken = null;
-
-  /** Minta izin akses Drive dari akun Google admin (munculkan popup consent
-   * Google kalau belum pernah/token sudah kedaluwarsa dalam sesi ini). */
-  function pastikanGoogleDriveSiap() {
-    return new Promise((resolve, reject) => {
-      if (googleDriveAccessToken) { resolve(googleDriveAccessToken); return; }
-      if (GOOGLE_OAUTH_CLIENT_ID.indexOf('GANTI_DENGAN') === 0) {
-        reject(new Error('GOOGLE_OAUTH_CLIENT_ID belum diisi di index.html - lihat catatan setup di atas fungsi ini.'));
-        return;
-      }
-      if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
-        reject(new Error('Google Identity Services belum termuat. Coba muat ulang halaman lalu coba lagi.'));
-        return;
-      }
-      if (!googleDriveTokenClient) {
-        googleDriveTokenClient = window.google.accounts.oauth2.initTokenClient({
-          client_id: GOOGLE_OAUTH_CLIENT_ID,
-          scope: 'https://www.googleapis.com/auth/drive.file',
-          callback: (resp) => {
-            if (resp.error) { reject(new Error('Login/izin akses Google Drive dibatalkan atau gagal.')); return; }
-            googleDriveAccessToken = resp.access_token;
-            resolve(googleDriveAccessToken);
-          }
-        });
-      }
-      googleDriveTokenClient.requestAccessToken();
-    });
-  }
-
-  /** Cari folder "AbsenYuk - Kop Surat" di Drive admin (dibuat otomatis kalau
-   * belum ada) - scope drive.file cuma bisa "melihat" file/folder yang
-   * dibuat lewat app ini sendiri, jadi aman dipakai tanpa mengekspos Drive
-   * pribadi admin yang lain. */
-  async function cariAtauBuatFolderKopSurat(accessToken) {
-    const q = encodeURIComponent("name='AbsenYuk - Kop Surat' and mimeType='application/vnd.google-apps.folder' and trashed=false");
-    const cariRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
-      headers: { Authorization: 'Bearer ' + accessToken }
-    });
-    const cariJson = await cariRes.json();
-    if (cariJson.files && cariJson.files.length) return cariJson.files[0].id;
-
-    const buatRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'AbsenYuk - Kop Surat', mimeType: 'application/vnd.google-apps.folder' })
-    });
-    if (!buatRes.ok) throw new Error('Gagal membuat folder di Google Drive: ' + await buatRes.text());
-    const buatJson = await buatRes.json();
-    return buatJson.id;
-  }
-
-  /** Upload 1 file gambar ke Drive admin (folder "AbsenYuk - Kop Surat"),
-   * set izin publik "siapa saja yang punya link bisa lihat" (supaya kop
-   * surat tetap tampil untuk guru lain yang browser-nya TIDAK login ke akun
-   * Google admin), lalu kembalikan URL gambar langsungnya. */
-  async function uploadFileKeGoogleDriveBrowser(file, namaFile) {
-    const accessToken = await pastikanGoogleDriveSiap();
-    const folderId = await cariAtauBuatFolderKopSurat(accessToken);
-
-    const base64Data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = () => reject(new Error('Gagal membaca file.'));
-      reader.readAsDataURL(file);
-    });
-
-    const metadata = { name: namaFile, parents: [folderId] };
-    const boundary = 'absenyuk-' + Date.now();
-    const body =
-      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-      `--${boundary}\r\nContent-Type: ${file.type}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64Data}\r\n` +
-      `--${boundary}--`;
-
-    const uploadRes = await fetchDenganRetry('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': `multipart/related; boundary=${boundary}` },
-      body
-    });
-    if (!uploadRes.ok) throw new Error('Upload ke Google Drive gagal: ' + await uploadRes.text());
-    const { id: fileId } = await uploadRes.json();
-
-    const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'reader', type: 'anyone' })
-    });
-    if (!permRes.ok) throw new Error('File terupload tapi gagal diset publik: ' + await permRes.text());
-
-    // "uc?export=view" sering tidak reliable dipakai langsung sebagai <img
-    // src> (kadang diarahkan ke halaman konfirmasi, bukan bytes gambarnya) -
-    // endpoint "thumbnail" ini yang dipakai Google sendiri secara internal
-    // untuk menampilkan gambar Drive publik di Docs/Sites/dll, jauh lebih
-    // konsisten untuk kebutuhan ini. sz=w1000 minta resolusi cukup tinggi
-    // untuk kualitas cetak PDF.
-    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
-  }
-
-  /**
-   * Tahap 1 - dipanggil LANGSUNG dari klik tombol "Pilih & Upload Logo...".
-   * SENGAJA minta izin Google DULU di sini (bukan setelah file dipilih) -
-   * popup consent Google (window.open) cuma diizinkan browser kalau dipicu
-   * LANGSUNG dari gestur klik pengguna yang masih "segar"/sinkron. Kalau
-   * popup itu baru dicoba dibuka SETELAH event onchange file input selesai
-   * (urutan yang dipakai sebelumnya), Chrome menganggap masih ada "active
-   * file chooser" dan memblokir popup-nya sama sekali tanpa pesan error yang
-   * jelas ke pengguna - persis gejala yang dilaporkan ("tidak ada reaksi").
-   * Baru SETELAH izin didapat, file picker dibuka programatik (langkah 2).
-   */
-  function mulaiUploadLogo(sisi) {
-    const statusEl = document.getElementById('status-logo-' + sisi);
-    statusEl.textContent = 'Menghubungkan ke Google Drive Anda...';
-    pastikanGoogleDriveSiap().then(() => {
-      statusEl.textContent = 'Terhubung. Silakan pilih file gambar...';
-      document.getElementById('file-logo-' + sisi).click();
-    }).catch(err => {
-      statusEl.textContent = '';
-      Swal.fire('Gagal', err.message, 'error');
-    });
-  }
-
-  /** Tahap 2 - dipanggil setelah file dipilih di file picker (langkah 1
-   * sudah beres, googleDriveAccessToken sudah ada di memori - upload di sini
-   * TIDAK akan minta popup lagi). Setelah file benar-benar ada di Drive
-   * admin, URL-nya disimpan ke settings sekolah lewat saveSettingsData biasa
-   * (tidak perlu endpoint backend khusus). */
-  async function lanjutkanUploadLogo(inputEl, sisi) {
+  function uploadLogoUI(inputEl, sisi) {
     const file = inputEl.files[0];
     if (!file) return;
     if (!['image/png', 'image/jpeg'].includes(file.type)) {
@@ -3848,29 +3691,27 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       return;
     }
     const statusEl = document.getElementById('status-logo-' + sisi);
-    statusEl.textContent = 'Mengupload ke Google Drive Anda...';
+    statusEl.textContent = 'Mengupload ke Google Drive...';
 
-    try {
-      const ekstensi = file.type === 'image/png' ? 'png' : 'jpg';
-      const sekolahIdUntukNama = (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : (USER_DATA ? USER_DATA.sekolahId : 'sekolah');
-      const url = await uploadFileKeGoogleDriveBrowser(file, `logo-${sisi}-${sekolahIdUntukNama}.${ekstensi}`);
-
-      statusEl.textContent = 'Berhasil diupload, menyimpan...';
-      const previewEl = document.getElementById('preview-logo-' + sisi);
-      previewEl.src = url; previewEl.style.display = 'inline-block';
-
-      google.script.run.withSuccessHandler(() => {
-        statusEl.textContent = 'Berhasil diupload.';
-        Swal.fire('Berhasil', `Logo ${sisi} berhasil diupload ke Google Drive Anda dan langsung dipakai di semua Cetak PDF.`, 'success');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64Data = reader.result.split(',')[1]; // buang prefix "data:image/png;base64,"
+      google.script.run.withSuccessHandler(res => {
+        if (res.success) {
+          statusEl.textContent = 'Berhasil diupload.';
+          const previewEl = document.getElementById('preview-logo-' + sisi);
+          previewEl.src = res.url; previewEl.style.display = 'inline-block';
+          Swal.fire('Berhasil', `Logo ${sisi} berhasil diupload dan langsung dipakai di semua Cetak PDF.`, 'success');
+        } else {
+          statusEl.textContent = '';
+          Swal.fire('Gagal', res.message, 'error');
+        }
       }).withFailureHandler(err => {
         statusEl.textContent = '';
-        Swal.fire('Sebagian Gagal', 'File sudah terupload ke Drive, tapi gagal menyimpan link-nya ke pengaturan: ' + err.message + '. Coba upload ulang.', 'warning');
-      }).saveSettingsData(SESSION_TOKEN, { ['logo_' + sisi + '_url']: url });
-    } catch (err) {
-      statusEl.textContent = '';
-      Swal.fire('Gagal', err.message, 'error');
-    }
-    inputEl.value = '';
+        Swal.fire('Gagal', err.message, 'error');
+      }).uploadLogoKop(SESSION_TOKEN, sisi, base64Data, file.type);
+    };
+    reader.readAsDataURL(file);
   }
 
   function saveSettings(e) {

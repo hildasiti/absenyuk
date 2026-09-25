@@ -6,6 +6,7 @@ import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
 import { nowJakarta, getPeriodeBerjalan, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
+import { uploadFileKeDrive } from './drive.js';
 
 /**
  * Ambil jam (HH:mm) dalam WIB dari sebuah timestamp yang disimpan pakai
@@ -1216,14 +1217,57 @@ async function getIdentitasSekolahUntukCetak(args, env) {
   };
 }
 
-// Upload logo kop surat TIDAK lagi lewat backend/service account - service
-// account di project Google Cloud pribadi/non-Workspace tidak punya kuota
-// Drive sama sekali, jadi upload lewat dia SELALU gagal (storageQuotaExceeded)
-// walau folder tujuannya sudah di-share Editor sekalipun. Sekarang browser
-// admin upload LANGSUNG ke Google Drive-nya sendiri pakai OAuth (Google
-// Identity Services) - lihat uploadFileKeGoogleDriveBrowser() di index.html.
-// Backend cuma perlu menyimpan URL hasilnya, dan itu sudah bisa lewat
-// saveSettingsData() yang sudah ada - tidak perlu endpoint baru sama sekali.
+/**
+ * Upload logo kop surat (JPG/PNG) ke Google Drive - berjalan ATAS NAMA akun
+ * Google pribadi pemilik aplikasi (refresh_token, lihat drive.js &
+ * googleAuth.js), BUKAN akun admin sekolah yang sedang mengupload. Admin
+ * sekolah cukup pilih file, tidak perlu login/pilih akun Google apa pun -
+ * sepenuhnya di balik layar. URL hasilnya langsung tersimpan ke settings
+ * sekolah (key logo_kiri_url/logo_kanan_url) - admin tidak perlu klik
+ * "Simpan Pengaturan" terpisah setelah upload.
+ */
+async function uploadLogoKop(args, env) {
+  const [token, sisi, base64Data, mimeType, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+
+  const sisiBersih = String(sisi || '').trim().toLowerCase();
+  if (sisiBersih !== 'kiri' && sisiBersih !== 'kanan') {
+    return { success: false, message: 'Sisi logo tidak valid (harus "kiri" atau "kanan").' };
+  }
+  if (!env.DRIVE_OWNER_REFRESH_TOKEN || !env.DRIVE_OWNER_CLIENT_ID || !env.DRIVE_OWNER_CLIENT_SECRET) {
+    return { success: false, message: 'Setup Google Drive belum lengkap di Worker Secrets (DRIVE_OWNER_REFRESH_TOKEN/CLIENT_ID/CLIENT_SECRET) - lihat README bagian "Setup Kop Surat".' };
+  }
+  const mimeBersih = String(mimeType || '').trim().toLowerCase();
+  if (!/^image\/(png|jpe?g)$/.test(mimeBersih)) {
+    return { success: false, message: 'Format file harus JPG atau PNG.' };
+  }
+  if (!base64Data || base64Data.length > 7000000) { // ~5MB file asli (base64 lebih besar ~1.37x dari ukuran biner)
+    return { success: false, message: 'File kosong atau terlalu besar (maksimal sekitar 5MB).' };
+  }
+
+  const ekstensi = mimeBersih === 'image/png' ? 'png' : 'jpg';
+  const namaFile = `logo-${sisiBersih}-${sekolahId}.${ekstensi}`;
+  const keySettings = `logo_${sisiBersih}_url`;
+
+  let hasil;
+  try {
+    hasil = await uploadFileKeDrive(env, base64Data, mimeBersih, namaFile);
+  } catch (err) {
+    return { success: false, message: 'Gagal upload ke Google Drive: ' + err.message };
+  }
+
+  const existingRows = await sbSelect(env, 'settings', `sekolah_id=eq.${sekolahId}&key=eq.${keySettings}&limit=1`);
+  if (existingRows.length > 0) {
+    await sbUpdateWhere(env, 'settings', { sekolah_id: sekolahId, key: keySettings }, { value: hasil.url });
+  } else {
+    await sbInsert(env, 'settings', { sekolah_id: sekolahId, key: keySettings, value: hasil.url });
+  }
+  await invalidate(env, `SETTINGS_CACHE_${sekolahId}`);
+
+  return { success: true, url: hasil.url, message: `Logo ${sisiBersih} berhasil diupload dan disimpan.` };
+}
 
 async function saveSettingsData(args, env) {
   const [token, config, requestedSekolahId] = args;
@@ -3002,6 +3046,7 @@ export const handlers = {
   getDashboardCharts,
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
+  uploadLogoKop,
   checkSudahAbsenKegiatan,
   saveKegiatan,
   saveAbsenKegiatanKhusus,

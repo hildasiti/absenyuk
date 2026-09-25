@@ -65,3 +65,43 @@ export async function getGoogleAccessToken(env, clientEmail, privateKeyRaw, scop
   await env.SESSIONS.put(cacheKey, result.access_token, { expirationTtl: 3300 });
   return result.access_token;
 }
+
+/**
+ * Ambil access token BARU dari refresh_token OAuth akun Google PRIBADI
+ * (bukan service account) - dipakai khusus untuk upload logo kop surat ke
+ * Google Drive supaya file benar-benar tersimpan di Drive pemilik aplikasi
+ * dan pakai KUOTA SUNGGUHAN akun itu. Service account di project non-
+ * Workspace punya kuota Drive NOL, jadi tidak bisa dipakai untuk ini sama
+ * sekali (lihat drive.js) - refresh_token ini yang jadi gantinya.
+ *
+ * env.DRIVE_OWNER_REFRESH_TOKEN didapat SEKALI SAJA lewat proses login manual
+ * (lihat README, pakai OAuth 2.0 Playground) - setelah itu backend bisa terus
+ * minta access token baru tanpa admin sekolah mana pun perlu login apa pun
+ * lagi. env.DRIVE_OWNER_CLIENT_ID/DRIVE_OWNER_CLIENT_SECRET adalah pasangan
+ * OAuth Client ID (tipe Web application) yang dipakai untuk mendapat
+ * refresh_token itu tadi.
+ */
+export async function getGoogleAccessTokenDariRefreshToken(env) {
+  const cacheKey = 'DRIVE_OWNER_ACCESS_TOKEN';
+  const cached = await env.SESSIONS.get(cacheKey);
+  if (cached) return cached;
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: env.DRIVE_OWNER_REFRESH_TOKEN,
+      client_id: env.DRIVE_OWNER_CLIENT_ID,
+      client_secret: env.DRIVE_OWNER_CLIENT_SECRET
+    })
+  });
+  const result = await res.json();
+  if (!result.access_token) throw new Error('Gagal refresh access token Google Drive: ' + JSON.stringify(result));
+
+  // Simpan sedikit lebih pendek dari masa berlaku sesungguhnya (biasanya 3600
+  // detik) - jaga-jaga supaya tidak terpakai saat sudah/nyaris kedaluwarsa.
+  const ttl = Math.max(60, (result.expires_in || 3600) - 120);
+  await env.SESSIONS.put(cacheKey, result.access_token, { expirationTtl: ttl });
+  return result.access_token;
+}
