@@ -503,14 +503,28 @@ async function saveAbsenPulang(args, env) {
 async function getAbsenMasukUntukEdit(args, env) {
   const [token, tanggal, filterNuptk, requestedSekolahId] = args;
   const user = await requireUser(env, token);
-  if (!isAdminAny(user)) return [];
+  if (!isAdminAny(user)) return { keteranganLibur: null, data: [] };
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const dateStr = tanggal || nowJakarta().dateStr;
+
+  // Cek dulu apakah tanggal ini hari libur (mingguan ATAU kalender libur
+  // khusus sekolah) - kalau libur, JANGAN buat baris "Belum Ada Data" untuk
+  // semua guru, karena memang wajar tidak ada yang absen di hari libur (itu
+  // bukan tanda auto-absen gagal). Data yang SUNGGUHAN ada (mis. ada guru
+  // yang kebetulan piket/lembur di hari libur) tetap ditampilkan seperti
+  // biasa - cuma placeholder-nya yang di-skip.
+  const settingsSekolah = await getSettingsMap(env, sekolahId);
+  const dayOfWeek = new Date(dateStr).getUTCDay();
+  const liburKhusus = await checkApakahHariLibur(env, sekolahId, dateStr);
+  const keteranganLibur = isHariLiburMingguan(settingsSekolah, dayOfWeek)
+    ? (liburKhusus || 'Hari libur mingguan sekolah')
+    : liburKhusus;
+
   const [users, rows, guruCutiMap] = await Promise.all([
     getUsersListCached(env, sekolahId),
     sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=eq.${dateStr}`),
-    getGuruCutiAktifHariIni(env, sekolahId, dateStr)
+    keteranganLibur ? Promise.resolve({}) : getGuruCutiAktifHariIni(env, sekolahId, dateStr)
   ]);
 
   const rowByNuptk = {};
@@ -527,21 +541,23 @@ async function getAbsenMasukUntukEdit(args, env) {
         docId: existing.id, nuptk: existing.nuptk, nama: existing.nama, tanggal: existing.tanggal,
         jam: existing.jam, status: existing.status, keterangan: existing.keterangan, belumAdaData: false
       });
-    } else if (!guruCutiMap[nuptk]) {
+    } else if (!keteranganLibur && !guruCutiMap[nuptk]) {
       hasil.push({
         docId: null, nuptk, nama: u.nama, tanggal: dateStr, jam: null, status: 'Tanpa Keterangan',
-        keterangan: 'Belum ada data absen (auto-absen kemungkinan gagal) - isi manual di sini.', belumAdaData: true
+        keterangan: 'Belum ada data absen', belumAdaData: true
       });
     }
   });
 
   const filterTarget = String(filterNuptk || 'ALL').trim();
-  return hasil
+  const data = hasil
     .filter((r) => filterTarget === 'ALL' || String(r.nuptk).trim() === filterTarget)
     .sort((a, b) => {
       if (a.belumAdaData !== b.belumAdaData) return a.belumAdaData ? -1 : 1;
       return String(a.jam).localeCompare(String(b.jam));
     });
+
+  return { keteranganLibur, data };
 }
 
 async function updateAbsenMasuk(args, env) {
