@@ -1229,12 +1229,15 @@ async function getIdentitasSekolahUntukCetak(args, env) {
     kop_baris1: settings.kop_baris1 || '',
     kop_baris2: settings.kop_baris2 || '',
     logo_kiri_url: settings.logo_kiri_url || '',
-    logo_kanan_url: settings.logo_kanan_url || ''
+    logo_kanan_url: settings.logo_kanan_url || '',
+    ttd_wakasek_url: settings.ttd_wakasek_url || ''
   };
 }
 
 /**
- * Upload logo kop surat (JPG/PNG) ke Google Drive - berjalan ATAS NAMA akun
+ * Upload gambar identitas sekolah (JPG/PNG) ke Google Drive: logo kiri/kanan
+ * kop surat DAN tanda tangan digital Wakasek (jenis 'kiri' | 'kanan' | 'ttd').
+ * Berjalan ATAS NAMA akun
  * Google pribadi pemilik aplikasi (refresh_token, lihat drive.js &
  * googleAuth.js), BUKAN akun admin sekolah yang sedang mengupload. Admin
  * sekolah cukup pilih file, tidak perlu login/pilih akun Google apa pun -
@@ -1242,15 +1245,15 @@ async function getIdentitasSekolahUntukCetak(args, env) {
  * sekolah (key logo_kiri_url/logo_kanan_url) - admin tidak perlu klik
  * "Simpan Pengaturan" terpisah setelah upload.
  */
-async function uploadLogoKop(args, env) {
-  const [token, sisi, base64Data, mimeType, requestedSekolahId] = args;
+async function uploadGambarIdentitas(args, env) {
+  const [token, jenis, base64Data, mimeType, requestedSekolahId] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
-  const sisiBersih = String(sisi || '').trim().toLowerCase();
-  if (sisiBersih !== 'kiri' && sisiBersih !== 'kanan') {
-    return { success: false, message: 'Sisi logo tidak valid (harus "kiri" atau "kanan").' };
+  const jenisBersih = String(jenis || '').trim().toLowerCase();
+  if (!['kiri', 'kanan', 'ttd'].includes(jenisBersih)) {
+    return { success: false, message: 'Jenis gambar tidak valid (harus "kiri", "kanan", atau "ttd").' };
   }
   if (!env.DRIVE_OWNER_REFRESH_TOKEN || !env.DRIVE_OWNER_CLIENT_ID || !env.DRIVE_OWNER_CLIENT_SECRET) {
     return { success: false, message: 'Setup Google Drive belum lengkap di Worker Secrets (DRIVE_OWNER_REFRESH_TOKEN/CLIENT_ID/CLIENT_SECRET) - lihat README bagian "Setup Kop Surat".' };
@@ -1264,8 +1267,10 @@ async function uploadLogoKop(args, env) {
   }
 
   const ekstensi = mimeBersih === 'image/png' ? 'png' : 'jpg';
-  const namaFile = `logo-${sisiBersih}-${sekolahId}.${ekstensi}`;
-  const keySettings = `logo_${sisiBersih}_url`;
+  const namaFile = jenisBersih === 'ttd'
+    ? `ttd-wakasek-${sekolahId}.${ekstensi}`
+    : `logo-${jenisBersih}-${sekolahId}.${ekstensi}`;
+  const keySettings = jenisBersih === 'ttd' ? 'ttd_wakasek_url' : `logo_${jenisBersih}_url`;
 
   let hasil;
   try {
@@ -1282,7 +1287,7 @@ async function uploadLogoKop(args, env) {
   }
   await invalidate(env, `SETTINGS_CACHE_${sekolahId}`);
 
-  return { success: true, url: hasil.url, message: `Logo ${sisiBersih} berhasil diupload dan disimpan.` };
+  return { success: true, url: hasil.url, message: `${jenisBersih === 'ttd' ? 'Tanda tangan digital' : 'Logo ' + jenisBersih} berhasil diupload dan disimpan.` };
 }
 
 async function saveSettingsData(args, env) {
@@ -3062,7 +3067,7 @@ export const handlers = {
   getDashboardCharts,
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
-  uploadLogoKop,
+  uploadGambarIdentitas,
   checkSudahAbsenKegiatan,
   saveKegiatan,
   saveAbsenKegiatanKhusus,

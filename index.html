@@ -574,7 +574,7 @@
     <div class='col-4 col-md-4 col-lg-2'><div class='card card-stat p-3 text-center h-100 bg-white'><h2 class='text-primary fw-bold' id='stat-tugas'>0</h2><span>Tugas Dinas</span></div></div>
     <div class='col-4 col-md-4 col-lg-2'><div class='card card-stat p-3 text-center h-100 bg-white'><h2 class='text-info fw-bold' id='stat-sakit'>0</h2><span>Sakit / Cuti</span></div></div>
     <div class='col-4 col-md-4 col-lg-2'><div class='card card-stat p-3 text-center h-100 bg-white'><h2 class='text-secondary fw-bold' id='stat-izin'>0</h2><span>Izin</span></div></div>
-    <div class='col-4 col-md-4 col-lg-2'><div class='card card-stat p-3 text-center h-100 border-danger text-danger bg-danger-subtle'><h2 class='fw-bold' id='stat-alpa'>0</h2><span>Alpa</span></div></div>
+    <div class='col-4 col-md-4 col-lg-2'><div class='card card-stat p-3 text-center h-100 border-danger text-danger bg-danger-subtle'><h2 class='fw-bold' id='stat-alpa'>0</h2><span>Tanpa Ket.</span></div></div>
   </div>
 
   <!-- BARIS KEDUA: REKAP KETIDAKHADIRAN JAM PELAJARAN (dicatat Piket), pakai filter &amp; periode yang sama di atas -->
@@ -587,7 +587,7 @@
     <div class='col-4 col-md-4 col-lg-2 jp-hide-nonmengajar'><div class='card card-stat p-3 text-center h-100 bg-white'><h2 class='text-info fw-bold' id='stat-jp-dinas'>0</h2><span>Dinas</span></div></div>
     <div class='col-4 col-md-4 col-lg-2 jp-hide-nonmengajar'><div class='card card-stat p-3 text-center h-100 bg-white'><h2 class='text-secondary fw-bold' id='stat-jp-sakit'>0</h2><span>Sakit</span></div></div>
     <div class='col-4 col-md-4 col-lg-2 jp-hide-nonmengajar'><div class='card card-stat p-3 text-center h-100 bg-white'><h2 class='text-secondary fw-bold' id='stat-jp-izin'>0</h2><span>Izin</span></div></div>
-    <div class='col-4 col-md-4 col-lg-2 jp-hide-nonmengajar'><div class='card card-stat p-3 text-center h-100 border-danger text-danger bg-danger-subtle'><h2 class='fw-bold' id='stat-jp-alpa'>0</h2><span>Alpa</span></div></div>
+    <div class='col-4 col-md-4 col-lg-2 jp-hide-nonmengajar'><div class='card card-stat p-3 text-center h-100 border-danger text-danger bg-danger-subtle'><h2 class='fw-bold' id='stat-jp-alpa'>0</h2><span>Tanpa Ket.</span></div></div>
   </div>
 
   <!-- RIWAYAT AKTIVITAS: gabungan Absen Masuk + Kegiatan Sekolah/Pesantren + Kegiatan
@@ -971,130 +971,177 @@
 
 <!-- PERBAIKAN: MENAMBAHKAN ID ATRIBUT AGAR BISA DIKONTROL OLEH ROLE PIKET -->
 <div class='content-section' id='pengaturan' style='display: none;'>
-  <div class='card p-4 shadow-sm'>
-    <form onsubmit='saveSettings(event)'>
-      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-sliders'></i> Aturan Absen Sekolah</h5>
-      <div class='row'>
-        <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Jam Masuk</label><input class='form-control' id='set-jam' required='required' type='time'/></div>
-        <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Toleransi (Menit)</label><input class='form-control' id='set-tol' required='required' type='number'/></div>
-        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Latitude Sekolah</label><input class='form-control' id='set-lat' required='required' type='text'/></div>
-        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Longitude Sekolah</label><input class='form-control' id='set-lon' required='required' type='text'/></div>
-        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Radius GPS (Meter)</label><input class='form-control' id='set-rad' required='required' type='number'/></div>
-      </div>
-      <button class='btn btn-info btn-sm text-white mb-4' onclick='getLokasiSekarang()' type='button'><i class='bi bi-crosshair'></i> Ambil Lokasi Saat Ini</button>
+  <div class='card shadow-sm'>
+    <!-- novalidate: validasi required dilakukan manual di saveSettings() supaya kalau ada
+         field wajib yang kosong di tab LAIN (yang sedang tersembunyi), aplikasi otomatis
+         pindah ke tab itu - kalau pakai validasi bawaan browser, field tersembunyi yang
+         invalid bikin submit gagal diam-diam tanpa pesan apa pun. -->
+    <form id='form-pengaturan' novalidate='novalidate' onsubmit='saveSettings(event)'>
 
-      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-building-fill-check'></i> Lokasi Pesantren <small class='text-muted fw-normal'>(untuk validasi Kegiatan Pesantren)</small></h5>
-      <div class='row'>
-        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Latitude Pesantren</label><input class='form-control' id='set-lat-pesantren' type='text'/></div>
-        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Longitude Pesantren</label><input class='form-control' id='set-lon-pesantren' type='text'/></div>
-        <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Radius GPS (Meter)</label><input class='form-control' id='set-rad-pesantren' type='number'/></div>
-      </div>
-      <button class='btn btn-info btn-sm text-white mb-4' onclick='getLokasiSekarangPesantren()' type='button'><i class='bi bi-crosshair'></i> Ambil Lokasi Saat Ini</button>
+      <ul class='nav nav-tabs px-3 pt-3 flex-nowrap' id='pengaturan-tabs' style='overflow-x:auto; overflow-y:hidden;'>
+        <li class='nav-item'><button class='nav-link active text-nowrap' data-tab='pg-identitas' onclick='bukaTabPengaturan(&quot;pg-identitas&quot;)' type='button'><i class='bi bi-building'></i> Identitas &amp; TTD</button></li>
+        <li class='nav-item'><button class='nav-link text-nowrap' data-tab='pg-aturan' onclick='bukaTabPengaturan(&quot;pg-aturan&quot;)' type='button'><i class='bi bi-sliders'></i> Aturan Absen</button></li>
+        <li class='nav-item'><button class='nav-link text-nowrap' data-tab='pg-lokasi' onclick='bukaTabPengaturan(&quot;pg-lokasi&quot;)' type='button'><i class='bi bi-geo-alt-fill'></i> Lokasi</button></li>
+      </ul>
 
-      <div class='mb-3'>
-        <label class='form-label fw-semibold text-danger'><i class='bi bi-toggle-on'></i> Status Fitur Auto Alpa Harian</label>
-        <select class='form-select border-danger' id='set-auto-alpa' required='required'>
-          <option value='Aktif'>Aktif (Kunci Otomatis Jalankan Alpa)</option>
-          <option value='Nonaktif'>Nonaktifkan (Abaikan Kunci Otomatis)</option>
-        </select>
-        <small class='text-muted'>*Pilih &#39;Nonaktif&#39; jika hari ini ada kegiatan sekolah siang hari agar guru tidak otomatis ter-Alpa pada jam 12.20 siang.</small>
-      </div>
+      <div class='p-4'>
 
-      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-clock-history'></i> Jadwal Khusus Sekolah <small class='text-muted fw-normal'>(untuk sekolah dgn jam masuk berbeda, mis. MDT/DTA siang hari)</small></h5>
-      <div class='row'>
-        <div class='col-md-4 mb-3'>
-          <label class='form-label fw-semibold'>Jam Batas Auto Tanpa Keterangan</label>
-          <input class='form-control' id='set-jam-cutoff-alpa' placeholder='12:20' type='time'/>
-          <small class='text-muted'>Guru yang belum absen masuk setelah jam ini otomatis ditandai Tanpa Keterangan. Default 12:20 - ganti mis. jadi 17:00 untuk sekolah yang masuk siang hari.</small>
-        </div>
-        <div class='col-md-4 mb-3'>
-          <label class='form-label fw-semibold'>Jam Boleh Absen Pulang</label>
-          <input class='form-control' id='set-jam-boleh-pulang' placeholder='15:30' type='time'/>
-          <small class='text-muted'>Tombol Absen Pulang guru baru aktif setelah jam ini, menyesuaikan tata tertib jam pulang sekolah. Default 15:30.</small>
-        </div>
-        <div class='col-md-4 mb-3'>
-          <label class='form-label fw-semibold'>Wajib Absen Sholat Dzuhur?</label>
-          <select class='form-select' id='set-wajib-dzuhur'>
-            <option value='Aktif'>Aktif (wajib &amp; kena auto Tidak Absen)</option>
-            <option value='Nonaktif'>Nonaktif (tidak berlaku di sekolah ini)</option>
-          </select>
-        </div>
-        <div class='col-md-4 mb-3'>
-          <label class='form-label fw-semibold'>Wajib Absen Sholat Ashar?</label>
-          <select class='form-select' id='set-wajib-ashar'>
-            <option value='Aktif'>Aktif (wajib &amp; kena auto Tidak Absen)</option>
-            <option value='Nonaktif'>Nonaktif (tidak berlaku di sekolah ini)</option>
-          </select>
-        </div>
-        <div class='col-12 mb-3'>
-          <label class='form-label fw-semibold'>Hari Libur Mingguan Rutin</label>
-          <div class='d-flex flex-wrap gap-3 border rounded p-2'>
-            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-1' type='checkbox' value='1'/><label class='form-check-label' for='hl-1'>Senin</label></div>
-            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-2' type='checkbox' value='2'/><label class='form-check-label' for='hl-2'>Selasa</label></div>
-            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-3' type='checkbox' value='3'/><label class='form-check-label' for='hl-3'>Rabu</label></div>
-            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-4' type='checkbox' value='4'/><label class='form-check-label' for='hl-4'>Kamis</label></div>
-            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-5' type='checkbox' value='5'/><label class='form-check-label' for='hl-5'>Jumat</label></div>
-            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-6' type='checkbox' value='6'/><label class='form-check-label' for='hl-6'>Sabtu</label></div>
-            <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-0' type='checkbox' value='0'/><label class='form-check-label' for='hl-0'>Ahad</label></div>
-          </div>
-          <small class='text-muted'>Hari yang dicentang dianggap libur rutin (Absen Masuk ditolak, tidak kena auto Tanpa Keterangan/Tidak Absen). Default Sabtu+Ahad - untuk sekolah yang cuma libur Ahad saja (mis. MDT/DTA), cukup centang Ahad saja.</small>
-        </div>
-      </div>
-
-      <div class='alert alert-secondary py-3 px-3 mb-4' id='blok-otomasi-manual' style='display:none;'>
-        <div class='fw-semibold mb-1'><i class='bi bi-lightning-charge-fill'></i> Jalankan Otomasi Sekarang (Manual)</div>
-        <small class='text-muted d-block mb-2'>Untuk menguji atau menyusulkan hari yang otomasinya sempat gagal/belum sempat jalan sesuai jadwal cron - untuk SEMUA sekolah, hari ini juga. Sengaja 2 tombol terpisah (bukan 1 gabungan) supaya request ke database per klik tetap ringan.</small>
-        <button class='btn btn-outline-dark btn-sm me-2' onclick='jalankanOtomasiManualUI(&apos;alpa&apos;)' type='button'>
-          <i class='bi bi-play-fill'></i> Auto Alpa Absen Masuk
-        </button>
-        <button class='btn btn-outline-dark btn-sm' onclick='jalankanOtomasiManualUI(&apos;sholat&apos;)' type='button'>
-          <i class='bi bi-play-fill'></i> Auto Tidak Absen Sholat
-        </button>
-      </div>
-
-      <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-building'></i> Identitas Kop &amp; Tanda Tangan Laporan</h5>
-      <div class='row'>
-        <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Instansi / Sekolah</label><input class='form-control' id='set-nama-sekolah' placeholder='Contoh: SDIT IDRISIYYAH TAMANSARI' required='required' type='text'/></div>
-        <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Wakasek Bidang SDM</label><input class='form-control' id='set-nama-wakasek' placeholder='Contoh: Hilda Siti Awaliyah, S.Pd.' required='required' type='text'/></div>
-        <div class='col-12 mb-3'><label class='form-label fw-semibold'>Alamat Lengkap Sekolah</label><textarea class='form-control' id='set-alamat-sekolah' placeholder='Tulis alamat lengkap untuk kop surat resmi...' required='required' rows='2'></textarea></div>
-        <div class='col-md-6 mb-3'>
-          <label class='form-label fw-semibold'>Baris Atas 1 (opsional)</label>
-          <input class='form-control' id='set-kop-baris1' placeholder='Contoh: YAYASAN PENDIDIKAN IDRISIYYAH' type='text'/>
-        </div>
-        <div class='col-md-6 mb-3'>
-          <label class='form-label fw-semibold'>Baris Atas 2 (opsional)</label>
-          <input class='form-control' id='set-kop-baris2' placeholder='Contoh: TERAKREDITASI A' type='text'/>
-          <small class='text-muted'>Kedua baris ini tampil di ATAS nama sekolah pada kop surat cetak.</small>
-        </div>
-        <div class='col-12'><hr/></div>
-        <div class='col-md-6 mb-3'>
-          <label class='form-label fw-semibold'>Logo Kiri (JPG/PNG)</label>
-          <small class='text-muted d-block mb-2'>Disimpan otomatis ke Google Drive. Maks 5MB.</small>
-          <div class='d-flex align-items-center gap-3 flex-wrap'>
-            <img id='preview-logo-kiri' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
-            <div class='flex-grow-1' style='min-width: 180px;'>
-              <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadLogoUI(this, &quot;kiri&quot;)'/>
-              <small id='status-logo-kiri' class='text-muted'></small>
+        <!-- ============ TAB 1: IDENTITAS SEKOLAH & TANDA TANGAN LAPORAN ============ -->
+        <div class='pg-pane' id='pg-identitas'>
+          <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-building'></i> Identitas Kop &amp; Tanda Tangan Laporan</h5>
+          <div class='row'>
+            <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Instansi / Sekolah</label><input class='form-control' id='set-nama-sekolah' placeholder='Contoh: SDIT IDRISIYYAH TAMANSARI' required='required' type='text'/></div>
+            <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Nama Wakasek Bidang SDM</label><input class='form-control' id='set-nama-wakasek' placeholder='Contoh: Hilda Siti Awaliyah, S.Pd.' required='required' type='text'/></div>
+            <div class='col-12 mb-3'><label class='form-label fw-semibold'>Alamat Lengkap Sekolah</label><textarea class='form-control' id='set-alamat-sekolah' placeholder='Tulis alamat lengkap untuk kop surat resmi...' required='required' rows='2'></textarea></div>
+            <div class='col-md-6 mb-3'>
+              <label class='form-label fw-semibold'>Baris Atas 1 (opsional)</label>
+              <input class='form-control' id='set-kop-baris1' placeholder='Contoh: YAYASAN PENDIDIKAN IDRISIYYAH' type='text'/>
+            </div>
+            <div class='col-md-6 mb-3'>
+              <label class='form-label fw-semibold'>Baris Atas 2 (opsional)</label>
+              <input class='form-control' id='set-kop-baris2' placeholder='Contoh: TERAKREDITASI A' type='text'/>
+              <small class='text-muted'>Kedua baris ini tampil di ATAS nama sekolah pada kop surat cetak.</small>
+            </div>
+            <div class='col-12'><hr/></div>
+            <div class='col-md-6 mb-3'>
+              <label class='form-label fw-semibold'>Logo Kiri (JPG/PNG)</label>
+              <small class='text-muted d-block mb-2'>Disimpan otomatis ke Google Drive. Maks 5MB.</small>
+              <div class='d-flex align-items-center gap-3 flex-wrap'>
+                <img id='preview-img-kiri' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
+                <div class='flex-grow-1' style='min-width: 180px;'>
+                  <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadGambarUI(this, &quot;kiri&quot;)'/>
+                  <small id='status-img-kiri' class='text-muted'></small>
+                </div>
+              </div>
+            </div>
+            <div class='col-md-6 mb-3'>
+              <label class='form-label fw-semibold'>Logo Kanan (JPG/PNG)</label>
+              <small class='text-muted d-block mb-2'>Disimpan otomatis ke Google Drive. Maks 5MB.</small>
+              <div class='d-flex align-items-center gap-3 flex-wrap'>
+                <img id='preview-img-kanan' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
+                <div class='flex-grow-1' style='min-width: 180px;'>
+                  <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadGambarUI(this, &quot;kanan&quot;)'/>
+                  <small id='status-img-kanan' class='text-muted'></small>
+                </div>
+              </div>
+            </div>
+            <div class='col-12 mb-3'>
+              <small class='text-muted'>Logo otomatis dipakai di kiri &amp; kanan kop surat pada semua Cetak PDF (Payroll, Laporan, Nilai Guru, Rekap Kehadiran) - kalau belum diupload, kop surat tetap tampil (cuma teks, tanpa logo).</small>
+            </div>
+            <div class='col-12'><hr/></div>
+            <div class='col-md-6 mb-3'>
+              <label class='form-label fw-semibold'>Tanda Tangan Digital Wakasek (PNG/JPG)</label>
+              <small class='text-muted d-block mb-2'>Tampil di kolom tanda tangan Wakasek pada semua Cetak PDF. Disarankan PNG dengan latar transparan/putih, ukuran wajar. Disimpan otomatis ke Google Drive. Maks 5MB.</small>
+              <div class='d-flex align-items-center gap-3 flex-wrap'>
+                <img id='preview-img-ttd' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
+                <div class='flex-grow-1' style='min-width: 180px;'>
+                  <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadGambarUI(this, &quot;ttd&quot;)'/>
+                  <small id='status-img-ttd' class='text-muted'></small>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <div class='col-md-6 mb-3'>
-          <label class='form-label fw-semibold'>Logo Kanan (JPG/PNG)</label>
-          <small class='text-muted d-block mb-2'>Disimpan otomatis ke Google Drive. Maks 5MB.</small>
-          <div class='d-flex align-items-center gap-3 flex-wrap'>
-            <img id='preview-logo-kanan' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
-            <div class='flex-grow-1' style='min-width: 180px;'>
-              <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadLogoUI(this, &quot;kanan&quot;)'/>
-              <small id='status-logo-kanan' class='text-muted'></small>
+
+        <!-- ============ TAB 2: ATURAN ABSEN SEKOLAH & JADWAL KHUSUS ============ -->
+        <div class='pg-pane' id='pg-aturan' style='display:none;'>
+          <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-sliders'></i> Aturan Absen Sekolah</h5>
+          <div class='row'>
+            <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Jam Masuk</label><input class='form-control' id='set-jam' required='required' type='time'/></div>
+            <div class='col-md-6 mb-3'><label class='form-label fw-semibold'>Toleransi (Menit)</label><input class='form-control' id='set-tol' required='required' type='number'/></div>
+          </div>
+
+          <div class='mb-4'>
+            <label class='form-label fw-semibold text-danger'><i class='bi bi-toggle-on'></i> Status Fitur Auto Tanpa Keterangan Harian</label>
+            <select class='form-select border-danger' id='set-auto-alpa' required='required'>
+              <option value='Aktif'>Aktif (Otomatis Tandai Tanpa Keterangan)</option>
+              <option value='Nonaktif'>Nonaktifkan (Abaikan Penandaan Otomatis)</option>
+            </select>
+            <small class='text-muted'>*Pilih &#39;Nonaktif&#39; jika hari ini ada kegiatan sekolah siang hari agar guru tidak otomatis ditandai Tanpa Keterangan setelah jam batas (default 12.20).</small>
+          </div>
+
+          <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-clock-history'></i> Jadwal Khusus Sekolah <small class='text-muted fw-normal'>(untuk sekolah dgn jam masuk berbeda, mis. MDT/DTA siang hari)</small></h5>
+          <div class='row'>
+            <div class='col-md-4 mb-3'>
+              <label class='form-label fw-semibold'>Jam Batas Auto Tanpa Keterangan</label>
+              <input class='form-control' id='set-jam-cutoff-alpa' placeholder='12:20' type='time'/>
+              <small class='text-muted'>Guru yang belum absen masuk setelah jam ini otomatis ditandai Tanpa Keterangan. Default 12:20 - ganti mis. jadi 17:00 untuk sekolah yang masuk siang hari.</small>
+            </div>
+            <div class='col-md-4 mb-3'>
+              <label class='form-label fw-semibold'>Jam Boleh Absen Pulang</label>
+              <input class='form-control' id='set-jam-boleh-pulang' placeholder='15:30' type='time'/>
+              <small class='text-muted'>Tombol Absen Pulang guru baru aktif setelah jam ini, menyesuaikan tata tertib jam pulang sekolah. Default 15:30.</small>
+            </div>
+            <div class='col-md-4 mb-3'>
+              <label class='form-label fw-semibold'>Wajib Absen Sholat Dzuhur?</label>
+              <select class='form-select' id='set-wajib-dzuhur'>
+                <option value='Aktif'>Aktif (wajib &amp; kena auto Tidak Absen)</option>
+                <option value='Nonaktif'>Nonaktif (tidak berlaku di sekolah ini)</option>
+              </select>
+            </div>
+            <div class='col-md-4 mb-3'>
+              <label class='form-label fw-semibold'>Wajib Absen Sholat Ashar?</label>
+              <select class='form-select' id='set-wajib-ashar'>
+                <option value='Aktif'>Aktif (wajib &amp; kena auto Tidak Absen)</option>
+                <option value='Nonaktif'>Nonaktif (tidak berlaku di sekolah ini)</option>
+              </select>
+            </div>
+            <div class='col-12 mb-3'>
+              <label class='form-label fw-semibold'>Hari Libur Mingguan Rutin</label>
+              <div class='d-flex flex-wrap gap-3 border rounded p-2'>
+                <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-1' type='checkbox' value='1'/><label class='form-check-label' for='hl-1'>Senin</label></div>
+                <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-2' type='checkbox' value='2'/><label class='form-check-label' for='hl-2'>Selasa</label></div>
+                <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-3' type='checkbox' value='3'/><label class='form-check-label' for='hl-3'>Rabu</label></div>
+                <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-4' type='checkbox' value='4'/><label class='form-check-label' for='hl-4'>Kamis</label></div>
+                <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-5' type='checkbox' value='5'/><label class='form-check-label' for='hl-5'>Jumat</label></div>
+                <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-6' type='checkbox' value='6'/><label class='form-check-label' for='hl-6'>Sabtu</label></div>
+                <div class='form-check'><input class='form-check-input cek-hari-libur' id='hl-0' type='checkbox' value='0'/><label class='form-check-label' for='hl-0'>Ahad</label></div>
+              </div>
+              <small class='text-muted'>Hari yang dicentang dianggap libur rutin (Absen Masuk ditolak, tidak kena auto Tanpa Keterangan/Tidak Absen). Default Sabtu+Ahad - untuk sekolah yang cuma libur Ahad saja (mis. MDT/DTA), cukup centang Ahad saja.</small>
             </div>
           </div>
+
+          <div class='alert alert-secondary py-3 px-3 mb-2' id='blok-otomasi-manual' style='display:none;'>
+            <div class='fw-semibold mb-1'><i class='bi bi-lightning-charge-fill'></i> Jalankan Otomasi Sekarang (Manual)</div>
+            <small class='text-muted d-block mb-2'>Untuk menguji atau menyusulkan hari yang otomasinya sempat gagal/belum sempat jalan sesuai jadwal cron - untuk SEMUA sekolah, hari ini juga. Sengaja 2 tombol terpisah (bukan 1 gabungan) supaya request ke database per klik tetap ringan.</small>
+            <button class='btn btn-outline-dark btn-sm me-2' onclick='jalankanOtomasiManualUI(&apos;alpa&apos;)' type='button'>
+              <i class='bi bi-play-fill'></i> Auto Tanpa Keterangan Absen Masuk
+            </button>
+            <button class='btn btn-outline-dark btn-sm' onclick='jalankanOtomasiManualUI(&apos;sholat&apos;)' type='button'>
+              <i class='bi bi-play-fill'></i> Auto Tidak Absen Sholat
+            </button>
+          </div>
         </div>
-        <div class='col-12'>
-          <small class='text-muted'>Logo otomatis dipakai di kiri &amp; kanan kop surat pada semua Cetak PDF (Payroll, Laporan, Nilai Guru, Rekap Kehadiran) - kalau belum diupload, kop surat tetap tampil (cuma teks, tanpa logo).</small>
+
+        <!-- ============ TAB 3: PENGATURAN LOKASI (SEKOLAH & PESANTREN) ============ -->
+        <div class='pg-pane' id='pg-lokasi' style='display:none;'>
+          <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-geo-alt-fill'></i> Lokasi Sekolah <small class='text-muted fw-normal'>(untuk validasi Absen Masuk)</small></h5>
+          <div class='row'>
+            <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Latitude Sekolah</label><input class='form-control' id='set-lat' required='required' type='text'/></div>
+            <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Longitude Sekolah</label><input class='form-control' id='set-lon' required='required' type='text'/></div>
+            <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Radius GPS (Meter)</label><input class='form-control' id='set-rad' required='required' type='number'/></div>
+          </div>
+          <button class='btn btn-info btn-sm text-white mb-4' onclick='getLokasiSekarang()' type='button'><i class='bi bi-crosshair'></i> Ambil Lokasi Saat Ini</button>
+
+          <h5 class='text-secondary fw-bold mb-3 border-bottom pb-2'><i class='bi bi-building-fill-check'></i> Lokasi Pesantren <small class='text-muted fw-normal'>(untuk validasi Kegiatan Pesantren)</small></h5>
+          <div class='row'>
+            <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Latitude Pesantren</label><input class='form-control' id='set-lat-pesantren' type='text'/></div>
+            <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Longitude Pesantren</label><input class='form-control' id='set-lon-pesantren' type='text'/></div>
+            <div class='col-md-4 mb-3'><label class='form-label fw-semibold'>Radius GPS (Meter)</label><input class='form-control' id='set-rad-pesantren' type='number'/></div>
+          </div>
+          <button class='btn btn-info btn-sm text-white mb-2' onclick='getLokasiSekarangPesantren()' type='button'><i class='bi bi-crosshair'></i> Ambil Lokasi Saat Ini</button>
         </div>
+
       </div>
-      
-      <button class='btn btn-primary w-100 mt-2' type='submit'><i class='bi bi-save-fill'></i> Simpan Seluruh Pengaturan</button>
+
+      <!-- SATU tombol simpan untuk SEMUA tab (di luar tab, selalu terlihat di dasar kartu). Semua
+           pengaturan tersimpan bersamaan lewat 1 panggilan saveSettingsData - tombol simpan
+           per-tab berisiko perubahan di tab lain yang belum sempat disimpan hilang begitu saja
+           saat pindah tab. Upload logo/TTD dikecualikan: tersimpan langsung begitu file dipilih. -->
+      <div class='px-4 py-3 border-top bg-white rounded-bottom' style='position: sticky; bottom: 0; z-index: 5;'>
+        <button class='btn btn-primary w-100' type='submit'><i class='bi bi-save-fill'></i> Simpan Seluruh Pengaturan</button>
+        <small class='text-muted d-block text-center mt-1'>Perubahan di semua tab disimpan bersamaan. Upload logo &amp; tanda tangan tersimpan otomatis begitu file dipilih.</small>
+      </div>
     </form>
   </div>
 </div>
@@ -1332,7 +1379,7 @@
             <div class='col-md-3' id='u-kwj-wrap'>
                 <input class='form-control' id='u-kwj-jp' min='1' max='60' placeholder='Kewajiban Mengajar (JP/minggu)' title='Kewajiban Mengajar (JP/minggu) - sesuai SK, biasanya 20-35' type='number'/>
             </div>
-            <div class='col-md-1'><button class='btn btn-primary w-100' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
+            <div class='col-12 col-lg-1'><button class='btn btn-primary w-100' style='white-space: nowrap;' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
         </form>
     </div>
 
@@ -1753,7 +1800,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'getDashboardData', 'getAbsenMasukUntukEdit', 'saveJadwalKegiatan', 'getJadwalKegiatan',
   'getSettingsData', 'saveSettingsData', 'getUsers', 'saveHariLibur', 'getLiburList',
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
-  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadLogoKop'
+  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadGambarIdentitas'
 ];
 
 (function () {
@@ -3420,7 +3467,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <div class="col-8"></div>
             <div class="col-4 text-center">
               <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p style="margin-bottom: 50px;">Wakasek Bidang SDM,</p>
+              <p style="margin-bottom: 0;">Wakasek Bidang SDM,</p>${ruangTtdHtml(identitas.ttd_wakasek_url, 55)}
               <p class="fw-bold" style="text-decoration: underline;">${schWakasek}</p>
             </div>
           </div>
@@ -3661,17 +3708,19 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         cb.checked = hariLiburArr.includes(cb.value);
       });
 
-      const previewKiri = document.getElementById('preview-logo-kiri');
-      if (data.logo_kiri_url) { previewKiri.src = data.logo_kiri_url; previewKiri.style.display = 'inline-block'; }
-      else { previewKiri.style.display = 'none'; }
-      const previewKanan = document.getElementById('preview-logo-kanan');
-      if (data.logo_kanan_url) { previewKanan.src = data.logo_kanan_url; previewKanan.style.display = 'inline-block'; }
-      else { previewKanan.style.display = 'none'; }
+      // Preview gambar identitas (logo kiri/kanan + tanda tangan digital Wakasek).
+      [['kiri', data.logo_kiri_url], ['kanan', data.logo_kanan_url], ['ttd', data.ttd_wakasek_url]].forEach(([jenis, url]) => {
+        const previewEl = document.getElementById('preview-img-' + jenis);
+        if (!previewEl) return;
+        if (url) { previewEl.src = url; previewEl.style.display = 'inline-block'; }
+        else { previewEl.style.display = 'none'; }
+      });
     }).getSettingsData(SESSION_TOKEN);
   }
 
   // ========================================================================
-  // UPLOAD LOGO KOP SURAT - langsung ke backend (uploadLogoKop), yang
+  // UPLOAD GAMBAR IDENTITAS (logo kiri/kanan kop surat + tanda tangan digital
+  // Wakasek) - langsung ke backend (uploadGambarIdentitas), yang
   // meneruskannya ke Google Drive PEMILIK APLIKASI (lewat refresh_token,
   // lihat drive.js & googleAuth.js) - BUKAN service account (kuotanya nol
   // di project non-Workspace, selalu gagal storageQuotaExceeded) dan BUKAN
@@ -3681,7 +3730,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // apa pun. URL hasilnya langsung tersimpan ke settings sekolah begitu
   // upload sukses (tidak perlu klik "Simpan Pengaturan" terpisah).
   // ========================================================================
-  function uploadLogoUI(inputEl, sisi) {
+  function uploadGambarUI(inputEl, jenis) {
     const file = inputEl.files[0];
     if (!file) return;
     if (!['image/png', 'image/jpeg'].includes(file.type)) {
@@ -3694,7 +3743,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       inputEl.value = '';
       return;
     }
-    const statusEl = document.getElementById('status-logo-' + sisi);
+    const statusEl = document.getElementById('status-img-' + jenis);
     statusEl.textContent = 'Mengupload ke Google Drive...';
 
     const reader = new FileReader();
@@ -3703,9 +3752,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       google.script.run.withSuccessHandler(res => {
         if (res.success) {
           statusEl.textContent = 'Berhasil diupload.';
-          const previewEl = document.getElementById('preview-logo-' + sisi);
+          const previewEl = document.getElementById('preview-img-' + jenis);
           previewEl.src = res.url; previewEl.style.display = 'inline-block';
-          Swal.fire('Berhasil', `Logo ${sisi} berhasil diupload dan langsung dipakai di semua Cetak PDF.`, 'success');
+          Swal.fire('Berhasil', `${jenis === 'ttd' ? 'Tanda tangan digital' : 'Logo ' + jenis} berhasil diupload dan langsung dipakai di semua Cetak PDF.`, 'success');
         } else {
           statusEl.textContent = '';
           Swal.fire('Gagal', res.message, 'error');
@@ -3713,13 +3762,37 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       }).withFailureHandler(err => {
         statusEl.textContent = '';
         Swal.fire('Gagal', err.message, 'error');
-      }).uploadLogoKop(SESSION_TOKEN, sisi, base64Data, file.type);
+      }).uploadGambarIdentitas(SESSION_TOKEN, jenis, base64Data, file.type);
     };
     reader.readAsDataURL(file);
   }
 
+  // Pindah tab di menu Pengaturan (Bootstrap JS tidak dimuat di aplikasi ini,
+  // jadi tab dikendalikan manual: tampilkan 1 pane, sembunyikan sisanya).
+  function bukaTabPengaturan(idPane) {
+    document.querySelectorAll('#pengaturan .pg-pane').forEach(p => {
+      p.style.display = (p.id === idPane) ? '' : 'none';
+    });
+    document.querySelectorAll('#pengaturan-tabs .nav-link').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === idPane);
+    });
+  }
+
   function saveSettings(e) {
     e.preventDefault();
+
+    // Validasi manual (form pakai novalidate): kalau ada field wajib yang kosong,
+    // pindah ke tab yang memuat field itu dulu, baru tampilkan pesan validasinya -
+    // tanpa ini, field invalid di tab tersembunyi bikin simpan gagal diam-diam.
+    const formPengaturan = document.getElementById('form-pengaturan');
+    const fieldInvalid = formPengaturan.querySelector(':invalid');
+    if (fieldInvalid) {
+      const pane = fieldInvalid.closest('.pg-pane');
+      if (pane) bukaTabPengaturan(pane.id);
+      fieldInvalid.reportValidity();
+      return;
+    }
+
     const config = {
       jam_masuk: document.getElementById('set-jam').value, toleransi: document.getElementById('set-tol').value,
       lat_sekolah: document.getElementById('set-lat').value, long_sekolah: document.getElementById('set-lon').value,
@@ -4194,6 +4267,21 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         <div style="width:70px; flex-shrink:0; text-align:center;">${logoHtml(identitas.logo_kanan_url)}</div>
       </div>
     `;
+  }
+
+  /**
+   * Ruang tanda tangan di kolom TTD Wakasek pada semua Cetak PDF: kotak tinggi
+   * tetap (menggantikan margin kosong lama) yang berisi gambar tanda tangan
+   * digital kalau sudah diupload di Pengaturan, atau kosong (untuk tanda tangan
+   * basah) kalau belum - jadi tata letak cetak tidak berubah sama sekali.
+   * mix-blend-mode: multiply membuat latar putih gambar "menyatu" ke kertas,
+   * jadi tanda tangan JPG/PNG berlatar putih tetap tampak bersih saat dicetak.
+   */
+  function ruangTtdHtml(url, tinggiPx) {
+    const img = url
+      ? `<img src="${escAttr(url)}" style="max-height:${tinggiPx - 6}px; max-width:100%; mix-blend-mode: multiply;" onerror="this.style.display='none'"/>`
+      : '';
+    return `<div style="height:${tinggiPx}px; display:flex; align-items:center; justify-content:center;">${img}</div>`;
   }
 
   function escAttr(teks) {
@@ -4739,7 +4827,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <div class="col-8"></div>
             <div class="col-4 text-center">
               <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'})}</p>
-              <p style="margin-bottom: 50px;">Wakasek Bidang SDM,</p>
+              <p style="margin-bottom: 0;">Wakasek Bidang SDM,</p>${ruangTtdHtml(settings.ttd_wakasek_url, 55)}
               <p class="fw-bold" style="text-decoration: underline;">${schWakasek}</p>
             </div>
           </div>
@@ -4854,7 +4942,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
               { key: 'Dinas', icon: 'bi-briefcase-fill', color: 'info' },
               { key: 'Sakit', icon: 'bi-plus-circle-fill', color: 'secondary' },
               { key: 'Izin', icon: 'bi-info-circle-fill', color: 'secondary' },
-              { key: 'Alpa', icon: 'bi-x-circle-fill', color: 'danger' }
+              { key: 'Alpa', label: 'Tanpa Ket.', icon: 'bi-x-circle-fill', color: 'danger' }
             ]);
           } else {
             payRekapBox.innerHTML = '';
@@ -5003,7 +5091,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
                 <th width="8%">${headKolomSakit}</th>
                 <th width="8%">Izin</th>
                 <th width="10%">${headKolom5}</th>
-                <th width="8%">Alpa</th>
+                <th width="8%">Tanpa Ket.</th>
                 ${isJP ? '' : `<th width="12%">${headTotal}</th>`}
               </tr>
             </thead>
@@ -5057,8 +5145,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             </div>
             <div class="ttd-spacer">&#160;</div>
             <div class="ttd-kolom">
-              <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'})}<br>Dibuat Oleh<br>Wakasek Bidang SDM,</p>
-              <p class="ttd-nama">${schWakasek}</p>
+              <p style="margin-bottom: 0;">Tasikmalaya, ${new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'})}<br>Dibuat Oleh<br>Wakasek Bidang SDM,</p>
+              ${ruangTtdHtml(settings.ttd_wakasek_url, 65)}
+              <p class="ttd-nama" style="margin-top: 0;">${schWakasek}</p>
             </div>
             <div class="clear-float"></div>
           </div>
@@ -5359,7 +5448,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <div class="col-8"></div>
             <div class="col-4 text-center">
               <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p style="margin-bottom: 50px;">Wakasek Bidang SDM,</p>
+              <p style="margin-bottom: 0;">Wakasek Bidang SDM,</p>${ruangTtdHtml(identitas.ttd_wakasek_url, 55)}
               <p class="fw-bold" style="text-decoration: underline;">${schWakasek}</p>
             </div>
           </div>
