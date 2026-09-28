@@ -6,7 +6,7 @@ import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
 import { nowJakarta, getPeriodeBerjalan, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
-import { uploadFileKeDrive } from './drive.js';
+import { uploadFileKeDrive, hapusFileDriveDariUrl } from './drive.js';
 
 /**
  * Ambil jam (HH:mm) dalam WIB dari sebuah timestamp yang disimpan pakai
@@ -1280,12 +1280,18 @@ async function uploadGambarIdentitas(args, env) {
   }
 
   const existingRows = await sbSelect(env, 'settings', `sekolah_id=eq.${sekolahId}&key=eq.${keySettings}&limit=1`);
+  const urlLama = existingRows.length > 0 ? existingRows[0].value : null;
   if (existingRows.length > 0) {
     await sbUpdateWhere(env, 'settings', { sekolah_id: sekolahId, key: keySettings }, { value: hasil.url });
   } else {
     await sbInsert(env, 'settings', { sekolah_id: sekolahId, key: keySettings, value: hasil.url });
   }
   await invalidate(env, `SETTINGS_CACHE_${sekolahId}`);
+
+  // Gambar lama dihapus dari Drive SETELAH yang baru tersimpan (best effort - gagal
+  // menghapus tidak membatalkan upload), supaya file lama yang berlink publik tidak
+  // menumpuk setiap kali gambar diganti.
+  if (urlLama) await hapusFileDriveDariUrl(env, urlLama);
 
   return { success: true, url: hasil.url, message: `${jenisBersih === 'ttd' ? 'Tanda tangan digital' : 'Logo ' + jenisBersih} berhasil diupload dan disimpan.` };
 }
@@ -1500,6 +1506,50 @@ async function changeUsername(args, env) {
     success: true,
     message: `Username berhasil diganti dari "${lama}" menjadi "${baru}". Seluruh riwayat absen, kegiatan, cuti, dan rekap jam pelajaran tetap utuh dan sudah ikut dipindahkan. Kalau guru ybs sedang login, minta dia logout lalu login ulang pakai username baru.`
   };
+}
+
+/**
+ * Hapus gambar identitas (logo kiri/kanan atau tanda tangan digital) yang sudah
+ * diupload: file di Google Drive dihapus, lalu pengaturannya dikosongkan sehingga
+ * Cetak PDF berikutnya kembali tanpa gambar itu. Kalau penghapusan di Drive gagal
+ * (mis. izin/token bermasalah), pengaturan TETAP dikosongkan (gambar berhenti
+ * dipakai di cetakan) tapi pesan peringatan dikirim - file-nya mungkin masih ada
+ * di Drive dan perlu dihapus manual.
+ */
+async function hapusGambarIdentitas(args, env) {
+  const [token, jenis, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = resolveSekolahId(user, requestedSekolahId);
+
+  const jenisBersih = String(jenis || '').trim().toLowerCase();
+  if (!['kiri', 'kanan', 'ttd'].includes(jenisBersih)) {
+    return { success: false, message: 'Jenis gambar tidak valid (harus "kiri", "kanan", atau "ttd").' };
+  }
+  const keySettings = jenisBersih === 'ttd' ? 'ttd_wakasek_url' : `logo_${jenisBersih}_url`;
+  const namaTampil = jenisBersih === 'ttd' ? 'Tanda tangan digital' : `Logo ${jenisBersih}`;
+
+  const rows = await sbSelect(env, 'settings', `sekolah_id=eq.${sekolahId}&key=eq.${keySettings}&limit=1`);
+  const urlLama = rows.length > 0 ? rows[0].value : '';
+  if (!urlLama) return { success: true, message: `${namaTampil} memang belum ada.` };
+
+  let hasilDrive = { ok: true };
+  if (env.DRIVE_OWNER_REFRESH_TOKEN && env.DRIVE_OWNER_CLIENT_ID && env.DRIVE_OWNER_CLIENT_SECRET) {
+    hasilDrive = await hapusFileDriveDariUrl(env, urlLama);
+  } else {
+    hasilDrive = { ok: false, pesan: 'Setup Google Drive belum lengkap di Worker Secrets.' };
+  }
+
+  await sbUpdateWhere(env, 'settings', { sekolah_id: sekolahId, key: keySettings }, { value: '' });
+  await invalidate(env, `SETTINGS_CACHE_${sekolahId}`);
+
+  if (!hasilDrive.ok) {
+    return {
+      success: true, peringatan: true,
+      message: `${namaTampil} sudah tidak dipakai lagi di cetakan, tapi file-nya mungkin masih ada di Google Drive (${hasilDrive.pesan}). Hapus manual dari folder "AbsenYuk - Kop Surat" kalau perlu.`
+    };
+  }
+  return { success: true, message: `${namaTampil} berhasil dihapus.` };
 }
 
 async function getGuruList(args, env) {
@@ -3068,6 +3118,7 @@ export const handlers = {
   getAbsenMasukUntukEdit,
   updateAbsenMasuk,
   uploadGambarIdentitas,
+  hapusGambarIdentitas,
   checkSudahAbsenKegiatan,
   saveKegiatan,
   saveAbsenKegiatanKhusus,

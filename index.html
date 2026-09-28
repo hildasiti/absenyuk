@@ -1011,6 +1011,7 @@
                 <div class='flex-grow-1' style='min-width: 180px;'>
                   <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadGambarUI(this, &quot;kiri&quot;)'/>
                   <small id='status-img-kiri' class='text-muted'></small>
+                  <button class='btn btn-outline-danger btn-sm mt-1' id='hapus-img-kiri' onclick='hapusGambarUI(&quot;kiri&quot;)' style='display:none;' type='button'><i class='bi bi-trash'></i> Hapus gambar</button>
                 </div>
               </div>
             </div>
@@ -1022,6 +1023,7 @@
                 <div class='flex-grow-1' style='min-width: 180px;'>
                   <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadGambarUI(this, &quot;kanan&quot;)'/>
                   <small id='status-img-kanan' class='text-muted'></small>
+                  <button class='btn btn-outline-danger btn-sm mt-1' id='hapus-img-kanan' onclick='hapusGambarUI(&quot;kanan&quot;)' style='display:none;' type='button'><i class='bi bi-trash'></i> Hapus gambar</button>
                 </div>
               </div>
             </div>
@@ -1037,6 +1039,7 @@
                 <div class='flex-grow-1' style='min-width: 180px;'>
                   <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadGambarUI(this, &quot;ttd&quot;)'/>
                   <small id='status-img-ttd' class='text-muted'></small>
+                  <button class='btn btn-outline-danger btn-sm mt-1' id='hapus-img-ttd' onclick='hapusGambarUI(&quot;ttd&quot;)' style='display:none;' type='button'><i class='bi bi-trash'></i> Hapus gambar</button>
                 </div>
               </div>
             </div>
@@ -1800,7 +1803,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'getDashboardData', 'getAbsenMasukUntukEdit', 'saveJadwalKegiatan', 'getJadwalKegiatan',
   'getSettingsData', 'saveSettingsData', 'getUsers', 'saveHariLibur', 'getLiburList',
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
-  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadGambarIdentitas'
+  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadGambarIdentitas', 'hapusGambarIdentitas'
 ];
 
 (function () {
@@ -3467,8 +3470,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <div class="col-8"></div>
             <div class="col-4 text-center">
               <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p style="margin-bottom: 0;">Wakasek Bidang SDM,</p>${ruangTtdHtml(identitas.ttd_wakasek_url, 55)}
-              <p class="fw-bold" style="text-decoration: underline;">${schWakasek}</p>
+              <p style="margin-bottom: 0; position:relative; z-index:1;">Wakasek Bidang SDM,</p>${ruangTtdHtml(identitas.ttd_wakasek_url, 55)}
+              <p class="fw-bold" style="text-decoration: underline; position:relative; z-index:1;">${schWakasek}</p>
             </div>
           </div>
           <script>
@@ -3712,8 +3715,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       [['kiri', data.logo_kiri_url], ['kanan', data.logo_kanan_url], ['ttd', data.ttd_wakasek_url]].forEach(([jenis, url]) => {
         const previewEl = document.getElementById('preview-img-' + jenis);
         if (!previewEl) return;
-        if (url) { previewEl.src = url; previewEl.style.display = 'inline-block'; }
-        else { previewEl.style.display = 'none'; }
+        const btnHapus = document.getElementById('hapus-img-' + jenis);
+        if (url) { previewEl.src = url; previewEl.style.display = 'inline-block'; if (btnHapus) btnHapus.style.display = 'inline-block'; }
+        else { previewEl.style.display = 'none'; if (btnHapus) btnHapus.style.display = 'none'; }
       });
     }).getSettingsData(SESSION_TOKEN);
   }
@@ -3754,6 +3758,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           statusEl.textContent = 'Berhasil diupload.';
           const previewEl = document.getElementById('preview-img-' + jenis);
           previewEl.src = res.url; previewEl.style.display = 'inline-block';
+          document.getElementById('hapus-img-' + jenis).style.display = 'inline-block';
           Swal.fire('Berhasil', `${jenis === 'ttd' ? 'Tanda tangan digital' : 'Logo ' + jenis} berhasil diupload dan langsung dipakai di semua Cetak PDF.`, 'success');
         } else {
           statusEl.textContent = '';
@@ -3765,6 +3770,31 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       }).uploadGambarIdentitas(SESSION_TOKEN, jenis, base64Data, file.type);
     };
     reader.readAsDataURL(file);
+  }
+
+  // Hapus gambar identitas (logo kiri/kanan atau tanda tangan digital) yang sudah
+  // diupload: backend menghapus file di Google Drive DAN mengosongkan pengaturannya,
+  // jadi cetakan berikutnya kembali tanpa gambar itu.
+  function hapusGambarUI(jenis) {
+    const nama = jenis === 'ttd' ? 'tanda tangan digital' : 'logo ' + jenis;
+    Swal.fire({
+      title: 'Hapus ' + nama + '?',
+      text: 'Gambar akan dihapus dari Google Drive dan tidak dipakai lagi di semua Cetak PDF.',
+      icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc3545',
+      confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal'
+    }).then(result => {
+      if (!result.isConfirmed) return;
+      Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+      google.script.run.withSuccessHandler(res => {
+        if (!res.success) { Swal.fire('Gagal', res.message, 'error'); return; }
+        document.getElementById('preview-img-' + jenis).style.display = 'none';
+        document.getElementById('hapus-img-' + jenis).style.display = 'none';
+        document.getElementById('status-img-' + jenis).textContent = '';
+        Swal.fire(res.peringatan ? 'Sebagian Berhasil' : 'Terhapus', res.message, res.peringatan ? 'warning' : 'success');
+      }).withFailureHandler(err => {
+        Swal.fire('Gagal', err.message, 'error');
+      }).hapusGambarIdentitas(SESSION_TOKEN, jenis);
+    });
   }
 
   // Pindah tab di menu Pengaturan (Bootstrap JS tidak dimuat di aplikasi ini,
@@ -4269,19 +4299,27 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     `;
   }
 
+  // UKURAN gambar tanda tangan digital di cetakan (tinggi, dalam pixel). Ubah angka
+  // ini untuk memperbesar/memperkecil TTD - TIDAK memengaruhi tata letak teks di
+  // sekitarnya, karena gambarnya "melayang" (position:absolute) di belakang teks.
+  const TTD_UKURAN_GAMBAR_PX = 100;
+
   /**
-   * Ruang tanda tangan di kolom TTD Wakasek pada semua Cetak PDF: kotak tinggi
-   * tetap (menggantikan margin kosong lama) yang berisi gambar tanda tangan
-   * digital kalau sudah diupload di Pengaturan, atau kosong (untuk tanda tangan
-   * basah) kalau belum - jadi tata letak cetak tidak berubah sama sekali.
-   * mix-blend-mode: multiply membuat latar putih gambar "menyatu" ke kertas,
-   * jadi tanda tangan JPG/PNG berlatar putih tetap tampak bersih saat dicetak.
+   * Ruang tanda tangan di kolom TTD Wakasek pada semua Cetak PDF. Kotaknya
+   * (tinggiRuangPx) HANYA menentukan jarak antara "Wakasek Bidang SDM," dan
+   * nama di bawahnya - dijaga kecil supaya baris nama tetap sejajar dengan
+   * kolom di sebelahnya. Gambar TTD-nya sendiri ukurannya terpisah
+   * (TTD_UKURAN_GAMBAR_PX), diposisikan absolut di tengah kotak & boleh meluber
+   * ke atas/bawah, menimpa tulisan di sekitarnya. Teks di sekitarnya diberi
+   * position:relative + z-index:1 supaya selalu berada DI ATAS gambar.
+   * mix-blend-mode: multiply membuat latar putih gambar "menyatu" ke kertas.
+   * Kalau belum ada gambar, kotak kosong (untuk tanda tangan basah).
    */
-  function ruangTtdHtml(url, tinggiPx) {
+  function ruangTtdHtml(url, tinggiRuangPx) {
     const img = url
-      ? `<img src="${escAttr(url)}" style="max-height:${tinggiPx - 6}px; max-width:100%; mix-blend-mode: multiply;" onerror="this.style.display='none'"/>`
+      ? `<img src="${escAttr(url)}" style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); height:${TTD_UKURAN_GAMBAR_PX}px; max-width:100%; object-fit:contain; mix-blend-mode:multiply; z-index:0;" onerror="this.style.display='none'"/>`
       : '';
-    return `<div style="height:${tinggiPx}px; display:flex; align-items:center; justify-content:center;">${img}</div>`;
+    return `<div style="position:relative; height:${tinggiRuangPx}px;">${img}</div>`;
   }
 
   function escAttr(teks) {
@@ -4827,8 +4865,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <div class="col-8"></div>
             <div class="col-4 text-center">
               <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'})}</p>
-              <p style="margin-bottom: 0;">Wakasek Bidang SDM,</p>${ruangTtdHtml(settings.ttd_wakasek_url, 55)}
-              <p class="fw-bold" style="text-decoration: underline;">${schWakasek}</p>
+              <p style="margin-bottom: 0; position:relative; z-index:1;">Wakasek Bidang SDM,</p>${ruangTtdHtml(settings.ttd_wakasek_url, 55)}
+              <p class="fw-bold" style="text-decoration: underline; position:relative; z-index:1;">${schWakasek}</p>
             </div>
           </div>
           <script>
@@ -5145,9 +5183,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             </div>
             <div class="ttd-spacer">&#160;</div>
             <div class="ttd-kolom">
-              <p style="margin-bottom: 0;">Tasikmalaya, ${new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'})}<br>Dibuat Oleh<br>Wakasek Bidang SDM,</p>
+              <p style="margin-bottom: 0; position:relative; z-index:1;">Tasikmalaya, ${new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'})}<br>Dibuat Oleh<br>Wakasek Bidang SDM,</p>
               ${ruangTtdHtml(settings.ttd_wakasek_url, 65)}
-              <p class="ttd-nama" style="margin-top: 0;">${schWakasek}</p>
+              <p class="ttd-nama" style="margin-top: 0; position:relative; z-index:1;">${schWakasek}</p>
             </div>
             <div class="clear-float"></div>
           </div>
@@ -5448,8 +5486,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <div class="col-8"></div>
             <div class="col-4 text-center">
               <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p style="margin-bottom: 0;">Wakasek Bidang SDM,</p>${ruangTtdHtml(identitas.ttd_wakasek_url, 55)}
-              <p class="fw-bold" style="text-decoration: underline;">${schWakasek}</p>
+              <p style="margin-bottom: 0; position:relative; z-index:1;">Wakasek Bidang SDM,</p>${ruangTtdHtml(identitas.ttd_wakasek_url, 55)}
+              <p class="fw-bold" style="text-decoration: underline; position:relative; z-index:1;">${schWakasek}</p>
             </div>
           </div>
           <script>

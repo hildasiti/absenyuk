@@ -84,3 +84,31 @@ export async function uploadFileKeDrive(env, base64Data, mimeType, namaFile) {
   // gambarnya) - sudah terverifikasi bekerja di fitur ini sebelumnya.
   return { fileId, url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000` };
 }
+
+/** Ambil ID file Drive dari URL gambar yang kita simpan (format .../thumbnail?id=FILE_ID&sz=...). */
+export function ambilFileIdDariUrl(url) {
+  const m = String(url || '').match(/[?&]id=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+/**
+ * Hapus file gambar dari Drive pemilik aplikasi (berdasarkan URL yang tersimpan).
+ * File 404 (sudah terhapus manual) dianggap sukses. Return { ok, pesan }.
+ * Dipakai supaya gambar - terutama tanda tangan digital yang berlink publik -
+ * tidak menumpuk/tertinggal di Drive setelah dihapus atau diganti di Pengaturan.
+ */
+export async function hapusFileDriveDariUrl(env, url) {
+  const fileId = ambilFileIdDariUrl(url);
+  if (!fileId) return { ok: false, pesan: 'ID file Drive tidak ditemukan di URL.' };
+  try {
+    const accessToken = await getGoogleAccessTokenDariRefreshToken(env);
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if (res.ok || res.status === 404) return { ok: true };
+    return { ok: false, pesan: `Drive menolak penghapusan (${res.status}): ${await res.text()}` };
+  } catch (err) {
+    return { ok: false, pesan: err.message };
+  }
+}
