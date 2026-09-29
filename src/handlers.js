@@ -1110,9 +1110,24 @@ async function getDashboardCharts(args, env) {
     { key: 'SHOLAT_DZUHUR', label: 'Dzuhur' },
     { key: 'SHOLAT_ASHAR', label: 'Ashar' }
   ];
+  // Status yang DIHITUNG per jenis, bukan cuma 'Hadir':
+  // BRIEFING_TAWASUL statusnya 'Hadir' (auto-tercatat dari Absen Masuk, lihat
+  // saveAbsenMasuk). SHOLAT_DZUHUR/SHOLAT_ASHAR dipilih guru sendiri dari opsi
+  // 'Berjamaah'/'Munfarid'/'Bertugas'/'Izin Terkonfirmasi'/'Haid'/'Sakit'
+  // (lihat OPSI_STATUS_SHOLAT di index.html). Aturan sekolah: WAJIB Berjamaah
+  // (atau Bertugas di tempat lain saat itu) - Munfarid (sholat sendirian) di
+  // LUAR aturan itu, jadi SENGAJA tidak dihitung walau tetap berarti sholat.
+  // Haid dihitung karena itu alasan lumrah/sah (bukan pelanggaran aturan).
+  // 'Izin Terkonfirmasi'/'Sakit' tidak dihitung.
+  const STATUS_DIHITUNG_PER_JENIS = {
+    BRIEFING_TAWASUL: ['Hadir'],
+    SHOLAT_DZUHUR: ['Berjamaah', 'Bertugas', 'Haid'],
+    SHOLAT_ASHAR: ['Berjamaah', 'Bertugas', 'Haid']
+  };
   const kepatuhanCount = { BRIEFING_TAWASUL: 0, SHOLAT_DZUHUR: 0, SHOLAT_ASHAR: 0 };
   rowsKegiatanMingguan.forEach((r) => {
-    if (String(r.status).trim() === 'Hadir' && kepatuhanCount.hasOwnProperty(r.jenis_kegiatan)) {
+    const statusDihitung = STATUS_DIHITUNG_PER_JENIS[r.jenis_kegiatan];
+    if (statusDihitung && statusDihitung.includes(String(r.status).trim())) {
       kepatuhanCount[r.jenis_kegiatan]++;
     }
   });
