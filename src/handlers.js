@@ -1,4 +1,4 @@
-import { sbSelect, sbInsert, sbInsertMany, sbUpdate, sbUpdateWhere, sbDelete } from './supabase.js';
+import { sbSelect, sbInsert, sbInsertMany, sbUpdate, sbUpdateWhere, sbUpsertMany, sbDelete } from './supabase.js';
 import { createSession, getSession, destroySession } from './session.js';
 import { verifyAndMigratePassword, hashPassword } from './auth.js';
 import { getSettingsMap } from './settings.js';
@@ -1302,17 +1302,20 @@ async function saveSettingsData(args, env) {
   if (!isAdminAny(user)) return false;
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
-  for (const key of Object.keys(config)) {
-    if (config[key] !== undefined) {
-      const existingRows = await sbSelect(env, 'settings', `sekolah_id=eq.${sekolahId}&key=eq.${encodeURIComponent(key)}&limit=1`);
-      if (existingRows.length > 0) {
-        // Primary key settings sekarang gabungan (sekolah_id, key) - HARUS filter
-        // 2 kolom sekaligus, kalau cuma filter "key" saja bisa salah update ke sekolah lain.
-        await sbUpdateWhere(env, 'settings', { sekolah_id: sekolahId, key }, { value: String(config[key]) });
-      } else {
-        await sbInsert(env, 'settings', { sekolah_id: sekolahId, key, value: String(config[key]) });
-      }
-    }
+  // Dulu tiap key pengaturan (bisa belasan sekaligus - jam masuk, lokasi,
+  // identitas kop, dst) diproses SATU-SATU secara berurutan: SELECT dulu
+  // (cek sudah ada atau belum), baru UPDATE/INSERT - total bisa puluhan
+  // round-trip berurutan ke Supabase untuk satu kali klik "Simpan", itu
+  // sebabnya terasa lama. Sekarang semuanya dikirim jadi SATU request upsert
+  // (lihat sbUpsertMany di supabase.js) - primary key gabungan (sekolah_id,
+  // key) yang sudah ada di tabel settings dipakai Postgres untuk otomatis
+  // tahu mana yang perlu di-update vs di-insert baru, dalam 1 query saja.
+  const rows = Object.keys(config)
+    .filter((key) => config[key] !== undefined)
+    .map((key) => ({ sekolah_id: sekolahId, key, value: String(config[key]) }));
+
+  if (rows.length) {
+    await sbUpsertMany(env, 'settings', rows, 'sekolah_id,key');
   }
   await invalidate(env, `SETTINGS_CACHE_${sekolahId}`);
   return true;

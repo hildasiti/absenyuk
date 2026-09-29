@@ -58,6 +58,31 @@ export async function sbInsertMany(env, table, dataArray) {
   return res.json();
 }
 
+/**
+ * Upsert (insert-atau-update) BANYAK baris sekaligus dalam 1 request HTTP,
+ * pakai kemampuan native PostgREST (header Prefer: resolution=merge-duplicates
+ * + parameter on_conflict). Kolom di onConflict WAJIB berupa unique/primary
+ * key gabungan di tabelnya (mis. 'sekolah_id,key' di tabel settings) supaya
+ * Postgres tahu baris mana yang harus di-update vs di-insert baru.
+ *
+ * Dipakai untuk kasus seperti saveSettingsData(): dulu tiap key pengaturan
+ * (bisa belasan sekaligus) diproses satu-satu lewat SELECT dulu (cek ada/
+ * tidak) lalu UPDATE/INSERT - total bisa puluhan round-trip berurutan ke
+ * Supabase, itu yang bikin "Simpan Pengaturan" terasa lama. Dengan upsert
+ * bulk begini, semuanya jadi SATU request saja.
+ */
+export async function sbUpsertMany(env, table, dataArray, onConflictColumns) {
+  if (!dataArray.length) return [];
+  const url = `${env.SUPABASE_URL}/rest/v1/${table}?on_conflict=${onConflictColumns}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: baseHeaders(env, { Prefer: 'resolution=merge-duplicates,return=representation' }),
+    body: JSON.stringify(dataArray)
+  });
+  if (!res.ok) throw new Error(`Supabase UPSERT ${table} gagal (${res.status}): ${await res.text()}`);
+  return res.json();
+}
+
 /** Insert baris baru. Return baris yang baru dibuat. */
 export async function sbInsert(env, table, data) {
   const url = `${env.SUPABASE_URL}/rest/v1/${table}`;
