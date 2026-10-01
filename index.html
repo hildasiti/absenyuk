@@ -3502,7 +3502,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
             .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
             .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
-            .kop-baris-atas { font-size: 17px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
+            .kop-baris-atas { font-size: 16px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
             .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
             .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 5px; color: #555; }
             table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -4860,7 +4860,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
             .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
             .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
-            .kop-baris-atas { font-size: 17px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
+            .kop-baris-atas { font-size: 16px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
             .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
             .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 5px; color: #555; }
             table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -4890,7 +4890,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <th width="4%">No.</th>
       `;
 
-      const kolomDilarang = ['id', 'nuptk', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'jarak (m)', 'jarak pulang (m)', 'maps link'];
+      // 'nuptk impal' (khusus Rekap Jam Pelajaran) ikut disembunyikan di cetakan - cuma data teknis, tidak perlu dibaca pimpinan.
+      const kolomDilarang = ['id', 'nuptk', 'nuptk impal', 'timestamp', 'latitude', 'longitude', 'latitude pulang', 'longitude pulang', 'jarak (m)', 'jarak pulang (m)', 'maps link'];
       // Sama seperti tampilan layar (loadReport) - kolom Nama dihilangkan &
       // digantikan Hari HANYA kalau sedang difilter ke satu guru spesifik.
       const guruSpesifikDipilihCetak = filterGuruValue && filterGuruValue !== 'ALL';
@@ -4946,6 +4947,42 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
               <div class="col-3">✓ Izin: <strong>${counter['Izin']} ${satuanRekap}</strong></div>
               <div class="col-3" style="color: red;">✓ Tanpa Keterangan (Alpa): <strong>${counter['Tanpa Keterangan']} ${satuanRekap}</strong></div>
             </div>
+          </div>
+        `;
+      }
+
+      // Khusus Rekap Jam Pelajaran: ringkasan per guru (total JP tidak hadir + status),
+      // diminta pimpinan untuk laporan harian. Tiap baris data = 1 JP. Guru yang punya
+      // lebih dari satu status ditulis terinci, mis. "5 JP (Sakit 2 JP, Izin 3 JP)".
+      if (inputType === 'REKAP_JAM_PELAJARAN' && LAST_REPORT_DATA.data.length > 0) {
+        const kolomNamaJp = LAST_REPORT_DATA.headers.find(h => h.startsWith('Nama'));
+        const labelStatusJp = { 'Tugas Luar': 'Tugas Dinas' };
+        const urutStatusJp = ['Tugas Luar', 'Sakit', 'Izin', 'Terlambat', 'Tanpa Keterangan'];
+        const perGuru = {};
+        LAST_REPORT_DATA.data.forEach(row => {
+          const nama = String(row[kolomNamaJp] || '').trim();
+          if (!nama) return;
+          const kunci = String(row['NUPTK'] || nama);
+          const status = String(row['Status'] || '').trim() || '-';
+          if (!perGuru[kunci]) perGuru[kunci] = { nama, total: 0, status: {} };
+          perGuru[kunci].total++;
+          perGuru[kunci].status[status] = (perGuru[kunci].status[status] || 0) + 1;
+        });
+        const daftarJp = Object.values(perGuru).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+        const barisJp = daftarJp.map(g => {
+          const daftarStatus = Object.keys(g.status).sort((a, b) => {
+            const ia = urutStatusJp.indexOf(a), ib = urutStatusJp.indexOf(b);
+            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+          });
+          const ketStatus = daftarStatus.length === 1
+            ? (labelStatusJp[daftarStatus[0]] || daftarStatus[0])
+            : daftarStatus.map(st => `${labelStatusJp[st] || st} ${g.status[st]} JP`).join(', ');
+          return `<div style="margin-top:4px;">${escAttr(g.nama)} : <strong>${g.total} JP</strong> (${escAttr(ketStatus)})</div>`;
+        }).join('');
+        printWindowContent += `
+          <div class="box-rekap-pdf" style="page-break-inside: avoid;">
+            <div class="fw-bold mb-2" style="text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 3px;">REKAPITULASI KETIDAKHADIRAN GURU PER JAM PELAJARAN:</div>
+            ${barisJp}
           </div>
         `;
       }
@@ -5180,7 +5217,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-container { border-bottom: 3px double #000; padding-bottom: 8px; margin-bottom: 20px; text-align: center; }
             .kop-institusi { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; letter-spacing: 1px; }
             .kop-sub { font-size: 12px; margin: 4px 0 0 0; color: #333; }
-            .kop-baris-atas { font-size: 17px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
+            .kop-baris-atas { font-size: 16px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
             .doc-header { text-align: center; margin-bottom: 25px; }
             .doc-title { font-size: 14px; font-weight: bold; text-transform: uppercase; margin: 0 0 5px 0; letter-spacing: 0.5px; }
             .doc-periode { font-size: 12px; margin: 0; color: #222; }
@@ -5519,7 +5556,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
             .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
             .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
-            .kop-baris-atas { font-size: 17px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
+            .kop-baris-atas { font-size: 16px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
             .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
             .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 15px; color: #555; }
             table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
