@@ -1304,11 +1304,14 @@
   </div>
   
   <div class='mb-3'>
-    <button class='btn btn-success shadow-sm me-2' onclick='exportToExcelAsTable()'>
+    <button class='btn btn-success shadow-sm me-2 mb-2' onclick='exportToExcelAsTable()'>
       <i class='bi bi-file-earmark-excel-fill'></i> Download Excel (.xlsx)
     </button>
-    <button class='btn btn-danger shadow-sm' onclick='printLaporanPDF()'>
-      <i class='bi bi-file-earmark-pdf-fill'></i> Cetap PDF Resmi
+    <button class='btn btn-danger shadow-sm me-2 mb-2' onclick='printLaporanPDF()'>
+      <i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF Resmi
+    </button>
+    <button class='btn btn-outline-primary shadow-sm mb-2' onclick="printLaporanPDF('gambar')">
+      <i class='bi bi-file-earmark-image'></i> Simpan Gambar (PNG)
     </button>
   </div>
   
@@ -4807,12 +4810,130 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // =========================================================================
   // MODIFIKASI CETAK PDF: MENERAPKAN REKAPITULASI UNTUK KEGIATAN KHUSUS
   // =========================================================================
-  function printLaporanPDF() {
+  // =========================================================================
+  // SIMPAN LAPORAN SEBAGAI GAMBAR (PNG)
+  // Memakai dokumen cetak yang SAMA dengan Cetak PDF (jadi isinya identik),
+  // dirender ke gambar lewat html2canvas lalu bisa disimpan / dibagikan.
+  // =========================================================================
+  const HTML2CANVAS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  let _html2canvasPromise = null;
+
+  function muatHtml2Canvas() {
+    if (window.html2canvas) return Promise.resolve(window.html2canvas);
+    if (!_html2canvasPromise) {
+      _html2canvasPromise = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = HTML2CANVAS_URL;
+        el.onload = () => window.html2canvas ? resolve(window.html2canvas) : reject(new Error('Library pembuat gambar gagal dimuat.'));
+        el.onerror = () => { _html2canvasPromise = null; reject(new Error('Tidak bisa memuat library pembuat gambar. Periksa koneksi internet.')); };
+        document.head.appendChild(el);
+      });
+    }
+    return _html2canvasPromise;
+  }
+
+  function panggilBackendPromise(namaFungsi, ...args) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[namaFungsi](...args);
+    });
+  }
+
+  /** Logo & TTD ada di Google Drive (tanpa CORS) -> minta Worker mengubahnya jadi data URI
+   * supaya bisa digambar ke canvas. Yang gagal dibuang (kop tetap tampil sebagai teks). */
+  async function siapkanGambarKopUntukPng(settings) {
+    const hasil = Object.assign({}, settings);
+    let gagal = false;
+    await Promise.all(['logo_kiri_url', 'logo_kanan_url', 'ttd_wakasek_url'].map(async k => {
+      const url = settings[k];
+      if (!url) return;
+      try {
+        const r = await panggilBackendPromise('getGambarDataUri', SESSION_TOKEN, url);
+        hasil[k] = r.dataUri;
+      } catch (err) {
+        console.warn('Gambar ' + k + ' gagal diproses:', err);
+        hasil[k] = '';
+        gagal = true;
+      }
+    }));
+    return { settings: hasil, gagal };
+  }
+
+  async function renderDokumenKeGambar(htmlDokumen) {
+    const html2canvas = await muatHtml2Canvas();
+    const LEBAR = 794; // lebar A4 pada 96 dpi
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = `position:fixed; left:-10000px; top:0; width:${LEBAR}px; height:1123px; border:0;`;
+    document.body.appendChild(iframe);
+    try {
+      const doc = iframe.contentDocument;
+      doc.open(); doc.write(htmlDokumen); doc.close();
+      doc.body.style.margin = '0';
+      doc.body.style.width = LEBAR + 'px';
+      doc.body.style.boxSizing = 'border-box';
+      await Promise.all(Array.from(doc.images).map(img => img.complete ? null : new Promise(res => {
+        img.onload = img.onerror = res; setTimeout(res, 8000);
+      })));
+      if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
+      const tinggi = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+      iframe.style.height = tinggi + 'px';
+      // Batasi total piksel (~16 juta) supaya tidak melewati batas canvas di HP.
+      const skala = Math.max(1, Math.min(2, Math.sqrt(16000000 / (LEBAR * tinggi))));
+      const canvas = await html2canvas(doc.body, {
+        scale: skala, backgroundColor: '#ffffff', useCORS: true, logging: false,
+        width: LEBAR, windowWidth: LEBAR, windowHeight: tinggi
+      });
+      return await new Promise((resolve, reject) => canvas.toBlob(
+        b => b ? resolve(b) : reject(new Error('Gambar gagal dibuat (ukuran terlalu besar untuk perangkat ini).')), 'image/png'));
+    } finally {
+      iframe.remove();
+    }
+  }
+
+  function simpanDokumenSebagaiGambar(htmlDokumen, namaFile, gambarGagal) {
+    Swal.fire({ title: 'Membuat gambar...', text: 'Mohon tunggu sebentar.', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    renderDokumenKeGambar(htmlDokumen).then(blob => {
+      const url = URL.createObjectURL(blob);
+      const file = new File([blob], namaFile, { type: 'image/png' });
+      const bisaBagikan = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+      Swal.fire({
+        title: 'Gambar Siap',
+        width: 'min(95vw, 640px)',
+        html: (gambarGagal ? '<div class="alert alert-warning py-2 small text-start">Logo/tanda tangan gagal dimuat sehingga tidak tampil di gambar. Coba lagi nanti.</div>' : '') +
+              `<img src="${url}" alt="Pratinjau laporan" style="max-width:100%; max-height:55vh; border:1px solid #dee2e6; border-radius:4px;"/>` +
+              '<div class="small text-muted mt-2">Kalau tombol Simpan tidak berfungsi di HP, tekan lama gambar lalu pilih &quot;Simpan gambar&quot;.</div>',
+        showCancelButton: true,
+        showDenyButton: bisaBagikan,
+        confirmButtonText: '<i class="bi bi-download"></i> Simpan PNG',
+        denyButtonText: '<i class="bi bi-share-fill"></i> Bagikan',
+        cancelButtonText: 'Tutup',
+        confirmButtonColor: '#0f4c81',
+        denyButtonColor: '#198754',
+        // preConfirm/preDeny dijalankan langsung di handler klik (syarat navigator.share),
+        // return false = popup tetap terbuka supaya bisa simpan DAN bagikan.
+        preConfirm: () => {
+          const a = document.createElement('a');
+          a.href = url; a.download = namaFile;
+          document.body.appendChild(a); a.click(); a.remove();
+          return false;
+        },
+        preDeny: () => {
+          navigator.share({ files: [file], title: namaFile }).catch(() => {});
+          return false;
+        },
+        didClose: () => URL.revokeObjectURL(url)
+      });
+    }).catch(err => {
+      Swal.fire('Gagal Membuat Gambar', (err && err.message) || String(err), 'error');
+    });
+  }
+
+  function printLaporanPDF(mode) {
+    const modeGambar = mode === 'gambar';
     if (!LAST_REPORT_DATA || !LAST_REPORT_DATA.data || LAST_REPORT_DATA.data.length === 0) {
       return Swal.fire('Gagal Cetak', 'Tidak ada data laporan yang aktif. Silakan lakukan klik "Tampilkan" terlebih dahulu.', 'warning');
     }
     Swal.fire({title:'Menyiapkan Dokumen...', allowOutsideClick:false, didOpen:()=>{Swal.showLoading()}});
-    google.script.run.withSuccessHandler(settings => {
+    const lanjutCetak = (settings, gambarGagal) => {
       Swal.close();
       const schName = settings.nama_sekolah || 'SEKOLAH';
       const schAddress = settings.alamat_sekolah || '-';
@@ -5009,12 +5130,28 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </body>
         </html>
       `;
+      if (modeGambar) {
+        // Dokumen yang sama dengan Cetak PDF, tapi tanpa skrip auto-print.
+        printWindowContent = printWindowContent.replace(/<script>[\s\S]*?<\/script>/g, '');
+        const bagianNama = [inputType, tanggalAwal + '_sd_' + tanggalAkhir];
+        if (guruSpesifikRekap) bagianNama.push(namaGuruSelected);
+        const namaFileGambar = ('Laporan_' + bagianNama.join('_')).replace(/[^\w.-]+/g, '_') + '.png';
+        simpanDokumenSebagaiGambar(printWindowContent, namaFileGambar, gambarGagal);
+        return;
+      }
       const blob = new Blob([printWindowContent], { type: 'text/html' });
       const blobUrl = URL.createObjectURL(blob);
       const printWindow = window.open(blobUrl, '_blank');
       if (!printWindow) {
         Swal.fire('Pop-up Diblokir', 'Harap izinkan pop-up pada browser Anda untuk mencetak PDF.', 'warning');
       }
+    };
+
+    google.script.run.withSuccessHandler(settingsAsli => {
+      if (!modeGambar) return lanjutCetak(settingsAsli, false);
+      siapkanGambarKopUntukPng(settingsAsli)
+        .then(h => lanjutCetak(h.settings, h.gagal))
+        .catch(err => Swal.fire('Gagal Membuat Gambar', (err && err.message) || String(err), 'error'));
     }).getSettingsData(SESSION_TOKEN);
   }
 

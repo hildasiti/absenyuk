@@ -6,7 +6,7 @@ import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
 import { nowJakarta, getPeriodeBerjalan, getPeriodeByOffset, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
-import { uploadFileKeDrive, hapusFileDriveDariUrl } from './drive.js';
+import { uploadFileKeDrive, hapusFileDriveDariUrl, ambilFileIdDariUrl } from './drive.js';
 
 /**
  * Ambil jam (HH:mm) dalam WIB dari sebuah timestamp yang disimpan pakai
@@ -2201,6 +2201,39 @@ async function getRekapAbsenMasukSendiri(args, env) {
   };
 }
 
+/**
+ * Perantara gambar Drive -> data URI (base64), dipakai fitur "Simpan Gambar (PNG)"
+ * di Laporan. Browser TIDAK bisa menggambar logo/TTD dari drive.google.com ke
+ * canvas (tidak ada header CORS -> canvas "tainted"/gambar hilang), jadi Worker
+ * yang mengunduhnya lalu mengirim balik sebagai data URI. Dikunci ketat: hanya
+ * URL thumbnail Drive dengan ID file yang valid (cegah dipakai sebagai proxy
+ * ke alamat lain), hanya tipe image/*, maksimal 2 MB. Di-cache 1 jam di KV.
+ */
+async function getGambarDataUri(args, env) {
+  const [token, url] = args;
+  const user = await requireUser(env, token);
+  if (!user) throw new Error('Sesi tidak valid.');
+
+  const fileId = ambilFileIdDariUrl(url);
+  if (!/^https:\/\/drive\.google\.com\/thumbnail\?/.test(String(url || '')) || !fileId || !/^[A-Za-z0-9_-]{10,120}$/.test(fileId)) {
+    throw new Error('URL gambar tidak valid.');
+  }
+
+  return cached(env, `GAMBAR_DATAURI_${fileId}`, 3600, async () => {
+    const res = await fetch(`https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`);
+    if (!res.ok) throw new Error(`Gagal mengambil gambar dari Drive (${res.status}).`);
+    const tipe = (res.headers.get('content-type') || '').split(';')[0].trim();
+    if (!tipe.startsWith('image/')) throw new Error('Respons Drive bukan gambar.');
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.length > 2 * 1024 * 1024) throw new Error('Ukuran gambar terlalu besar.');
+    let biner = '';
+    for (let i = 0; i < buf.length; i += 0x8000) {
+      biner += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    }
+    return { dataUri: `data:${tipe};base64,${btoa(biner)}` };
+  });
+}
+
 async function getRekapJamPelajaranSendiri(args, env) {
   const [token, startDate, endDate] = args;
   const user = await requireUser(env, token);
@@ -3188,6 +3221,7 @@ export const handlers = {
   getReport,
   getRekapAbsenMasukSendiri,
   getRekapJamPelajaranSendiri,
+  getGambarDataUri,
   getPayrollJamPelajaran,
   saveRekapJamPelajaran,
   getRekapJamPelajaranList,
