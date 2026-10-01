@@ -1357,28 +1357,42 @@
     
     <div class='card p-4 shadow-sm mb-4 border-0 border-start border-primary border-4'>
         <h5 class='mb-3 text-secondary fw-bold'>Tambah Akun Guru Baru</h5>
-        <form class='row g-2' onsubmit='submitNewUser(event)'>
-            <div class='col-md-2'><input class='form-control' id='u-nuptk' placeholder='NUPTK / Username' required='required' type='text'/></div>
-            <div class='col-md-3'><input class='form-control' id='u-nama' placeholder='Nama Lengkap' required='required' type='text'/></div>
-            <div class='col-md-2'><input class='form-control' id='u-pass' placeholder='Password' required='required' type='password' autocomplete='new-password' readonly onfocus='this.removeAttribute("readonly")'/></div>
-            <div class='col-md-2'>
+        <form class='row g-3' onsubmit='submitNewUser(event)'>
+            <div class='col-12 col-md-4'>
+                <label class='form-label mb-1' for='u-nuptk'>NUPTK / Username</label>
+                <input class='form-control' id='u-nuptk' placeholder='Contoh: 1234567890' required='required' type='text'/>
+            </div>
+            <div class='col-12 col-md-5'>
+                <label class='form-label mb-1' for='u-nama'>Nama Lengkap</label>
+                <input class='form-control' id='u-nama' placeholder='Nama beserta gelar' required='required' type='text'/>
+            </div>
+            <div class='col-12 col-md-3'>
+                <label class='form-label mb-1' for='u-pass'>Password</label>
+                <input class='form-control' id='u-pass' placeholder='Password awal' required='required' type='password' autocomplete='new-password' readonly onfocus='this.removeAttribute("readonly")'/>
+            </div>
+            <div class='col-12 col-md-4'>
+                <label class='form-label mb-1' for='u-role'>Role Akses</label>
                 <select class='form-select' id='u-role' required='required' title='Role Akses Akun'>
-                    <option selected='selected' value='GURU'>Role: GURU</option>
-                    <option value='PIKET'>Role: PIKET</option>
-                    <option value='KEPALA_SEKOLAH'>Role: KEPALA SEKOLAH</option>
-                    <option value='ADMIN_SEKOLAH' id='opsi-role-admin-sekolah' style='display:none;'>Role: ADMIN SEKOLAH</option>
+                    <option selected='selected' value='GURU'>GURU</option>
+                    <option value='PIKET'>PIKET</option>
+                    <option value='KEPALA_SEKOLAH'>KEPALA SEKOLAH</option>
+                    <option value='ADMIN_SEKOLAH' id='opsi-role-admin-sekolah' style='display:none;'>ADMIN SEKOLAH</option>
                 </select>
             </div>
-            <div class='col-md-2'>
+            <div class='col-12 col-md-4'>
+                <label class='form-label mb-1' for='u-kategori'>Kategori Kepegawaian</label>
                 <select class='form-select' id='u-kategori' onchange='toggleKewajibanMengajar(this.value, "u-kwj-wrap")' required='required' title='Kategori Kepegawaian'>
-                    <option selected='selected' value='Mengajar'>Kategori: Mengajar</option>
-                    <option value='Tidak Mengajar'>Kategori: Tidak Mengajar</option>
+                    <option selected='selected' value='Mengajar'>Mengajar</option>
+                    <option value='Tidak Mengajar'>Tidak Mengajar</option>
                 </select>
             </div>
-            <div class='col-md-3' id='u-kwj-wrap'>
-                <input class='form-control' id='u-kwj-jp' min='1' max='60' placeholder='Kewajiban Mengajar (JP/minggu)' title='Kewajiban Mengajar (JP/minggu) - sesuai SK, biasanya 20-35' type='number'/>
+            <div class='col-12 col-md-4' id='u-kwj-wrap'>
+                <label class='form-label mb-1' for='u-kwj-jp'>Kewajiban Mengajar (JP/minggu)</label>
+                <input class='form-control' id='u-kwj-jp' min='1' max='60' placeholder='Sesuai SK, biasanya 20-35' title='Kewajiban Mengajar (JP/minggu) - sesuai SK, biasanya 20-35' type='number'/>
             </div>
-            <div class='col-12 col-lg-1'><button class='btn btn-primary w-100' style='white-space: nowrap;' type='submit'><i class='bi bi-person-plus'></i> Tambah</button></div>
+            <div class='col-12 d-grid d-md-flex justify-content-md-end'>
+                <button class='btn btn-primary px-4' style='white-space: nowrap;' type='submit'><i class='bi bi-person-plus me-1'></i> Tambah</button>
+            </div>
         </form>
     </div>
 
@@ -4815,6 +4829,13 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       const tanggalAkhir = document.getElementById('rep-end').value;
 
       let judulRekap = (filterGuruValue === 'ALL') ? `Rekap "${namaKategoriSelected}" - Semua Guru` : `Rekap "${namaKategoriSelected}" - Guru: ${namaGuruSelected}`;
+      // Satuan hitungan kartu rekap di bawah tabel. Semua guru -> tiap angka
+      // menghitung baris data "Guru"; satu guru saja -> kata "Guru" tidak
+      // relevan, diganti sesuai isi satu baris pada jenis laporan tersebut.
+      const guruSpesifikRekap = !!filterGuruValue && filterGuruValue !== 'ALL';
+      const satuanRekap = !guruSpesifikRekap ? 'Guru'
+        : (inputType === 'ABSEN_KEGIATAN_KHUSUS' ? 'Kegiatan'
+        : (inputType === 'REKAP_JAM_PELAJARAN' ? 'Jam' : 'Hari'));
       let counter = { 'Hadir': 0, 'Terlambat': 0, 'Sakit': 0, 'Izin': 0, 'Tugas Luar': 0, 'Cuti': 0, 'Tanpa Keterangan': 0 };
       
       LAST_REPORT_DATA.data.forEach(row => {
@@ -4915,15 +4936,15 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           <div class="box-rekap-pdf">
             <div class="fw-bold mb-2" style="text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 3px;">TOTAL AKUMULASI REKAPITULASI RINCIAN KEHADIRAN:</div>
             <div class="row mt-1">
-              <div class="col-3">✓ Hadir: <strong>${counter['Hadir']} Guru</strong></div>
-              <div class="col-3">✓ Terlambat: <strong>${counter['Terlambat']} Guru</strong></div>
-              <div class="col-3">✓ Tugas Dinas: <strong>${counter['Tugas Luar']} Guru</strong></div>
-              <div class="col-3">✓ Cuti: <strong>${counter['Cuti']} Guru</strong></div>
+              <div class="col-3">✓ Hadir: <strong>${counter['Hadir']} ${satuanRekap}</strong></div>
+              <div class="col-3">✓ Terlambat: <strong>${counter['Terlambat']} ${satuanRekap}</strong></div>
+              <div class="col-3">✓ Tugas Dinas: <strong>${counter['Tugas Luar']} ${satuanRekap}</strong></div>
+              <div class="col-3">✓ Cuti: <strong>${counter['Cuti']} ${satuanRekap}</strong></div>
             </div>
             <div class="row mt-1">
-              <div class="col-3">✓ Sakit: <strong>${counter['Sakit']} Guru</strong></div>
-              <div class="col-3">✓ Izin: <strong>${counter['Izin']} Guru</strong></div>
-              <div class="col-3" style="color: red;">✓ Tanpa Keterangan (Alpa): <strong>${counter['Tanpa Keterangan']} Guru</strong></div>
+              <div class="col-3">✓ Sakit: <strong>${counter['Sakit']} ${satuanRekap}</strong></div>
+              <div class="col-3">✓ Izin: <strong>${counter['Izin']} ${satuanRekap}</strong></div>
+              <div class="col-3" style="color: red;">✓ Tanpa Keterangan (Alpa): <strong>${counter['Tanpa Keterangan']} ${satuanRekap}</strong></div>
             </div>
           </div>
         `;
