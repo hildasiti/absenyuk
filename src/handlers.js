@@ -3,7 +3,7 @@ import { createSession, getSession, destroySession } from './session.js';
 import { verifyAndMigratePassword, hashPassword } from './auth.js';
 import { getSettingsMap } from './settings.js';
 import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
-import { nowJakarta, getPeriodeBerjalan, toDateStr } from './date.js';
+import { nowJakarta, getPeriodeBerjalan, getPeriodeByOffset, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
 import { uploadFileKeDrive, hapusFileDriveDariUrl } from './drive.js';
@@ -2156,15 +2156,28 @@ async function getReport(args, env) {
  * getReport() ({headers, data}) supaya bisa dirender pakai fungsi render
  * tabel laporan yang sudah ada di frontend, tanpa kode render terpisah.
  */
+// Batas mundur navigasi periode di popup Rekap Kehadiran (jumlah periode 21-20
+// ke belakang dari periode berjalan). Frontend memakai angka yang sama dari
+// respons (maxMundur), jadi cukup diubah di sini.
+const REKAP_SENDIRI_MAKS_MUNDUR = 12;
+
 async function getRekapAbsenMasukSendiri(args, env) {
-  const [token] = args;
+  // args[1] (opsional): offsetPeriode - 0/kosong = periode berjalan (perilaku
+  // lama, tetap sama persis), -1 = periode sebelumnya, dst. Nilai dari klien
+  // TIDAK dipercaya begitu saja: dipaksa jadi bilangan bulat, tidak boleh
+  // positif (periode masa depan), dan dibatasi maksimal REKAP_SENDIRI_MAKS_MUNDUR.
+  const [token, offsetMentah] = args;
   const user = await requireUser(env, token);
   if (!user) return { headers: [], data: [] };
   if (user.role === 'ADMIN_UTAMA') return { headers: [], data: [] };
 
+  let offsetPeriode = Math.trunc(Number(offsetMentah));
+  if (!Number.isFinite(offsetPeriode)) offsetPeriode = 0;
+  offsetPeriode = Math.max(-REKAP_SENDIRI_MAKS_MUNDUR, Math.min(0, offsetPeriode));
+
   const sekolahId = user.sekolahId;
   const config = REPORT_CONFIG.ABSEN_MASUK;
-  const { start, end, label } = getPeriodeBerjalan();
+  const { start, end, label } = getPeriodeByOffset(offsetPeriode);
   const sDateStr = toDateStr(start);
   const eDateStr = toDateStr(end);
 
@@ -2182,7 +2195,10 @@ async function getRekapAbsenMasukSendiri(args, env) {
     return rowObj;
   });
 
-  return { headers: config.headers, data, periodeLabel: label, namaGuru: user.nama, sekolahId };
+  return {
+    headers: config.headers, data, periodeLabel: label, namaGuru: user.nama, sekolahId,
+    offsetPeriode, maxMundur: REKAP_SENDIRI_MAKS_MUNDUR
+  };
 }
 
 async function getRekapJamPelajaranSendiri(args, env) {

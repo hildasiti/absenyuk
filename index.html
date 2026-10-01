@@ -671,7 +671,7 @@
     </form>
 
     <button class='btn btn-outline-secondary w-100 mt-3' type='button' onclick='bukaRekapKehadiranSendiri()'>
-      <i class='bi bi-file-earmark-bar-graph me-1'></i> Rekap Kehadiran (Periode Berjalan)
+      <i class='bi bi-file-earmark-bar-graph me-1'></i> Rekap Kehadiran
     </button>
   </div>
 </div>
@@ -3310,16 +3310,63 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // sidebar-nya sama sekali (lihat initApp()).
   // ====================================================================
   let REKAP_SENDIRI_DATA = null;
+  // Penomoran request supaya respons lama (klik cepat bolak-balik) tidak
+  // menimpa tampilan yang lebih baru.
+  let REKAP_SENDIRI_REQ_ID = 0;
 
   function bukaRekapKehadiranSendiri() {
     Swal.fire({ title: 'Memuat rekap kehadiran...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    const reqId = ++REKAP_SENDIRI_REQ_ID;
     google.script.run.withSuccessHandler(res => {
+      if (reqId !== REKAP_SENDIRI_REQ_ID) return;
       REKAP_SENDIRI_DATA = res;
       renderPopupRekapKehadiranSendiri(res);
-    }).getRekapAbsenMasukSendiri(SESSION_TOKEN);
+    }).getRekapAbsenMasukSendiri(SESSION_TOKEN, 0);
   }
 
-  function renderPopupRekapKehadiranSendiri(res) {
+  /** Geser periode di dalam popup yang SUDAH terbuka: -1 = lebih lama, +1 = lebih baru. */
+  function geserPeriodeRekapSendiri(arah) {
+    if (!REKAP_SENDIRI_DATA) return;
+    const offsetBaru = (REKAP_SENDIRI_DATA.offsetPeriode || 0) + arah;
+    const maxMundur = REKAP_SENDIRI_DATA.maxMundur || 12;
+    if (offsetBaru > 0 || offsetBaru < -maxMundur) return;
+
+    const wrap = document.getElementById('rekap-sendiri-isi');
+    if (wrap) {
+      wrap.querySelectorAll('.rekap-nav-btn').forEach(b => { b.disabled = true; });
+      const body = document.getElementById('rekap-sendiri-body');
+      if (body) body.style.opacity = '0.4';
+    }
+    // Tombol Cetak dikunci selama memuat, supaya tidak mencetak periode lama
+    // saat tampilan sedang berpindah.
+    const tombolCetak = Swal.getConfirmButton();
+    if (tombolCetak) tombolCetak.disabled = true;
+    Swal.resetValidationMessage();
+    const reqId = ++REKAP_SENDIRI_REQ_ID;
+    google.script.run
+      .withSuccessHandler(res => {
+        if (reqId !== REKAP_SENDIRI_REQ_ID) return;
+        REKAP_SENDIRI_DATA = res;
+        const el = document.getElementById('rekap-sendiri-isi');
+        if (el) el.innerHTML = buildIsiPopupRekapSendiriHtml(res);
+        const cb = Swal.getConfirmButton();
+        if (cb) cb.disabled = false;
+      })
+      .withFailureHandler(() => {
+        if (reqId !== REKAP_SENDIRI_REQ_ID) return;
+        // Kembalikan tampilan ke data yang sebelumnya masih valid.
+        const el = document.getElementById('rekap-sendiri-isi');
+        if (el && REKAP_SENDIRI_DATA) el.innerHTML = buildIsiPopupRekapSendiriHtml(REKAP_SENDIRI_DATA);
+        const cb = Swal.getConfirmButton();
+        if (cb) cb.disabled = false;
+        Swal.showValidationMessage('Gagal memuat periode tersebut. Coba lagi.');
+      })
+      .getRekapAbsenMasukSendiri(SESSION_TOKEN, offsetBaru);
+  }
+
+  /** Isi popup (navigator periode + kartu ringkasan + tabel). Dipakai saat popup
+   * pertama dibuka DAN saat pindah periode, supaya keduanya selalu identik. */
+  function buildIsiPopupRekapSendiriHtml(res) {
     // Kolom "Nama" DIHILANGKAN (bukan cuma disembunyikan seperti lat/long) -
     // ini rekap milik SATU guru saja, jadi mengulang nama yang sama di setiap
     // baris tidak perlu (nama sudah ada di judul cetak nanti). Posisi kolom
@@ -3361,15 +3408,41 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       { key: 'Tanpa Keterangan', icon: 'bi-x-circle-fill', color: 'danger' }
     ], 'col-4 col-md-2');
 
+    const offset = res.offsetPeriode || 0;
+    const maxMundur = res.maxMundur || 12;
+    const bisaMundur = offset > -maxMundur;
+    const bisaMaju = offset < 0;
+    const badge = offset === 0
+      ? '<span class="badge bg-success">Periode Berjalan</span>'
+      : (offset === -1 ? '<span class="badge bg-secondary">Periode Sebelumnya</span>'
+                       : `<span class="badge bg-secondary">${Math.abs(offset)} Periode Lalu</span>`);
+
+    const navHtml = `
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <button type="button" class="btn btn-outline-primary btn-sm rekap-nav-btn" onclick="geserPeriodeRekapSendiri(-1)" ${bisaMundur ? '' : 'disabled'} aria-label="Periode sebelumnya" title="Periode sebelumnya"><i class="bi bi-chevron-left"></i></button>
+        <div class="text-center px-2">
+          <div class="fw-bold" style="font-size:0.95rem;">${res.periodeLabel || ''}</div>
+          <div class="mt-1">${badge}</div>
+        </div>
+        <button type="button" class="btn btn-outline-primary btn-sm rekap-nav-btn" onclick="geserPeriodeRekapSendiri(1)" ${bisaMaju ? '' : 'disabled'} aria-label="Periode berikutnya" title="Periode berikutnya"><i class="bi bi-chevron-right"></i></button>
+      </div>`;
+
+    return `${navHtml}
+      <div id="rekap-sendiri-body" style="transition:opacity .15s;">
+        <div class="mb-3">${cardsHtml}</div>
+        <div class="table-responsive" style="max-height:50vh; overflow-y:auto;">
+          <table class="table table-sm table-bordered table-hover" style="font-size:0.82rem;">
+            <thead class="table-light" style="position:sticky; top:0;">${headHtml}</thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function renderPopupRekapKehadiranSendiri(res) {
     Swal.fire({
-      title: `Rekap Kehadiran - ${res.periodeLabel || ''}`,
-      html: `<div class="mb-3">${cardsHtml}</div>
-             <div class="table-responsive" style="max-height:50vh; overflow-y:auto;">
-               <table class="table table-sm table-bordered table-hover" style="font-size:0.82rem;">
-                 <thead class="table-light" style="position:sticky; top:0;">${headHtml}</thead>
-                 <tbody>${bodyHtml}</tbody>
-               </table>
-             </div>`,
+      title: 'Rekap Kehadiran',
+      html: `<div id="rekap-sendiri-isi">${buildIsiPopupRekapSendiriHtml(res)}</div>`,
       width: 'min(95vw, 720px)',
       customClass: { popup: 'swal-rekap-kehadiran' },
       showCancelButton: true,

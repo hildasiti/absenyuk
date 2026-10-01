@@ -30,26 +30,34 @@ export function nowJakarta() {
 
 const NAMA_BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 
-/** Padanan getPeriodeBerjalan() - siklus payroll tanggal 21-20. */
-export function getPeriodeBerjalan() {
+/**
+ * Periode payroll (siklus tanggal 21-20) yang digeser `offset` periode dari
+ * periode berjalan: 0 = berjalan, -1 = sebelumnya, -2 = dua periode lalu, dst.
+ * Dihitung lewat "indeks bulan absolut" (tahun*12 + bulan 0-indexed) supaya
+ * pergantian tahun (Des-Jan) otomatis benar tanpa if/else khusus.
+ */
+export function getPeriodeByOffset(offset = 0) {
   const { year: tahun, month: bulan1, day: tanggal } = nowJakarta();
-  const bulan = bulan1 - 1; // ke 0-indexed biar sama seperti kode lama
 
-  let startBulan, startTahun, endBulan, endTahun;
-  if (tanggal >= 21) {
-    startBulan = bulan; startTahun = tahun;
-    endBulan = bulan + 1; endTahun = tahun;
-  } else {
-    startBulan = bulan - 1; startTahun = tahun;
-    endBulan = bulan; endTahun = tahun;
-  }
-  if (startBulan < 0) { startBulan = 11; startTahun -= 1; }
-  if (endBulan > 11) { endBulan = 0; endTahun += 1; }
+  // Bulan AKHIR periode berjalan: bulan ini kalau tanggal < 21, bulan depan kalau >= 21.
+  let endIdx = tahun * 12 + (bulan1 - 1) + (tanggal >= 21 ? 1 : 0);
+  endIdx += offset;
+  const startIdx = endIdx - 1;
+
+  const endTahun = Math.floor(endIdx / 12);
+  const endBulan = ((endIdx % 12) + 12) % 12;
+  const startTahun = Math.floor(startIdx / 12);
+  const startBulan = ((startIdx % 12) + 12) % 12;
 
   const start = new Date(Date.UTC(startTahun, startBulan, 21, 0, 0, 0));
   const end = new Date(Date.UTC(endTahun, endBulan, 20, 23, 59, 59));
   const label = `21 ${NAMA_BULAN[startBulan]} - 20 ${NAMA_BULAN[endBulan]} ${endTahun}`;
   return { start, end, label };
+}
+
+/** Padanan getPeriodeBerjalan() - siklus payroll tanggal 21-20. */
+export function getPeriodeBerjalan() {
+  return getPeriodeByOffset(0);
 }
 
 /** Padanan getMingguIniSeninJumat() - rentang Senin-Jumat minggu berjalan. */
