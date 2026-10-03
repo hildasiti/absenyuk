@@ -1303,6 +1303,7 @@
     </div>
   </div>
   
+  <div id='laporan-filter-kegiatan' class='mb-2' style='display:none;'></div>
   <div class='mb-3'>
     <button class='btn btn-success shadow-sm me-2 mb-2' onclick='exportToExcelAsTable()'>
       <i class='bi bi-file-earmark-excel-fill'></i> Download Excel (.xlsx)
@@ -4577,6 +4578,18 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     tbody.innerHTML = '<tr><td colspan="15" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm"></div> Memuat data...</td></tr>';
     
     google.script.run.withSuccessHandler(res => {
+      // Saringan nama kegiatan (dari tombol Laporan di daftar agenda) - hanya
+      // berlaku untuk jenis laporan Kegiatan Khusus; ganti jenis = saringan lepas.
+      const chipKeg = document.getElementById('laporan-filter-kegiatan');
+      if (FILTER_KEGIATAN_LAPORAN && type === 'ABSEN_KEGIATAN_KHUSUS' && res && Array.isArray(res.data)) {
+        const namaTarget = FILTER_KEGIATAN_LAPORAN.trim().toLowerCase();
+        res = Object.assign({}, res, { data: res.data.filter(r => String(r['Nama Kegiatan'] || '').trim().toLowerCase() === namaTarget) });
+        chipKeg.innerHTML = `<span class="badge bg-primary" style="font-size:0.85rem;"><i class="bi bi-funnel-fill"></i> Kegiatan: ${escAttr(FILTER_KEGIATAN_LAPORAN)} <a href="#" class="text-white ms-2" title="Hapus saringan kegiatan" onclick="hapusFilterKegiatanLaporan(); return false;"><i class="bi bi-x-circle-fill"></i></a></span>`;
+        chipKeg.style.display = 'block';
+      } else {
+        if (type !== 'ABSEN_KEGIATAN_KHUSUS') FILTER_KEGIATAN_LAPORAN = null;
+        chipKeg.style.display = 'none';
+      }
       LAST_REPORT_DATA = res; 
       if(!res || !res.headers || res.headers.length === 0) {
          tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted">Struktur tabel belum siap atau data tidak ditemukan.</td></tr>';
@@ -5944,18 +5957,40 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }).saveJadwalKegiatan(SESSION_TOKEN, nama, tgl, wkt, tol, tipePeserta, daftarPeserta, lat, lon, radius);
   }
 
+  let DAFTAR_AGENDA_KEGIATAN = [];
+  // Nama kegiatan yang sedang disaring di menu Laporan (null = tanpa saringan).
+  let FILTER_KEGIATAN_LAPORAN = null;
+
+  /** Dari daftar agenda: buka menu Laporan, isi filter (tanggal + jenis laporan
+   * Kegiatan Khusus + nama kegiatan) otomatis, lalu langsung tampilkan. */
+  function bukaLaporanKegiatan(index) {
+    const keg = DAFTAR_AGENDA_KEGIATAN[index];
+    if (!keg) return;
+    FILTER_KEGIATAN_LAPORAN = keg.nama;
+    switchView('laporan'); // ini mengisi tanggal hari ini & memuat ulang daftar guru
+    document.getElementById('rep-start').value = keg.tanggal;
+    document.getElementById('rep-end').value = keg.tanggal;
+    document.getElementById('rep-guru').value = 'ALL';
+    document.getElementById('rep-type').value = 'ABSEN_KEGIATAN_KHUSUS';
+    loadReport();
+  }
+
+  function hapusFilterKegiatanLaporan() {
+    FILTER_KEGIATAN_LAPORAN = null;
+    loadReport();
+  }
+
   function loadJadwalKegiatanList() {
     const tbody = document.getElementById('tbody-kegiatan');
     tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><div class="spinner-border text-info spinner-border-sm"></div> Memuat agenda...</td></tr>';
     google.script.run.withSuccessHandler(res => {
+      DAFTAR_AGENDA_KEGIATAN = res;
       let html = '';
       if(res.length === 0) {
         html = '<tr><td colspan="7" class="text-center text-muted py-3">Belum ada agenda kegiatan.</td></tr>';
       } else {
         res.forEach((keg, index) => {
           const badgeColor = (keg.status === 'Aktif') ? 'bg-success' : 'bg-danger';
-          const toggleBtnText = (keg.status === 'Aktif') ? '<i class="bi bi-eye-slash-fill"></i> Nonaktif' : '<i class="bi bi-eye-fill"></i> Aktif';
-          const toggleBtnClass = (keg.status === 'Aktif') ? 'btn-outline-danger' : 'btn-outline-success';
           const pesertaBadge = (keg.tipePeserta === 'Terbatas')
             ? `<span class="badge bg-warning text-dark" title="${keg.daftarPeserta.length} peserta diundang">Terbatas (${keg.daftarPeserta.length})</span>`
             : `<span class="badge bg-light text-dark">Semua GTK</span>`;
@@ -5978,8 +6013,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
               <td>
                 <div class="btn-group btn-group-sm">
                   ${tutupAbsenBtn}
-                  <button class="btn ${toggleBtnClass}" onclick="ubahStatusKegiatan('${keg.row}', '${keg.status}')">
-                    ${toggleBtnText}
+                  <button class="btn btn-outline-primary" title="Buka laporan kehadiran kegiatan ini" onclick="bukaLaporanKegiatan(${index})">
+                    <i class="bi bi-file-earmark-bar-graph"></i> Laporan
                   </button>
                   <button class="btn btn-danger" onclick="hapusJadwalKegiatan('${keg.row}')">
                     <i class="bi bi-trash"></i>
