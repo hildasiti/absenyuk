@@ -879,13 +879,13 @@
     </div>
   </div>
 
-  <!-- 4 CHART BARU: tren mingguan, ranking telat/alpa, distribusi jam datang,
-       kepatuhan kegiatan rutin - datanya dari getDashboardCharts(), SELALU 7 hari
-       terakhir / periode payroll berjalan (tidak ikut filter tanggal di atas). -->
+  <!-- 4 CHART: tren kehadiran, ranking telat/alpa, distribusi jam datang,
+       kepatuhan kegiatan rutin - datanya dari getDashboardCharts(), SEMUANYA
+       periode payroll berjalan (tidak ikut filter tanggal di atas). -->
   <div class='row g-2 mb-3'>
     <div class='col-12'>
       <div class='card p-3 shadow-sm'>
-        <h6 class='text-secondary fw-bold mb-2' style='font-size: 0.85rem;'><i class='bi bi-graph-up'></i> Tren Kehadiran 7 Hari Terakhir</h6>
+        <h6 class='text-secondary fw-bold mb-2' style='font-size: 0.85rem;'><i class='bi bi-graph-up'></i> Tren Kehadiran per Hari Kerja (Periode Berjalan)</h6>
         <div style='position: relative; height: 220px;'><canvas id='chartTrenMingguan'></canvas></div>
       </div>
     </div>
@@ -907,7 +907,7 @@
   <div class='row g-2 mb-4'>
     <div class='col-12'>
       <div class='card p-3 shadow-sm'>
-        <h6 class='text-secondary fw-bold mb-2' style='font-size: 0.85rem;'><i class='bi bi-moon-stars'></i> Kegiatan Rutin - Tawasul, Dzuhur dan Ashar (Berjamaah/Bertugas) (7 Hari Terakhir)</h6>
+        <h6 class='text-secondary fw-bold mb-2' style='font-size: 0.85rem;'><i class='bi bi-moon-stars'></i> Kegiatan Rutin - Tawasul, Dzuhur dan Ashar (Berjamaah/Bertugas) (Periode Berjalan)</h6>
         <div style='position: relative; height: 180px;'><canvas id='chartKepatuhanKegiatan'></canvas></div>
       </div>
     </div>
@@ -2969,10 +2969,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   }
 
   // ====================================================================
-  // 4 CHART DASHBOARD ADMIN (tren mingguan, ranking telat/alpa, distribusi
+  // 4 CHART DASHBOARD ADMIN (tren kehadiran, ranking telat/alpa, distribusi
   // jam datang, kepatuhan kegiatan rutin) - menggantikan pie chart lama yang
-  // cuma snapshot sesaat. Datanya SELALU 7 hari terakhir / periode payroll
-  // berjalan, independen dari filter tanggal kartu status di atasnya -
+  // cuma snapshot sesaat. Datanya SELALU periode payroll berjalan (21 - 20,
+  // sampai hari ini), independen dari filter tanggal kartu status di atasnya -
   // makanya dipanggil tanpa parameter tanggal sama sekali.
   // ====================================================================
   let chartTren, chartRanking, chartJam, chartKepatuhan;
@@ -3006,8 +3006,12 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } }
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { font: { size: 10 }, autoSkip: true, maxRotation: 0 } } },
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
+          // Judul tooltip = tanggal lengkap (mis. "Sen, 21 Sep"), sumbu X cukup angka tanggal.
+          tooltip: { callbacks: { title: items => (rows[items[0].dataIndex] || {}).labelLengkap || items[0].label } }
+        }
       }
     });
   }

@@ -1002,12 +1002,13 @@ async function getDashboardData(args, env) {
 }
 
 /**
- * Data untuk 4 chart di Admin Panel: tren kehadiran mingguan, ranking guru
- * paling sering telat/alpa (periode payroll berjalan), distribusi jam
- * datang, dan kepatuhan kegiatan rutin (Dhuha/Dzuhur/Ashar) mingguan.
+ * Data untuk 4 chart di Admin Panel: tren kehadiran harian, ranking guru
+ * paling sering telat/alpa, distribusi jam datang, dan kepatuhan kegiatan
+ * rutin (Briefing & Tawasul/Dzuhur/Ashar). SEMUANYA memakai rentang yang
+ * sama: periode payroll berjalan (21 - 20), dipotong sampai hari ini.
  * Sengaja dipisah dari getDashboardData() karena rentang tanggalnya SELALU
- * tetap (7 hari terakhir / periode payroll berjalan) - tidak ikut filter
- * tanggal kartu status di atasnya, jadi lebih jelas kalau independen.
+ * tetap - tidak ikut filter tanggal kartu status di atasnya, jadi lebih
+ * jelas kalau independen.
  */
 async function getDashboardCharts(args, env) {
   const [token, requestedSekolahId] = args;
@@ -1018,11 +1019,6 @@ async function getDashboardCharts(args, env) {
   const { dateStr: todayStr } = nowJakarta();
   const today = new Date(todayStr);
 
-  // 7 hari terakhir (termasuk hari ini).
-  const tujuhHariLaluObj = new Date(today);
-  tujuhHariLaluObj.setUTCDate(today.getUTCDate() - 6);
-  const tujuhHariLaluStr = toDateStr(tujuhHariLaluObj);
-
   // Periode payroll berjalan (21 - 20), dipotong sampai HARI INI saja
   // (jangan sampai tanggal-tanggal masa depan yang belum ada datanya ikut
   // dihitung sebagai "0 kejadian" yang menyesatkan).
@@ -1031,38 +1027,84 @@ async function getDashboardCharts(args, env) {
   const periodeEndStrFull = toDateStr(periode.end);
   const periodeEndEfektifStr = todayStr < periodeEndStrFull ? todayStr : periodeEndStrFull;
 
-  const [users, settingsChart, rowsMingguan, rowsPeriode, rowsKegiatanMingguan] = await Promise.all([
+  // Kegiatan rutin diambil PER JENIS (dan hanya status yang dihitung, hanya 2
+  // kolom) - kalau digabung satu query, 3 jenis x staf x hari kerja satu periode
+  // bisa melewati batas 1000 baris per request PostgREST dan hasilnya diam-diam
+  // terpotong (persentase jadi lebih rendah dari kenyataan).
+  const JENIS_KEGIATAN_RUTIN = [
+    { key: 'BRIEFING_TAWASUL', label: 'Briefing & Tawasul' },
+    { key: 'SHOLAT_DZUHUR', label: 'Dzuhur' },
+    { key: 'SHOLAT_ASHAR', label: 'Ashar' }
+  ];
+  // Status yang DIHITUNG per jenis, bukan cuma 'Hadir':
+  // BRIEFING_TAWASUL statusnya 'Hadir' (auto-tercatat dari Absen Masuk, lihat
+  // saveAbsenMasuk). SHOLAT_DZUHUR/SHOLAT_ASHAR dipilih guru sendiri dari opsi
+  // 'Berjamaah'/'Munfarid'/'Bertugas'/'Izin Terkonfirmasi'/'Haid'/'Sakit'
+  // (lihat OPSI_STATUS_SHOLAT di index.html). Aturan sekolah: WAJIB Berjamaah
+  // (atau Bertugas di tempat lain saat itu) - Munfarid (sholat sendirian) di
+  // LUAR aturan itu, jadi SENGAJA tidak dihitung walau tetap berarti sholat.
+  // Haid dihitung karena itu alasan lumrah/sah (bukan pelanggaran aturan).
+  // 'Izin Terkonfirmasi'/'Sakit' tidak dihitung.
+  const STATUS_DIHITUNG_PER_JENIS = {
+    BRIEFING_TAWASUL: ['Hadir'],
+    SHOLAT_DZUHUR: ['Berjamaah', 'Bertugas', 'Haid'],
+    SHOLAT_ASHAR: ['Berjamaah', 'Bertugas', 'Haid']
+  };
+
+  const [users, settingsChart, rowsPeriode, liburList, ...rowsKegiatanPerJenis] = await Promise.all([
     getUsersListCached(env, sekolahId),
     getSettingsMap(env, sekolahId),
-    sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${tujuhHariLaluStr}&tanggal=lte.${todayStr}`),
     sbSelect(env, 'absen_masuk', `sekolah_id=eq.${sekolahId}&tanggal=gte.${periodeStartStr}&tanggal=lte.${periodeEndEfektifStr}`),
-    sbSelect(env, 'kegiatan_umum', `sekolah_id=eq.${sekolahId}&tanggal=gte.${tujuhHariLaluStr}&tanggal=lte.${todayStr}&jenis_kegiatan=in.(BRIEFING_TAWASUL,SHOLAT_DZUHUR,SHOLAT_ASHAR)`)
+    getLiburListCached(env, sekolahId),
+    ...JENIS_KEGIATAN_RUTIN.map((j) =>
+      sbSelect(env, 'kegiatan_umum',
+        `select=jenis_kegiatan,status&sekolah_id=eq.${sekolahId}&tanggal=gte.${periodeStartStr}&tanggal=lte.${periodeEndEfektifStr}` +
+        `&jenis_kegiatan=eq.${j.key}&status=in.(${STATUS_DIHITUNG_PER_JENIS[j.key].map(encodeURIComponent).join(',')})`)
+    )
   ]);
 
   const totalStafAktif = users.filter((u) =>
     ['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif'
   ).length;
 
-  // --- 1) TREN KEHADIRAN MINGGUAN: per tanggal -> jumlah Hadir/Terlambat/Tanpa Keterangan ---
+  // Hari kerja efektif dalam periode (dari tanggal 21 sampai hari ini): bukan
+  // hari libur mingguan & bukan tanggal merah/libur sekolah. Dipakai bersama
+  // oleh Tren Kehadiran (sumbu X) dan Kepatuhan Kegiatan (penyebut). Daftar
+  // libur dibaca SEKALI lalu dicek lokal - bukan 1x baca KV per tanggal.
   const NAMA_HARI_SINGKAT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-  const trenMap = {};
-  const urutanTanggal = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(tujuhHariLaluObj);
-    d.setUTCDate(tujuhHariLaluObj.getUTCDate() + i);
+  const NAMA_BULAN_SINGKAT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const adaLibur = (ds) => {
+    const t = new Date(ds).getTime();
+    return liburList.some((l) => t >= new Date(l.tgl_mulai).getTime() && t <= new Date(l.tgl_selesai).getTime());
+  };
+  const hariKerjaPeriode = [];
+  for (let d = new Date(periodeStartStr); toDateStr(d) <= periodeEndEfektifStr; d.setUTCDate(d.getUTCDate() + 1)) {
     const ds = toDateStr(d);
-    urutanTanggal.push(ds);
-    trenMap[ds] = { tanggal: ds, label: NAMA_HARI_SINGKAT[d.getUTCDay()] + ' ' + d.getUTCDate(), hadir: 0, terlambat: 0, alpa: 0 };
+    if (isHariLiburMingguan(settingsChart, d.getUTCDay())) continue;
+    if (adaLibur(ds)) continue;
+    hariKerjaPeriode.push({ ds, dow: d.getUTCDay(), tgl: d.getUTCDate(), bln: d.getUTCMonth() });
   }
-  rowsMingguan.forEach((r) => {
+
+  // --- 1) TREN KEHADIRAN: per hari kerja dalam periode berjalan -> jumlah Hadir/Terlambat/Tanpa Keterangan ---
+  const trenMap = {};
+  hariKerjaPeriode.forEach((h, idx) => {
+    trenMap[h.ds] = {
+      // Awal periode & tiap awal bulan diberi nama bulan ("1 Okt") supaya
+      // lompatan 30 -> 1 di sumbu X tidak membingungkan.
+      tanggal: h.ds, label: (idx === 0 || h.tgl === 1) ? `${h.tgl} ${NAMA_BULAN_SINGKAT[h.bln]}` : String(h.tgl),
+      labelLengkap: `${NAMA_HARI_SINGKAT[h.dow]}, ${h.tgl} ${NAMA_BULAN_SINGKAT[h.bln]}`,
+      hadir: 0, terlambat: 0, alpa: 0
+    };
+  });
+  rowsPeriode.forEach((r) => {
     const bucket = trenMap[r.tanggal];
-    if (!bucket) return;
+    if (!bucket) return; // data di hari libur/akhir pekan tidak dimunculkan di tren
     const st = String(r.status).trim();
     if (st === 'Hadir') bucket.hadir++;
     else if (st === 'Terlambat') bucket.terlambat++;
     else if (st === 'Tanpa Keterangan') bucket.alpa++;
   });
-  const trenMingguan = urutanTanggal.map((ds) => trenMap[ds]);
+  const trenMingguan = hariKerjaPeriode.map((h) => trenMap[h.ds]);
 
   // --- 2) RANKING GURU PALING SERING TELAT/ALPA (periode payroll berjalan) ---
   const rankMap = {};
@@ -1093,7 +1135,7 @@ async function getDashboardCharts(args, env) {
   });
   const distribusiJam = Object.keys(bucketJam).sort().map((label) => ({ label, jumlah: bucketJam[label] }));
 
-  // --- 4) KEPATUHAN KEGIATAN RUTIN MINGGUAN (Briefing & Tawasul/Dzuhur/Ashar) ---
+  // --- 4) KEPATUHAN KEGIATAN RUTIN (Briefing & Tawasul/Dzuhur/Ashar), periode berjalan ---
   // Dhuha SENGAJA tidak dipakai di sini - jadwalnya beda-beda per guru (bukan
   // satu waktu bersama seperti sholat), jadi tidak relevan dijadikan metrik
   // kepatuhan bersama. Briefing & Tawasul dipakai sebagai gantinya karena
@@ -1101,48 +1143,14 @@ async function getDashboardCharts(args, env) {
   // kegiatan_umum jenis BRIEFING_TAWASUL, yang otomatis tercatat saat guru
   // pilih "Hadir & Tawasul" di Absen Masuk (lihat saveAbsenMasuk, ikutTawasul).
   //
-  // Penyebutnya SENGAJA seluruh staf aktif x hari kerja (bukan cuma yang lapor) -
-  // guru yang tidak pernah lapor sama sekali (mis. lupa) HARUS ikut menurunkan
-  // persentase, bukan hilang begitu saja seperti masalah di getAbsenMasukUntukEdit
-  // sebelum diperbaiki - di sini justru itu yang diinginkan (metrik kepatuhan).
-  const JENIS_KEGIATAN_RUTIN = [
-    { key: 'BRIEFING_TAWASUL', label: 'Briefing & Tawasul' },
-    { key: 'SHOLAT_DZUHUR', label: 'Dzuhur' },
-    { key: 'SHOLAT_ASHAR', label: 'Ashar' }
-  ];
-  // Status yang DIHITUNG per jenis, bukan cuma 'Hadir':
-  // BRIEFING_TAWASUL statusnya 'Hadir' (auto-tercatat dari Absen Masuk, lihat
-  // saveAbsenMasuk). SHOLAT_DZUHUR/SHOLAT_ASHAR dipilih guru sendiri dari opsi
-  // 'Berjamaah'/'Munfarid'/'Bertugas'/'Izin Terkonfirmasi'/'Haid'/'Sakit'
-  // (lihat OPSI_STATUS_SHOLAT di index.html). Aturan sekolah: WAJIB Berjamaah
-  // (atau Bertugas di tempat lain saat itu) - Munfarid (sholat sendirian) di
-  // LUAR aturan itu, jadi SENGAJA tidak dihitung walau tetap berarti sholat.
-  // Haid dihitung karena itu alasan lumrah/sah (bukan pelanggaran aturan).
-  // 'Izin Terkonfirmasi'/'Sakit' tidak dihitung.
-  const STATUS_DIHITUNG_PER_JENIS = {
-    BRIEFING_TAWASUL: ['Hadir'],
-    SHOLAT_DZUHUR: ['Berjamaah', 'Bertugas', 'Haid'],
-    SHOLAT_ASHAR: ['Berjamaah', 'Bertugas', 'Haid']
-  };
-  const kepatuhanCount = { BRIEFING_TAWASUL: 0, SHOLAT_DZUHUR: 0, SHOLAT_ASHAR: 0 };
-  rowsKegiatanMingguan.forEach((r) => {
-    const statusDihitung = STATUS_DIHITUNG_PER_JENIS[r.jenis_kegiatan];
-    if (statusDihitung && statusDihitung.includes(String(r.status).trim())) {
-      kepatuhanCount[r.jenis_kegiatan]++;
-    }
-  });
-  let hariKerjaDalamSeminggu = 0;
-  for (const ds of urutanTanggal) {
-    const dow = new Date(ds).getUTCDay();
-    if (isHariLiburMingguan(settingsChart, dow)) continue;
-    const libur = await checkApakahHariLibur(env, sekolahId, ds);
-    if (libur) continue;
-    hariKerjaDalamSeminggu++;
-  }
-  const penyebutKepatuhan = Math.max(1, totalStafAktif * hariKerjaDalamSeminggu);
-  const kepatuhanKegiatan = JENIS_KEGIATAN_RUTIN.map((j) => ({
+  // Penyebutnya SENGAJA seluruh staf aktif x hari kerja periode (bukan cuma
+  // yang lapor) - guru yang tidak pernah lapor sama sekali (mis. lupa) HARUS
+  // ikut menurunkan persentase, bukan hilang begitu saja. Query di atas sudah
+  // menyaring status yang dihitung, jadi cukup menghitung jumlah barisnya.
+  const penyebutKepatuhan = Math.max(1, totalStafAktif * hariKerjaPeriode.length);
+  const kepatuhanKegiatan = JENIS_KEGIATAN_RUTIN.map((j, i) => ({
     label: j.label,
-    persen: Math.round((kepatuhanCount[j.key] / penyebutKepatuhan) * 100)
+    persen: Math.min(100, Math.round((rowsKegiatanPerJenis[i].length / penyebutKepatuhan) * 100))
   }));
 
   return { trenMingguan, rankingTelatAlpa, distribusiJam, kepatuhanKegiatan };
