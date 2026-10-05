@@ -6,7 +6,7 @@ import { checkApakahHariLibur, hitungRadiusGPS } from './libur.js';
 import { nowJakarta, getPeriodeBerjalan, getPeriodeByOffset, toDateStr } from './date.js';
 import { cached, invalidate } from './cache.js';
 import { kirimNotifikasiKeSatuHP } from './fcm.js';
-import { uploadFileKeDrive, hapusFileDriveDariUrl, ambilFileIdDariUrl } from './drive.js';
+import { uploadFileKeDrive, hapusFileDriveDariUrl, ambilFileIdDariUrl, driveSudahDisetup } from './drive.js';
 
 /**
  * Ambil jam (HH:mm) dalam WIB dari sebuah timestamp yang disimpan pakai
@@ -1278,8 +1278,8 @@ async function uploadGambarIdentitas(args, env) {
   if (!['kiri', 'kanan', 'ttd'].includes(jenisBersih)) {
     return { success: false, message: 'Jenis gambar tidak valid (harus "kiri", "kanan", atau "ttd").' };
   }
-  if (!env.DRIVE_OWNER_REFRESH_TOKEN || !env.DRIVE_OWNER_CLIENT_ID || !env.DRIVE_OWNER_CLIENT_SECRET) {
-    return { success: false, message: 'Setup Google Drive belum lengkap di Worker Secrets (DRIVE_OWNER_REFRESH_TOKEN/CLIENT_ID/CLIENT_SECRET) - lihat README bagian "Setup Kop Surat".' };
+  if (!driveSudahDisetup(env)) {
+    return { success: false, message: 'Setup Google Drive belum lengkap di Worker Secrets (DRIVE_SCRIPT_URL/DRIVE_SCRIPT_KEY, atau DRIVE_OWNER_REFRESH_TOKEN/CLIENT_ID/CLIENT_SECRET) - lihat README bagian "Setup Kop Surat".' };
   }
   const mimeBersih = String(mimeType || '').trim().toLowerCase();
   if (!/^image\/(png|jpe?g)$/.test(mimeBersih)) {
@@ -1560,7 +1560,7 @@ async function hapusGambarIdentitas(args, env) {
   if (!urlLama) return { success: true, message: `${namaTampil} memang belum ada.` };
 
   let hasilDrive = { ok: true };
-  if (env.DRIVE_OWNER_REFRESH_TOKEN && env.DRIVE_OWNER_CLIENT_ID && env.DRIVE_OWNER_CLIENT_SECRET) {
+  if (driveSudahDisetup(env)) {
     hasilDrive = await hapusFileDriveDariUrl(env, urlLama);
   } else {
     hasilDrive = { ok: false, pesan: 'Setup Google Drive belum lengkap di Worker Secrets.' };

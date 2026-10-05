@@ -21,6 +21,53 @@ import { getGoogleAccessTokenDariRefreshToken } from './googleAuth.js';
  * ====================================================================
  */
 
+/**
+ * ====================================================================
+ * JALUR UTAMA: GOOGLE APPS SCRIPT "GERBANG DRIVE" (tanpa refresh token)
+ * ====================================================================
+ * Refresh token OAuth ikut kedaluwarsa tiap 7 hari kalau OAuth consent screen
+ * berstatus "Testing" (dan baru bisa dihindari dengan "Publish app", yang
+ * menuntut verifikasi Google kalau ada logo/domain). Jalur ini menghindarinya
+ * total: sebuah Apps Script milik akun Drive pemilik (di-deploy sebagai web
+ * app "Execute as: Me", "Who has access: Anyone") menerima file dari Worker
+ * lalu menyimpannya ke Drive pemilik. Script berjalan atas nama pemilik
+ * sendiri, otorisasinya tidak berumur 7 hari seperti token OAuth Testing.
+ *
+ * Aktif otomatis kalau env.DRIVE_SCRIPT_URL & env.DRIVE_SCRIPT_KEY terisi
+ * (Worker Secrets). Kalau tidak, kode di bawah tetap memakai jalur OAuth
+ * refresh token seperti sebelumnya - jadi tidak ada yang rusak.
+ * Source Apps Script-nya ada di file kop-surat-gateway.gs.
+ */
+function pakaiAppsScript(env) {
+  return !!(env.DRIVE_SCRIPT_URL && env.DRIVE_SCRIPT_KEY);
+}
+
+/** True kalau salah satu jalur (Apps Script ATAU OAuth refresh token) sudah disetup. */
+export function driveSudahDisetup(env) {
+  return pakaiAppsScript(env) ||
+    !!(env.DRIVE_OWNER_REFRESH_TOKEN && env.DRIVE_OWNER_CLIENT_ID && env.DRIVE_OWNER_CLIENT_SECRET);
+}
+
+async function panggilAppsScript(env, payload) {
+  // text/plain = "simple request" - tidak butuh preflight. Apps Script membalas
+  // 302 ke script.googleusercontent.com; fetch Workers mengikuti redirect itu
+  // otomatis dan hasil akhirnya JSON.
+  const res = await fetch(env.DRIVE_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ key: env.DRIVE_SCRIPT_KEY, ...payload }),
+    redirect: 'follow'
+  });
+  const teks = await res.text();
+  let json;
+  try { json = JSON.parse(teks); } catch (e) {
+    // Biasanya HTML halaman login Google: web app belum di-deploy "Anyone" atau URL salah.
+    throw new Error(`Apps Script tidak membalas JSON (${res.status}). Periksa URL deploy & akses "Anyone". Cuplikan: ${teks.slice(0, 160).replace(/\s+/g, ' ')}`);
+  }
+  if (!json.ok) throw new Error('Apps Script menolak: ' + json.error);
+  return json;
+}
+
 async function cariAtauBuatFolderKopSurat(accessToken) {
   const q = encodeURIComponent("name='AbsenYuk - Kop Surat' and mimeType='application/vnd.google-apps.folder' and trashed=false");
   const cariRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
@@ -41,6 +88,14 @@ async function cariAtauBuatFolderKopSurat(accessToken) {
 }
 
 export async function uploadFileKeDrive(env, base64Data, mimeType, namaFile) {
+  if (pakaiAppsScript(env)) {
+    const { fileId } = await panggilAppsScript(env, { action: 'upload', base64: base64Data, mimeType, namaFile });
+    if (!fileId) throw new Error('Apps Script tidak mengembalikan ID file.');
+    // Format URL SAMA PERSIS dengan jalur OAuth di bawah - frontend, cetak PDF, dan
+    // getGambarDataUri (Simpan Gambar PNG) tidak perlu tahu jalur mana yang dipakai.
+    return { fileId, url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000` };
+  }
+
   const accessToken = await getGoogleAccessTokenDariRefreshToken(env);
   const folderId = await cariAtauBuatFolderKopSurat(accessToken);
 
@@ -100,6 +155,14 @@ export function ambilFileIdDariUrl(url) {
 export async function hapusFileDriveDariUrl(env, url) {
   const fileId = ambilFileIdDariUrl(url);
   if (!fileId) return { ok: false, pesan: 'ID file Drive tidak ditemukan di URL.' };
+  if (pakaiAppsScript(env)) {
+    try {
+      await panggilAppsScript(env, { action: 'hapus', fileId });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, pesan: err.message };
+    }
+  }
   try {
     const accessToken = await getGoogleAccessTokenDariRefreshToken(env);
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
