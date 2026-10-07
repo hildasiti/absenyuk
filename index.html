@@ -4242,19 +4242,71 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#dc3545',
-        confirmButtonText: 'Ya, Hapus'
+        confirmButtonText: 'Ya, Hapus',
+        cancelButtonText: 'Batal'
     }).then((result) => {
-        if (result.isConfirmed) {
-            google.script.run.withSuccessHandler(res => {
-                if(res.success) {
-                    Swal.fire('Terhapus!', res.message, 'success');
-                    loadGuruList(); refreshDashboard();
-                } else {
-                    Swal.fire('Gagal', res.message, 'error');
-                }
-            }).deleteUser(SESSION_TOKEN, guru.nuptk);
-        }
+        if (result.isConfirmed) kirimHapusGuru(guru, false);
     });
+  }
+
+  function kirimHapusGuru(guru, hapusOtomatis) {
+    Swal.fire({ title: 'Memproses...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    google.script.run.withSuccessHandler(res => {
+        if (res && res.success) {
+            Swal.fire('Terhapus!', res.message, 'success');
+            loadGuruList(); refreshDashboard();
+        } else if (res && res.punyaRiwayat) {
+            const li = (res.rincian || []).map(r => `<li>${r.label}: <b>${r.jumlah}</b></li>`).join('');
+            const bisaNonaktif = guru.status === 'Aktif';
+            Swal.fire({
+                title: 'Akun Tidak Bisa Dihapus',
+                icon: 'info',
+                html: `<div style="text-align:left;font-size:14px;">Akun <b>${escAttr(guru.nama)}</b> memiliki riwayat data:<ul style="margin:8px 0 8px 18px;">${li}</ul>` +
+                      `Akun tidak dihapus agar laporan &amp; payroll tetap utuh. ` +
+                      (bisaNonaktif ? 'Nonaktifkan akun ini?' : 'Akun ini sudah berstatus Nonaktif.') + `</div>`,
+                showCancelButton: bisaNonaktif,
+                showConfirmButton: bisaNonaktif,
+                confirmButtonText: 'Nonaktifkan Akun',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#f59e0b'
+            }).then(r => { if (r.isConfirmed) nonaktifkanGuru(guru); });
+        } else if (res && res.butuhKonfirmasiOtomatis) {
+            Swal.fire({
+                title: 'Ada Data Otomatis Sistem',
+                icon: 'warning',
+                html: `<div style="text-align:left;font-size:14px;">Akun <b>${escAttr(guru.nama)}</b> hanya memiliki <b>${res.jumlahOtomatis}</b> baris data otomatis (${res.tanggalAwal} s/d ${res.tanggalAkhir}) dari sistem, tanpa riwayat absen asli.<br><br>` +
+                      `<small>Jika guru ini sebenarnya pernah bekerja namun tidak absen, catatan "Tanpa Keterangan"-nya akan ikut hilang.</small></div>`,
+                showDenyButton: guru.status === 'Aktif',
+                showCancelButton: true,
+                confirmButtonText: 'Hapus Akun & Data Otomatis',
+                denyButtonText: 'Nonaktifkan Saja',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#dc3545',
+                denyButtonColor: '#f59e0b'
+            }).then(r => {
+                if (r.isConfirmed) kirimHapusGuru(guru, true);
+                else if (r.isDenied) nonaktifkanGuru(guru);
+            });
+        } else {
+            Swal.fire('Gagal', (res && res.message) || 'Terjadi kesalahan.', 'error');
+        }
+    }).withFailureHandler(err => {
+        Swal.fire('Gagal', (err && err.message) || String(err), 'error');
+    }).deleteUser(SESSION_TOKEN, guru.nuptk, !!hapusOtomatis);
+  }
+
+  function nonaktifkanGuru(guru) {
+    Swal.fire({ title: 'Memproses...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    google.script.run.withSuccessHandler(res => {
+        if (res && res.success) {
+            Swal.fire('Berhasil', res.message, 'success');
+            loadGuruList(); refreshDashboard();
+        } else {
+            Swal.fire('Gagal', (res && res.message) || 'Terjadi kesalahan.', 'error');
+        }
+    }).withFailureHandler(err => {
+        Swal.fire('Gagal', (err && err.message) || String(err), 'error');
+    }).setStatusUser(SESSION_TOKEN, guru.nuptk, 'Nonaktif');
   }
 
   function loadGuruForReport() {

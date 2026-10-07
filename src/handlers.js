@@ -1,4 +1,4 @@
-import { sbSelect, sbInsert, sbInsertMany, sbUpdate, sbUpdateWhere, sbUpsertMany, sbDelete } from './supabase.js';
+import { sbSelect, sbInsert, sbInsertMany, sbUpdate, sbUpdateWhere, sbUpsertMany, sbDelete, sbDeleteWhere } from './supabase.js';
 import { createSession, getSession, destroySession } from './session.js';
 import { verifyAndMigratePassword, hashPassword } from './auth.js';
 import { getSettingsMap } from './settings.js';
@@ -1736,12 +1736,50 @@ async function getGuruMengajarList(args, env) {
     .map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, status: u.status, role: u.role, row: u.nuptk }));
 }
 
+// Baris yang dibuat OTOMATIS oleh sistem (bukan aktivitas guru). Dipakai deleteUser()
+// untuk membedakan akun yang "benar-benar belum punya riwayat" dari akun yang cuma
+// punya baris buatan cron/Tutup Absen. Penandanya SAMA dengan yang ditulis kodenya:
+//  - absen_masuk: auto-alpa -> status 'Tanpa Keterangan' + keterangan 'Tidak Absen!'
+//  - kegiatan_umum: auto Tidak Absen Sholat -> status 'Tidak Absen' + catatan 'Otomatis oleh sistem...'
+//  - absen_kegiatan_khusus: Tutup Absen -> status_kehadiran 'Tanpa Keterangan' + catatan 'Tidak Absen (Absen Ditutup Admin)'
+// Kalau teks penandanya suatu saat berubah, barisnya otomatis dianggap riwayat NYATA
+// (aman: akun tidak terhapus, cuma ditawari Nonaktifkan).
+const CATATAN_OTOMATIS_KEGIATAN_UMUM = 'Otomatis oleh sistem - tidak melakukan absen sampai batas waktu.';
+const BARIS_OTOMATIS = {
+  absen_masuk: {
+    label: 'Absen Masuk', kolomTanggal: 'tanggal', select: 'tanggal,status,keterangan',
+    filter: { status: 'Tanpa Keterangan', keterangan: 'Tidak Absen!' },
+    cocok: (r) => r.status === 'Tanpa Keterangan' && r.keterangan === 'Tidak Absen!'
+  },
+  kegiatan_umum: {
+    label: 'Kegiatan Rutin (Sholat/Tawasul)', kolomTanggal: 'tanggal', select: 'tanggal,status,catatan',
+    filter: { status: 'Tidak Absen', catatan: CATATAN_OTOMATIS_KEGIATAN_UMUM },
+    cocok: (r) => r.status === 'Tidak Absen' && r.catatan === CATATAN_OTOMATIS_KEGIATAN_UMUM
+  },
+  absen_kegiatan_khusus: {
+    label: 'Kegiatan Khusus', kolomTanggal: 'tanggal_lapor', select: 'tanggal_lapor,status_kehadiran,catatan',
+    filter: { status_kehadiran: 'Tanpa Keterangan', catatan: 'Tidak Absen (Absen Ditutup Admin)' },
+    cocok: (r) => r.status_kehadiran === 'Tanpa Keterangan' && r.catatan === 'Tidak Absen (Absen Ditutup Admin)'
+  }
+};
+
+/**
+ * Hapus akun. Tiga kemungkinan, supaya laporan & payroll tidak pernah rusak:
+ *  1) Akun sama sekali tidak punya data           -> langsung dihapus.
+ *  2) Akun hanya punya baris OTOMATIS sistem       -> TIDAK dihapus dulu; minta konfirmasi
+ *     (butuhKonfirmasiOtomatis). Dihapus beserta baris otomatisnya hanya kalau args[2] === true.
+ *     Konfirmasi eksplisit dipakai karena guru yang memang pernah bertugas tapi tidak pernah
+ *     absen juga hanya punya baris otomatis - itu catatan "Tanpa Keterangan" yang sah.
+ *  3) Akun punya riwayat NYATA (absen sungguhan, cuti, rekap jam pelajaran, jadi guru impal)
+ *     -> ditolak (punyaRiwayat) dengan rincian; frontend menawarkan Nonaktifkan (setStatusUser).
+ */
 async function deleteUser(args, env) {
-  const [token, nuptkAtauRow] = args;
+  const [token, nuptkAtauRow, hapusDataOtomatis] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak. Anda bukan Admin.' };
 
-  const rows = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(String(nuptkAtauRow).trim())}&limit=1`);
+  const nuptk = String(nuptkAtauRow).trim();
+  const rows = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(nuptk)}&limit=1`);
   const target = rows[0];
   if (!target) return { success: false, message: 'Pendidik tidak ditemukan.' };
   if (user.role !== 'ADMIN_UTAMA' && target.sekolah_id !== user.sekolahId) {
@@ -1751,9 +1789,103 @@ async function deleteUser(args, env) {
     return { success: false, message: 'Akses ditolak. Hanya Admin Utama yang bisa menghapus akun Admin.' };
   }
 
-  await sbDelete(env, 'users', 'nuptk', String(nuptkAtauRow).trim());
+  // --- Periksa semua tabel yang merujuk nuptk ini ---
+  const q = encodeURIComponent(nuptk);
+  const tabelOtomatis = Object.keys(BARIS_OTOMATIS);
+  const [hasilOtomatis, cuti, rekapJp, rekapImpal] = await Promise.all([
+    Promise.all(tabelOtomatis.map((t) => sbSelect(env, t, `select=${BARIS_OTOMATIS[t].select}&nuptk=eq.${q}`))),
+    sbSelect(env, 'cuti_guru', `select=nuptk&nuptk=eq.${q}`),
+    sbSelect(env, 'rekap_jam_pelajaran', `select=nuptk&nuptk=eq.${q}`),
+    sbSelect(env, 'rekap_jam_pelajaran', `select=nuptk&nuptk_impal=eq.${q}`)
+  ]);
+
+  const rincianNyata = [];
+  const jumlahOtomatis = {};
+  let totalOtomatis = 0;
+  const semuaTanggalOtomatis = [];
+  tabelOtomatis.forEach((t, i) => {
+    const cfg = BARIS_OTOMATIS[t];
+    let nyata = 0, otomatis = 0;
+    hasilOtomatis[i].forEach((r) => {
+      if (cfg.cocok(r)) { otomatis++; if (r[cfg.kolomTanggal]) semuaTanggalOtomatis.push(String(r[cfg.kolomTanggal]).slice(0, 10)); }
+      else nyata++;
+    });
+    if (nyata) rincianNyata.push({ label: cfg.label, jumlah: nyata });
+    if (otomatis) { jumlahOtomatis[t] = otomatis; totalOtomatis += otomatis; }
+  });
+  if (cuti.length) rincianNyata.push({ label: 'Cuti / Sakit', jumlah: cuti.length });
+  if (rekapJp.length) rincianNyata.push({ label: 'Rekap Jam Pelajaran', jumlah: rekapJp.length });
+  if (rekapImpal.length) rincianNyata.push({ label: 'Tercatat sebagai Guru Pengganti (Impal)', jumlah: rekapImpal.length });
+
+  if (rincianNyata.length) {
+    return {
+      success: false, punyaRiwayat: true, nama: target.nama, statusSaatIni: target.status, rincian: rincianNyata,
+      message: `Akun ${target.nama} punya riwayat sehingga tidak bisa dihapus (laporan & payroll akan rusak). Nonaktifkan saja.`
+    };
+  }
+
+  if (totalOtomatis > 0 && hapusDataOtomatis !== true) {
+    semuaTanggalOtomatis.sort();
+    return {
+      success: false, butuhKonfirmasiOtomatis: true, nama: target.nama, statusSaatIni: target.status,
+      jumlahOtomatis: totalOtomatis,
+      tanggalAwal: semuaTanggalOtomatis[0] || '', tanggalAkhir: semuaTanggalOtomatis[semuaTanggalOtomatis.length - 1] || '',
+      message: `Akun ${target.nama} hanya punya ${totalOtomatis} baris otomatis sistem. Perlu konfirmasi untuk menghapus.`
+    };
+  }
+
+  // --- Boleh dihapus: bersihkan baris otomatis (kalau ada & sudah dikonfirmasi), lalu akunnya ---
+  let terhapusOtomatis = 0;
+  for (const t of Object.keys(jumlahOtomatis)) {
+    terhapusOtomatis += await sbDeleteWhere(env, t, { nuptk, ...BARIS_OTOMATIS[t].filter });
+  }
+  try {
+    await sbDelete(env, 'users', 'nuptk', nuptk);
+  } catch (err) {
+    // Jaring pengaman: masih ada tabel lain (yang tidak kita kenal) yang merujuk akun ini.
+    if (/23503|foreign key/i.test(err.message)) {
+      const m = err.message.match(/from table \\?"([^"\\]+)/);
+      return {
+        success: false, punyaRiwayat: true, nama: target.nama, statusSaatIni: target.status,
+        rincian: [{ label: m ? `Data di tabel "${m[1]}"` : 'Data lain yang masih terkait', jumlah: 1 }],
+        message: `Akun ${target.nama} masih dipakai data lain sehingga tidak bisa dihapus. Nonaktifkan saja.`
+      };
+    }
+    throw err;
+  }
   await invalidate(env, `USERS_CACHE_${target.sekolah_id}`);
-  return { success: true, message: 'Data pendidik berhasil dihapus dari sistem.' };
+  return {
+    success: true,
+    message: terhapusOtomatis > 0
+      ? `Akun ${target.nama} dihapus beserta ${terhapusOtomatis} baris otomatis sistem.`
+      : 'Data pendidik berhasil dihapus dari sistem.'
+  };
+}
+
+/** Aktifkan / nonaktifkan akun tanpa menyentuh data lain (dipakai tombol "Nonaktifkan" saat akun tidak bisa dihapus). */
+async function setStatusUser(args, env) {
+  const [token, nuptkTarget, statusBaru] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  if (!['Aktif', 'Nonaktif'].includes(statusBaru)) return { success: false, message: 'Status tidak valid.' };
+
+  const nuptk = String(nuptkTarget).trim();
+  const rows = await sbSelect(env, 'users', `nuptk=eq.${encodeURIComponent(nuptk)}&limit=1`);
+  const target = rows[0];
+  if (!target) return { success: false, message: 'Pendidik tidak ditemukan.' };
+  if (user.role !== 'ADMIN_UTAMA' && target.sekolah_id !== user.sekolahId) {
+    return { success: false, message: 'Akses ditolak. Pendidik ini bukan dari sekolah Anda.' };
+  }
+  if (['ADMIN_SEKOLAH', 'ADMIN_UTAMA'].includes(target.role) && user.role !== 'ADMIN_UTAMA') {
+    return { success: false, message: 'Akses ditolak. Hanya Admin Utama yang bisa mengubah status akun Admin.' };
+  }
+  if (statusBaru === 'Nonaktif' && String(user.nuptk).trim() === nuptk) {
+    return { success: false, message: 'Anda tidak bisa menonaktifkan akun Anda sendiri.' };
+  }
+
+  await sbUpdate(env, 'users', 'nuptk', nuptk, { status: statusBaru });
+  await invalidate(env, `USERS_CACHE_${target.sekolah_id}`);
+  return { success: true, message: `Akun ${target.nama} sekarang ${statusBaru}.` };
 }
 
 async function getStafAktifUntukImpal(args, env) {
@@ -3218,6 +3350,7 @@ export const handlers = {
   getGuruMengajarList,
   getRiwayatAktivitas,
   deleteUser,
+  setStatusUser,
   getStafAktifUntukImpal,
   saveHariLibur,
   getLiburList,

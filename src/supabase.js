@@ -136,6 +136,23 @@ export async function sbUpdateWhere(env, table, filters, data) {
   return rows[0];
 }
 
+/**
+ * Hapus baris berdasarkan LEBIH DARI SATU filter kolom (semua harus cocok), mis. hanya
+ * baris "Tanpa Keterangan" otomatis milik satu NUPTK. Wajib ada minimal 1 filter supaya
+ * tidak pernah bisa menghapus seluruh tabel tanpa sengaja. Return jumlah baris terhapus.
+ */
+export async function sbDeleteWhere(env, table, filters) {
+  const filterQuery = Object.entries(filters || {})
+    .map(([col, val]) => val === null ? `${col}=is.null` : `${col}=eq.${encodeURIComponent(val)}`)
+    .join('&');
+  if (!filterQuery) throw new Error('sbDeleteWhere butuh minimal satu filter.');
+  const url = `${env.SUPABASE_URL}/rest/v1/${table}?${filterQuery}`;
+  const res = await fetch(url, { method: 'DELETE', headers: baseHeaders(env, { Prefer: 'return=representation' }) });
+  if (!res.ok) throw new Error(`Supabase DELETE ${table} gagal (${res.status}): ${await res.text()}`);
+  const rows = await res.json();
+  return Array.isArray(rows) ? rows.length : 0;
+}
+
 /** Hapus baris berdasarkan filter kolom = value. */
 export async function sbDelete(env, table, column, value) {
   const url = `${env.SUPABASE_URL}/rest/v1/${table}?${column}=eq.${encodeURIComponent(value)}`;
