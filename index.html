@@ -12,8 +12,8 @@
 
 <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'/>
 <link href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css' rel='stylesheet'/>
-<script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
+<script src='https://cdn.jsdelivr.net/npm/sweetalert2@11' onerror="document.write('<script src=&quot;https://cdnjs.cloudflare.com/ajax/libs/limonte-sweetalert2/11.14.5/sweetalert2.all.min.js&quot;><\/script>')"></script>
+<script src='https://cdn.jsdelivr.net/npm/chart.js' onerror="document.write('<script src=&quot;https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js&quot;><\/script>')"></script>
 <script src='https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js'></script>
 <script src='https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js'></script>
 
@@ -1280,7 +1280,7 @@
 </div>
 
 <div class='content-section' id='laporan' style='display: none;'>
-  <script src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'></script>
+  <script async src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'></script>
 
   <div class='card p-4 shadow-sm mb-3 border-0 border-start border-primary border-4'>
     <h6 class='mb-3 text-secondary fw-bold'>Filter Laporan Absensi &amp; Kegiatan</h6>
@@ -1988,6 +1988,11 @@
 // ==========================================
 
 var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
+// Alamat cadangan Worker (mis. domain sendiri seperti https://api.idrisiyyah.my.id).
+// Sebagian operator seluler/WiFi di Indonesia memblokir atau sangat memperlambat
+// *.workers.dev; kalau alamat pertama gagal, percobaan berikutnya otomatis memakai
+// alamat berikutnya di daftar ini. Isi setelah domain Worker disiapkan.
+var WORKER_API_URLS = [WORKER_API_URL];
 
 // Fungsi-fungsi backend yang butuh tahu "sekolah mana" saat dipanggil oleh
 // Admin Utama (yang bisa kelola lintas sekolah). Daftar ini HARUS cocok
@@ -2016,12 +2021,24 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
    * waktunya lebih lebar. Dicoba ulang sampai 2x (jeda singkat) sebelum
    * benar-benar menyerah dan memanggil failureHandler.
    */
-  function fetchDenganRetry(url, opsi, sisaPercobaan) {
+  function fetchDenganRetry(url, opsi, sisaPercobaan, batasMs, nomorUrl) {
     if (sisaPercobaan === undefined) sisaPercobaan = 2;
-    return fetch(url, opsi).catch(function (err) {
+    if (!batasMs) batasMs = 45000;
+    nomorUrl = nomorUrl || 0;
+    // Tanpa batas waktu, koneksi yang "menggantung" (diblokir/diperlambat operator)
+    // tidak pernah gagal maupun berhasil - aplikasi diam selamanya. Dengan
+    // AbortController, request dibatalkan setelah batasMs lalu dicoba ulang
+    // (bergantian ke alamat cadangan bila ada).
+    var daftar = (typeof WORKER_API_URLS !== 'undefined' && WORKER_API_URLS.length) ? WORKER_API_URLS : [url];
+    var alamat = (url === WORKER_API_URL) ? daftar[nomorUrl % daftar.length] : url;
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, batasMs) : null;
+    var o = ctrl ? Object.assign({}, opsi, { signal: ctrl.signal }) : opsi;
+    return fetch(alamat, o).then(function (r) { if (timer) clearTimeout(timer); return r; }).catch(function (err) {
+      if (timer) clearTimeout(timer);
       if (sisaPercobaan <= 0) throw err;
       return new Promise(function (resolve) { setTimeout(resolve, 900); })
-        .then(function () { return fetchDenganRetry(url, opsi, sisaPercobaan - 1); });
+        .then(function () { return fetchDenganRetry(url, opsi, sisaPercobaan - 1, batasMs, nomorUrl + 1); });
     });
   }
 
@@ -2053,7 +2070,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             // cepat. Worker tetap membaca body-nya sebagai JSON seperti biasa.
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({ action: propName, args: args })
-          })
+          }, 2, (propName === 'checkSession' || propName === 'loginUser') ? 10000 : 45000)
             .then(function (res) { return res.json(); })
             .then(function (json) {
               if (json.success) {
@@ -2174,7 +2191,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   
   document.getElementById('tanggal-hari-ini').innerText = new Date().toLocaleDateString('id-ID', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
 
-  window.onload = function() {
+  let aplikasiSudahMulai = false;
+  function mulaiAplikasi() {
+    if (aplikasiSudahMulai) return;
+    aplikasiSudahMulai = true;
     if(SESSION_TOKEN) {
       google.script.run.withSuccessHandler(res => {
         if(res) { 
@@ -2184,12 +2204,41 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           prosesResetTampilan();
           hideSplash();
         }
+      }).withFailureHandler(err => {
+        // Server tidak terjangkau (jaringan/operator memblokir, atau Worker error).
+        // Sesi login TIDAK dihapus - cukup tampilkan layar "coba lagi" supaya
+        // pengguna tidak terjebak di splash selamanya.
+        console.error('checkSession gagal:', err);
+        tampilkanKoneksiGagal();
       }).checkSession(SESSION_TOKEN);
     } else {
       // Tidak ada token tersimpan - langsung tampilkan halaman login, tidak perlu tunggu apa pun
       hideSplash();
     }
-  };
+  }
+  // window.onload menunggu SEMUA file luar (CDN, font, ikon) selesai; kalau satu saja
+  // macet (CDN lambat/diblokir) splash tertahan selamanya. Jadi: mulai saat onload,
+  // atau paling lambat 7 detik setelah halaman dibuka.
+  window.addEventListener('load', mulaiAplikasi);
+  setTimeout(mulaiAplikasi, 7000);
+  // Jaring pengaman terakhir: apa pun yang terjadi, splash tidak boleh bertahan > 40 detik.
+  setTimeout(function () {
+    var l = document.getElementById('global-loader');
+    if (l && !USER_DATA) tampilkanKoneksiGagal();
+  }, 40000);
+
+  function tampilkanKoneksiGagal() {
+    hideSplash();
+    if (document.getElementById('koneksi-gagal')) return;
+    const d = document.createElement('div');
+    d.id = 'koneksi-gagal';
+    d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#f4f7fb;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:Arial,sans-serif;';
+    d.innerHTML = '<div style="max-width:380px;"><div style="font-size:44px;">&#128246;</div><h3 style="margin:8px 0;color:#0f4c81;">Tidak dapat terhubung ke server</h3>' +
+      '<p style="color:#555;font-size:14px;">Periksa koneksi internet Anda. Jika memakai data seluler, coba pindah ke WiFi (atau sebaliknya), lalu coba lagi. Data login Anda tetap aman.</p>' +
+      '<button id="koneksi-coba-lagi" style="background:#0f4c81;color:#fff;border:0;border-radius:8px;padding:10px 22px;font-size:15px;">Coba Lagi</button></div>';
+    document.body.appendChild(d);
+    document.getElementById('koneksi-coba-lagi').onclick = function () { window.location.reload(); };
+  }
 
   function hideSplash() {
     const loader = document.getElementById('global-loader');
@@ -2512,6 +2561,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       if (sisaMs > 0) setTimeout(cb, sisaMs); else cb();
     }
 
+    // Jaring pengaman: kalau pemuatan dashboard macet/gagal, splash tetap ditutup setelah 12 detik.
+    setTimeout(hideSplash, 12000);
     maybeOfferPushNotification();
     document.getElementById('user-name-display').innerText = USER_DATA.nama;
     document.getElementById('user-role-display').innerText = USER_DATA.role +
