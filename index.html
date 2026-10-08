@@ -312,6 +312,25 @@
   /* ===== VIEW / SECTION TRANSITIONS ===== */
   .view-section { display: none; }
   .view-section.active { display: block; animation: fadeIn 0.4s ease; }
+  /* ===== Rapor GTK ===== */
+  .rapor-grid-wrap { max-height: 70vh; overflow: auto; }
+  .rapor-grid { font-size: 0.82rem; min-width: max-content; }
+  .rapor-grid thead th { position: sticky; top: 0; z-index: 3; background: #e9ecef; text-align: center; vertical-align: middle; }
+  .rapor-grid thead tr:nth-child(2) th { top: 34px; }
+  .rapor-grid .rp-nama { position: sticky; left: 0; z-index: 2; background: #fff; min-width: 190px; max-width: 230px; }
+  .rapor-grid thead .rp-nama { z-index: 4; background: #e9ecef; }
+  .rapor-grid .rp-no { text-align: center; width: 38px; }
+  .rapor-grid .rp-ind { min-width: 96px; max-width: 130px; font-weight: 600; font-size: 0.74rem; }
+  .rapor-grid .rp-bobot { font-weight: 400; color: #6c757d; font-size: 0.68rem; }
+  .rapor-grid .rp-aspek { background: #dbe7f3 !important; }
+  .rapor-grid .rp-sel { min-width: 74px; }
+  .rapor-oto { background: #e8f5e9; color: #1b5e20; }
+  .rapor-kunci { background: #f8f9fa; color: #495057; }
+  .rapor-oto-badge { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+  .rapor-in { text-align: center; min-width: 60px; padding: 2px 4px; }
+  .rapor-in.is-bad { border-color: #dc3545; background: #fff5f5; }
+  .rapor-in.is-dirty { background: #fff8e1; border-color: #ffc107; }
+  .rapor-setup-table td, .rapor-setup-table th { vertical-align: middle; }
   .content-section { display: none; }
   .content-section.active { display: block; animation: slideUp 0.35s ease; }
 
@@ -494,6 +513,8 @@
           <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan&apos;)'><i class='bi bi-calendar-event me-2'></i> Kegiatan Sekolah</a>
           <a class='menu-btn' href='#' onclick='switchView(&apos;absen-pesantren&apos;)'><i class='bi bi-book me-2'></i> Kegiatan Pesantren</a>
           <a class='menu-btn' href='#' onclick='switchView(&apos;absen-kegiatan-khusus&apos;)'><i class='bi bi-ui-checks me-2'></i> Absen Kegiatan Khusus</a>
+          <a class='menu-btn' href='#' id='sub-rapor-saya' style='display:none;' onclick='switchView(&apos;rapor-saya&apos;)'><i class='bi bi-journal-richtext me-2'></i> Rapor Saya</a>
+          <a class='menu-btn' href='#' id='sub-rapor-penilai' style='display:none;' onclick='switchView(&apos;rapor-gtk&apos;)'><i class='bi bi-journal-check me-2'></i> Penilaian Rapor GTK</a>
           <a class='menu-btn' href='#' id='sub-ganti-password' style='display:none;' onclick='switchView(&apos;ganti-password&apos;)'><i class='bi bi-key-fill me-2'></i> Ganti Password</a>
         </div>
 
@@ -513,6 +534,7 @@
           <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'></i> Laporan</a>
           <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'></i> Rekap Payroll</a>
           <a class='menu-btn' href='#' id='sub-nilai-guru' onclick='switchView(&apos;nilai-guru&apos;)'><i class='bi bi-star-fill me-2'></i> Nilai Guru</a>
+          <a class='menu-btn' href='#' id='sub-rapor-gtk' style='display:none;' onclick='switchView(&apos;rapor-gtk&apos;)'><i class='bi bi-journal-check me-2'></i> Rapor GTK</a>
 
           <p class='menu-section-label' style='font-size: 0.68rem; opacity: 0.7; margin-top: 0.5rem;'>Manajemen &amp; Setup</p>
           <a class='menu-btn' href='#' id='sub-data-guru' onclick='switchView(&apos;data-guru&apos;)'><i class='bi bi-people me-2'></i> Data Guru</a>
@@ -1522,6 +1544,166 @@
 </div>
 
 
+<div class='content-section' id='rapor-gtk' style='display: none;'>
+
+  <div id='rapor-pesan' class='alert alert-info shadow-sm' style='display:none;'></div>
+
+  <div id='rapor-nonaktif' class='card p-4 shadow-sm border-0 border-start border-secondary border-4' style='display:none;'>
+    <h5 class='fw-bold text-secondary mb-2'><i class='bi bi-journal-check'></i> Rapor GTK belum diaktifkan</h5>
+    <p class='text-muted small mb-3'>Rapor kinerja bulanan guru &amp; tenaga kependidikan. Periode mengikuti periode payroll (21 - 20). Nilai kehadiran, ketepatan waktu, Tawasul, sholat, dan kegiatan terisi otomatis dari data absensi; sisanya diisi penilai. Saat diaktifkan, 19 indikator bawaan dimuat dan bisa diubah di tab Pengaturan.</p>
+    <div><button class='btn btn-primary' id='btn-aktifkan-rapor' onclick='aktifkanRaporGtk()'><i class='bi bi-power'></i> Aktifkan Rapor GTK</button></div>
+  </div>
+
+  <div id='rapor-aktif' style='display:none;'>
+    <div class='card p-3 shadow-sm mb-3 border-0'>
+      <div class='d-flex align-items-center gap-2'>
+        <button class='btn btn-outline-secondary' onclick='geserPeriodeRapor(-1)' title='Periode sebelumnya' aria-label='Periode sebelumnya'><i class='bi bi-chevron-left'></i></button>
+        <div class='text-center flex-grow-1'>
+          <div class='fw-bold' id='rapor-periode-label'>-</div>
+          <small class='text-muted' id='rapor-periode-rentang'></small>
+        </div>
+        <button class='btn btn-outline-secondary' id='rapor-btn-next' onclick='geserPeriodeRapor(1)' title='Periode berikutnya' aria-label='Periode berikutnya'><i class='bi bi-chevron-right'></i></button>
+        <span class='badge bg-secondary' id='rapor-status-badge'>-</span>
+      </div>
+      <div class='small text-muted mt-2' id='rapor-info-hitung'></div>
+    </div>
+
+    <ul class='nav nav-tabs mb-3' id='rapor-tabs'>
+      <li class='nav-item'><button type='button' class='nav-link active' id='rapor-tabbtn-penilaian' onclick='pilihTabRapor(&apos;penilaian&apos;)'>Penilaian</button></li>
+      <li class='nav-item'><button type='button' class='nav-link' id='rapor-tabbtn-cetak' onclick='pilihTabRapor(&apos;cetak&apos;)'>Pratinjau &amp; Cetak</button></li>
+      <li class='nav-item'><button type='button' class='nav-link' id='rapor-tabbtn-peringkat' onclick='pilihTabRapor(&apos;peringkat&apos;)'>Peringkat &amp; Rerata</button></li>
+      <li class='nav-item' id='rapor-tabitem-pengaturan'><button type='button' class='nav-link' id='rapor-tabbtn-pengaturan' onclick='pilihTabRapor(&apos;pengaturan&apos;)'>Pengaturan</button></li>
+    </ul>
+
+    <div id='rapor-tab-penilaian'>
+      <div class='d-flex flex-wrap gap-2 mb-2' id='rapor-toolbar'>
+        <button class='btn btn-outline-primary' id='rapor-btn-hitung' onclick='hitungRaporOtomatisUI()'><i class='bi bi-arrow-repeat'></i> Hitung Nilai Otomatis</button>
+        <button class='btn btn-success' id='rapor-btn-simpan' onclick='simpanPerubahanRapor()'><i class='bi bi-save'></i> Simpan Perubahan</button>
+        <button class='btn btn-warning text-white fw-bold' id='rapor-btn-final' onclick='finalisasiRaporUI(false)'><i class='bi bi-lock-fill'></i> Finalisasi Periode</button>
+        <button class='btn btn-outline-danger' id='rapor-btn-buka' onclick='bukaKembaliRaporUI()'><i class='bi bi-unlock'></i> Buka Kembali</button>
+      </div>
+      <div class='small text-muted mb-2'>
+        <span class='badge rapor-oto-badge'>Hijau</span> terisi otomatis dan terkunci &nbsp;|&nbsp; kotak putih diisi penilai (angka 0 - 10) &nbsp;|&nbsp; kosong = belum dinilai &nbsp;|&nbsp; ketik <strong>TB</strong> = tidak berlaku (tidak ikut rata-rata)
+      </div>
+      <div class='table-responsive bg-white shadow-sm rounded rapor-grid-wrap'>
+        <table class='table table-bordered table-sm align-middle mb-0 rapor-grid' id='rapor-grid'></table>
+      </div>
+    </div>
+
+    <div id='rapor-tab-cetak' style='display:none;'>
+      <div class='card p-3 shadow-sm border-0 mb-3'>
+        <div class='row g-2 align-items-end'>
+          <div class='col-md-6'>
+            <label class='form-label fw-semibold small mb-1' for='rapor-pilih-guru'>Guru</label>
+            <select class='form-select' id='rapor-pilih-guru' onchange='pratinjauRaporAdmin()'></select>
+          </div>
+          <div class='col-md-6 d-flex flex-wrap gap-2'>
+            <button class='btn btn-danger' onclick='cetakRaporAdmin(&apos;pdf&apos;)'><i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF</button>
+            <button class='btn btn-primary' onclick='cetakRaporAdmin(&apos;gambar&apos;)'><i class='bi bi-file-earmark-image'></i> Simpan Gambar (PNG)</button>
+          </div>
+        </div>
+        <div class='small text-muted mt-2' id='rapor-cetak-catatan'>Pilih &quot;Semua Guru&quot; untuk mencetak satu PDF berisi semua rapor (satu halaman per orang). Simpan Gambar berlaku untuk satu guru.</div>
+      </div>
+      <iframe id='rapor-frame-admin' title='Pratinjau rapor' style='width:100%; height:78vh; border:1px solid #dee2e6; border-radius:6px; background:#fff;'></iframe>
+    </div>
+
+    <div id='rapor-tab-peringkat' style='display:none;'>
+      <div class='card p-3 shadow-sm border-0 mb-3'>
+        <h6 class='fw-bold text-secondary mb-2'>Peringkat periode ini</h6>
+        <div class='table-responsive'>
+          <table class='table table-sm table-bordered text-center align-middle mb-0'>
+            <thead class='table-secondary'><tr><th>Peringkat</th><th class='text-start'>Nama</th><th class='text-start'>Jabatan</th><th>Rata-rata</th><th>Predikat</th></tr></thead>
+            <tbody id='rapor-peringkat-body'></tbody>
+          </table>
+        </div>
+      </div>
+      <div class='card p-3 shadow-sm border-0' id='rapor-rerata-card'>
+        <h6 class='fw-bold text-secondary mb-1'>Rerata beberapa periode (semester / tahun ajaran)</h6>
+        <p class='text-muted small mb-2'>Dihitung dari rapor yang sudah <strong>difinalisasi</strong> pada rentang yang dipilih.</p>
+        <div class='row g-2 mb-3'>
+          <div class='col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-rerata-awal'>Dari periode</label><input class='form-control' type='month' id='rapor-rerata-awal'/></div>
+          <div class='col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-rerata-akhir'>Sampai periode</label><input class='form-control' type='month' id='rapor-rerata-akhir'/></div>
+          <div class='col-md-4 d-flex align-items-end'><button class='btn btn-outline-primary w-100' onclick='muatRerataRapor()'><i class='bi bi-bar-chart-line'></i> Hitung Rerata</button></div>
+        </div>
+        <div class='table-responsive'>
+          <table class='table table-sm table-bordered text-center align-middle mb-0'>
+            <thead class='table-secondary' id='rapor-rerata-head'></thead>
+            <tbody id='rapor-rerata-body'><tr><td class='text-muted py-3'>Pilih rentang lalu klik &quot;Hitung Rerata&quot;.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id='rapor-tab-pengaturan' style='display:none;'>
+      <div class='card p-3 shadow-sm border-0 mb-3'>
+        <h6 class='fw-bold text-secondary mb-1'>Indikator &amp; bobot</h6>
+        <p class='text-muted small mb-2'>Urutan di sini = urutan di rapor. Perubahan berlaku untuk periode yang belum difinalisasi; rapor yang sudah final tetap memakai salinannya sendiri. Indikator Pedagogik (aspek B) otomatis dilewati untuk staf berkategori Tidak Mengajar.</p>
+        <div class='table-responsive'>
+          <table class='table table-sm table-bordered align-middle mb-2 rapor-setup-table'>
+            <thead class='table-secondary'><tr><th>Aktif</th><th>Aspek</th><th>Nama indikator</th><th>Bobot</th><th>Sumber nilai</th><th>Parameter</th><th></th></tr></thead>
+            <tbody id='rapor-setup-indikator'></tbody>
+          </table>
+        </div>
+        <button class='btn btn-sm btn-outline-secondary' onclick='tambahIndikatorRapor()'><i class='bi bi-plus-lg'></i> Tambah Indikator</button>
+      </div>
+
+      <div class='card p-3 shadow-sm border-0 mb-3'>
+        <h6 class='fw-bold text-secondary mb-1'>Penilai</h6>
+        <p class='text-muted small mb-2'>Admin selalu boleh menilai. Piket boleh menilai semua aspek kecuali Pedagogik. Tambahkan staf lain di bawah (tahan Ctrl / Cmd untuk memilih lebih dari satu).</p>
+        <div class='row g-3'>
+          <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-penilai-ped'>Penilai Pedagogik (mis. Kurikulum)</label><select class='form-select' id='rapor-penilai-ped' multiple size='6'></select></div>
+          <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-penilai-lain'>Penilai aspek lainnya (mis. SDM)</label><select class='form-select' id='rapor-penilai-lain' multiple size='6'></select></div>
+        </div>
+      </div>
+
+      <div class='card p-3 shadow-sm border-0 mb-3'>
+        <h6 class='fw-bold text-secondary mb-1'>Data di lembar rapor</h6>
+        <p class='text-muted small mb-2'>Jabatan dan Mulai Khidmah tampil di kepala rapor. No. urut menentukan urutan guru (kosong = urut abjad di bawahnya).</p>
+        <div class='table-responsive'>
+          <table class='table table-sm table-bordered align-middle mb-0'>
+            <thead class='table-secondary'><tr><th style='width:90px;'>No. urut</th><th>Nama</th><th>Jabatan</th><th>Mulai Khidmah</th></tr></thead>
+            <tbody id='rapor-setup-profil'></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class='card p-3 shadow-sm border-0 mb-3'>
+        <h6 class='fw-bold text-secondary mb-2'>Predikat &amp; lain-lain</h6>
+        <div class='row g-2'>
+          <div class='col-6 col-md-3'><label class='form-label small fw-semibold mb-1' for='rapor-amb-sb'>Sangat Baik mulai</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-amb-sb'/></div>
+          <div class='col-6 col-md-3'><label class='form-label small fw-semibold mb-1' for='rapor-amb-b'>Baik mulai</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-amb-b'/></div>
+          <div class='col-6 col-md-3'><label class='form-label small fw-semibold mb-1' for='rapor-amb-c'>Cukup mulai</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-amb-c'/></div>
+          <div class='col-6 col-md-3'><label class='form-label small fw-semibold mb-1' for='rapor-amb-s'>Sedang mulai</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-amb-s'/></div>
+          <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-tempat'>Tempat penetapan (&quot;Ditetapkan di&quot;)</label><input class='form-control' id='rapor-tempat' maxlength='60'/></div>
+          <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-acara-persen'>Acara Pesantren dianggap diadakan jika dihadiri minimal (% staf)</label><input class='form-control' type='number' min='1' max='100' id='rapor-acara-persen'/></div>
+        </div>
+        <small class='text-muted d-block mt-2'>Bobot kehadiran (terlambat, izin, sakit) tetap diatur di menu <strong>Aturan Penilaian</strong> milik Admin Utama dan dipakai juga oleh rapor.</small>
+      </div>
+
+      <button class='btn btn-primary' onclick='simpanPengaturanRapor()'><i class='bi bi-save'></i> Simpan Pengaturan Rapor</button>
+    </div>
+  </div>
+</div>
+
+<div class='content-section' id='rapor-saya' style='display: none;'>
+  <div id='rapor-saya-kosong' class='alert alert-info shadow-sm' style='display:none;'>Belum ada rapor yang diterbitkan. Rapor muncul di sini setelah difinalisasi oleh sekolah.</div>
+  <div id='rapor-saya-isi' style='display:none;'>
+    <div class='card p-3 shadow-sm border-0 mb-3'>
+      <div class='row g-2 align-items-end'>
+        <div class='col-md-5'>
+          <label class='form-label fw-semibold small mb-1' for='rapor-saya-periode'>Periode</label>
+          <select class='form-select' id='rapor-saya-periode' onchange='muatRaporSaya(this.value)'></select>
+        </div>
+        <div class='col-md-7 d-flex flex-wrap gap-2'>
+          <button class='btn btn-danger' onclick='cetakRaporSaya(&apos;pdf&apos;)'><i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF</button>
+          <button class='btn btn-primary' onclick='cetakRaporSaya(&apos;gambar&apos;)'><i class='bi bi-file-earmark-image'></i> Simpan Gambar (PNG)</button>
+        </div>
+      </div>
+    </div>
+    <iframe id='rapor-frame-saya' title='Rapor saya' style='width:100%; height:78vh; border:1px solid #dee2e6; border-radius:6px; background:#fff;'></iframe>
+  </div>
+</div>
+
 <div class='content-section' id='kalender-libur' style='display: none;'>
   <div class='card p-4 shadow-sm mb-4 border-0 border-start border-danger border-4'>
     <h5 class='mb-3 text-secondary fw-bold'>Set Rentang Hari Libur Sekolah / Tanggal Merah</h5>
@@ -1817,7 +1999,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'getDashboardData', 'getAbsenMasukUntukEdit', 'saveJadwalKegiatan', 'getJadwalKegiatan',
   'getSettingsData', 'saveSettingsData', 'getUsers', 'saveHariLibur', 'getLiburList',
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
-  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadGambarIdentitas', 'hapusGambarIdentitas'
+  'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadGambarIdentitas', 'hapusGambarIdentitas',
+  'getRaporConfig', 'aktifkanRapor', 'simpanRaporConfig', 'getRaporPeriode', 'hitungRaporOtomatis',
+  'simpanNilaiRapor', 'finalisasiRapor', 'bukaKembaliRapor', 'getRaporRerata'
 ];
 
 (function () {
@@ -2285,6 +2469,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
   function gantiSekolahAktif(sekolahId) {
     CURRENT_SEKOLAH_ID = sekolahId || null;
+    if (typeof RAPOR !== 'undefined') { RAPOR.periode = null; RAPOR.data = null; RAPOR.dirty = {}; RAPOR.identitas = null; RAPOR.info = null; }
     if (!CURRENT_SEKOLAH_ID) return;
     const sel = document.getElementById('sekolah-picker-select');
     const namaSekolahDipilih = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
@@ -2413,6 +2598,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       document.getElementById('sub-ganti-password').style.display = 'block';
       switchView('dashboard-guru'); // halaman pertama = Dashboard, bukan Absen Masuk
     }
+    inisialisasiMenuRapor();
+
     // Isi data dashboard sungguhan (yang sekarang jadi halaman pertama yang terlihat,
     // bukan lagi disinkronkan diam-diam di latar belakang seperti sebelumnya).
     // Admin Utama: refreshDashboard() (kartu per-sekolah) DILEWATI karena getDashboardData
@@ -2547,7 +2734,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       'ganti-password': 'Ganti Password',
       'kelola-kegiatan': 'Kelola Kegiatan Khusus',
       'absen-kegiatan-khusus': 'Absen Kegiatan Khusus',
-      'rekap-jam-pelajaran': 'Input Rekap Ketidakhadiran Jam Pelajaran'
+      'rekap-jam-pelajaran': 'Input Rekap Ketidakhadiran Jam Pelajaran',
+      'rapor-gtk': 'Rapor GTK', 'rapor-saya': 'Rapor Saya'
     };
     document.getElementById('page-title').innerText = titles[id] || 'Panel';
 
@@ -2576,6 +2764,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       muatDanMulaiLiveGPS('pesantren');
     }
     if(id === 'rekap-jam-pelajaran') { loadGuruDropdownJamPelajaran(); loadRekapJamPelajaranList(); }
+    if(id === 'rapor-gtk') initRaporGtk();
+    if(id === 'rapor-saya') muatRaporSaya();
     if(id === 'pengaturan') loadSettings();
     if(id === 'kirim-notifikasi') loadStafUntukNotifikasi();
     if(id === 'aturan-penilaian') loadAturanPenilaian();
@@ -3583,6 +3773,801 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         Swal.fire('Pop-up Diblokir', 'Harap izinkan pop-up pada browser Anda untuk mencetak PDF.', 'warning');
       }
     }).getIdentitasSekolahUntukCetak(SESSION_TOKEN);
+  }
+
+  // ====================================================================
+  // RAPOR GTK - rapor kinerja bulanan guru & tenaga kependidikan
+  // ====================================================================
+  // Skala nilai 0 - 10. Periode = periode payroll (21 - 20), kunci 'YYYY-MM'
+  // (bulan AKHIR periode). Semua perhitungan "resmi" ada di Worker; di sini hanya
+  // tampilan, input nilai manual, hitung ulang rata-rata secara langsung (live)
+  // dan pembuatan lembar rapor untuk dicetak.
+  const RAPOR = {
+    info: null,        // hasil getRaporConfig
+    periode: null,     // 'YYYY-MM'
+    data: null,        // hasil getRaporPeriode
+    dirty: {},         // 'nuptk|key' -> teks mentah yang diketik penilai
+    tab: 'penilaian',
+    setup: null,       // salinan kerja indikator di tab Pengaturan
+    identitas: null,   // identitas kop surat (di-cache)
+    saya: null         // hasil getRaporSaya terakhir
+  };
+  const RAPOR_NAMA_ASPEK = {
+    A: 'A. PENILAIAN KEDISIPLINAN', B: 'B. PEDAGOGIK', C: 'C. PENILAIAN KEPRIBADIAN', D: 'D. PROFESIONAL'
+  };
+  const RAPOR_LABEL_SUMBER = {
+    MANUAL: 'Diisi penilai', KEHADIRAN: 'Otomatis: Kehadiran', KETEPATAN: 'Otomatis: Ketepatan waktu',
+    TAWASUL: 'Otomatis: Tawasul', SHOLAT: 'Otomatis: Sholat', PESANTREN: 'Otomatis: Kegiatan Pesantren',
+    KEGIATAN_KHUSUS: 'Otomatis: Kegiatan Khusus'
+  };
+  const RAPOR_JENIS_PESANTREN = {
+    DZIKIR_MAKHSUS: 'Dzikir Makhsus', PENGAJIAN_AHAD: 'Pengajian Ahad', PENGAJIAN_ARBAIN: 'Pengajian Arbain',
+    QINI_NASIONAL_SUBUH: 'Qini Nasional Subuh', QINI_NASIONAL_MALAM: 'Qini Nasional Malam'
+  };
+
+  function rpFmt(n, desimal) {
+    if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '-';
+    return Number(n).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: desimal === undefined ? 2 : desimal });
+  }
+  function rpTampilNilaiInput(it) {
+    if (!it) return '';
+    if (it.status === 'TIDAK_BERLAKU') return 'TB';
+    if (it.status === 'NILAI' && it.nilai !== null && it.nilai !== undefined) return String(it.nilai).replace('.', ',');
+    return '';
+  }
+  function rpGeser(periode, d) {
+    const [y, m] = periode.split('-').map(Number);
+    const idx = y * 12 + (m - 1) + d;
+    return Math.floor(idx / 12) + '-' + String((idx % 12) + 1).padStart(2, '0');
+  }
+  function rpLabelPeriode(p) {
+    const NAMA = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const [y, m] = p.split('-').map(Number);
+    return NAMA[m - 1] + ' ' + y;
+  }
+  function rpPredikat(rata, ambang) {
+    if (rata === null || rata === undefined) return '-';
+    if (rata >= ambang.sangat_baik) return 'Sangat Baik';
+    if (rata >= ambang.baik) return 'Baik';
+    if (rata >= ambang.cukup) return 'Cukup';
+    if (rata >= ambang.sedang) return 'Sedang';
+    return 'Kurang';
+  }
+  function rpWarnaPredikat(p) {
+    return { 'Sangat Baik': 'success', 'Baik': 'primary', 'Cukup': 'info', 'Sedang': 'warning', 'Kurang': 'danger' }[p] || 'secondary';
+  }
+  function rpTampilWaktu(iso) {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return ''; }
+  }
+  function rpPesan(teks, jenis) {
+    const el = document.getElementById('rapor-pesan');
+    if (!teks) { el.style.display = 'none'; return; }
+    el.className = 'alert alert-' + (jenis || 'info') + ' shadow-sm';
+    el.textContent = teks;
+    el.style.display = 'block';
+  }
+  function rpPeringkatList(daftar, ambil) {
+    // Peringkat gaya RANK: nilai sama = peringkat sama; yang belum punya nilai di bawah.
+    const urut = daftar.slice().sort((a, b) => {
+      const x = ambil(a), y = ambil(b);
+      if (x === null && y === null) return 0;
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return y - x;
+    });
+    const hasil = new Map();
+    urut.forEach((g, i) => {
+      const nilai = ambil(g);
+      if (nilai === null) { hasil.set(g, null); return; }
+      const sebelum = urut[i - 1];
+      hasil.set(g, (i > 0 && ambil(sebelum) === nilai) ? hasil.get(sebelum) : i + 1);
+    });
+    return { urut, peringkat: hasil };
+  }
+
+  // ---------------------------------------------------------------- MENU
+  function inisialisasiMenuRapor() {
+    const tampil = (id, ya) => { const el = document.getElementById(id); if (el) el.style.display = ya ? 'block' : 'none'; };
+    tampil('sub-rapor-saya', false); tampil('sub-rapor-penilai', false); tampil('sub-rapor-gtk', false);
+    if (USER_DATA.role === 'ADMIN_UTAMA') { tampil('sub-rapor-gtk', true); return; }
+    if (USER_DATA.role === 'ADMIN_SEKOLAH') tampil('sub-rapor-gtk', true); // supaya bisa mengaktifkan
+    panggilBackendPromise('getRaporConfig', SESSION_TOKEN).then(res => {
+      if (!res || !res.aktif) return;
+      tampil('sub-rapor-saya', true);
+      if (res.bisaLihatSemua) {
+        if (USER_DATA.role === 'GURU') tampil('sub-rapor-penilai', true);
+        else tampil('sub-rapor-gtk', true);
+      }
+    }).catch(err => console.warn('Menu rapor gagal dimuat:', err));
+  }
+
+  // --------------------------------------------------------- HALAMAN ADMIN
+  function initRaporGtk() {
+    rpPesan('');
+    document.getElementById('rapor-nonaktif').style.display = 'none';
+    document.getElementById('rapor-aktif').style.display = 'none';
+    if (USER_DATA.role === 'ADMIN_UTAMA' && !CURRENT_SEKOLAH_ID) {
+      rpPesan('Pilih sekolah dulu di kotak pilihan sekolah (menu samping), lalu buka lagi menu Rapor GTK.', 'warning');
+      return;
+    }
+    rpPesan('Memuat...', 'light');
+    panggilBackendPromise('getRaporConfig', SESSION_TOKEN).then(res => {
+      rpPesan('');
+      RAPOR.info = res;
+      if (!res || res.perluPilihSekolah) { rpPesan('Pilih sekolah dulu.', 'warning'); return; }
+      if (!res.aktif) {
+        if (res.bisaKelola) document.getElementById('rapor-nonaktif').style.display = 'block';
+        else rpPesan('Rapor GTK belum diaktifkan oleh sekolah.', 'info');
+        return;
+      }
+      document.getElementById('rapor-aktif').style.display = 'block';
+      document.getElementById('rapor-tabitem-pengaturan').style.display = res.bisaKelola ? '' : 'none';
+      document.getElementById('rapor-rerata-card').style.display = (res.bisaKelola || USER_DATA.role === 'KEPALA_SEKOLAH') ? '' : 'none';
+      if (!RAPOR.periode || RAPOR.periode > res.periodeBerjalan) RAPOR.periode = res.periodeBerjalan;
+      const akhir = document.getElementById('rapor-rerata-akhir');
+      if (!akhir.value) { akhir.value = res.periodeBerjalan; document.getElementById('rapor-rerata-awal').value = rpGeser(res.periodeBerjalan, -5); }
+      RAPOR.identitas = null;
+      pilihTabRapor(RAPOR.tab === 'pengaturan' && !res.bisaKelola ? 'penilaian' : RAPOR.tab, true);
+      muatPeriodeRapor();
+    }).catch(err => rpPesan('Gagal memuat: ' + ((err && err.message) || err), 'danger'));
+  }
+
+  function aktifkanRaporGtk() {
+    const btn = document.getElementById('btn-aktifkan-rapor');
+    btn.disabled = true;
+    panggilBackendPromise('aktifkanRapor', SESSION_TOKEN).then(res => {
+      btn.disabled = false;
+      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+      Swal.fire({ icon: 'success', title: 'Rapor GTK aktif', text: res.message }).then(() => { initRaporGtk(); inisialisasiMenuRapor(); });
+    }).catch(err => { btn.disabled = false; Swal.fire('Gagal', (err && err.message) || String(err), 'error'); });
+  }
+
+  function jumlahPerubahanRapor() { return Object.keys(RAPOR.dirty).length; }
+
+  function konfirmasiBuangPerubahan() {
+    if (!jumlahPerubahanRapor()) return Promise.resolve(true);
+    return Swal.fire({
+      icon: 'warning', title: 'Ada perubahan belum disimpan',
+      text: jumlahPerubahanRapor() + ' sel yang sudah diketik akan hilang jika dilanjutkan.',
+      showCancelButton: true, confirmButtonText: 'Buang & lanjut', cancelButtonText: 'Kembali'
+    }).then(r => r.isConfirmed);
+  }
+
+  async function geserPeriodeRapor(d) {
+    if (!RAPOR.info || !RAPOR.periode) return;
+    const baru = rpGeser(RAPOR.periode, d);
+    if (baru > RAPOR.info.periodeBerjalan) return;
+    if (!(await konfirmasiBuangPerubahan())) return;
+    RAPOR.periode = baru;
+    muatPeriodeRapor();
+  }
+
+  function pilihTabRapor(tab, tanpaRender) {
+    RAPOR.tab = tab;
+    ['penilaian', 'cetak', 'peringkat', 'pengaturan'].forEach(t => {
+      document.getElementById('rapor-tab-' + t).style.display = t === tab ? 'block' : 'none';
+      document.getElementById('rapor-tabbtn-' + t).classList.toggle('active', t === tab);
+    });
+    if (tanpaRender || !RAPOR.data) return;
+    if (tab === 'cetak') pratinjauRaporAdmin();
+    if (tab === 'peringkat') renderPeringkatRapor();
+    if (tab === 'pengaturan') renderPengaturanRapor();
+  }
+
+  function muatPeriodeRapor() {
+    const grid = document.getElementById('rapor-grid');
+    grid.innerHTML = '<tbody><tr><td class="text-center text-muted py-4">Memuat data rapor...</td></tr></tbody>';
+    document.getElementById('rapor-periode-label').innerText = rpLabelPeriode(RAPOR.periode);
+    document.getElementById('rapor-periode-rentang').innerText = '';
+    document.getElementById('rapor-btn-next').disabled = RAPOR.periode >= RAPOR.info.periodeBerjalan;
+    const periodeDiminta = RAPOR.periode;
+    panggilBackendPromise('getRaporPeriode', SESSION_TOKEN, periodeDiminta).then(res => {
+      if (periodeDiminta !== RAPOR.periode) return; // pengguna sudah pindah periode
+      if (!res.success) {
+        grid.innerHTML = '<tbody><tr><td class="text-center text-danger py-4">' + escAttr(res.message) + '</td></tr></tbody>';
+        return;
+      }
+      RAPOR.data = res;
+      RAPOR.dirty = {};
+      renderHeaderRapor();
+      renderGridRapor();
+      if (RAPOR.tab === 'cetak') isiPilihGuruCetak();
+      if (RAPOR.tab === 'cetak') pratinjauRaporAdmin();
+      if (RAPOR.tab === 'peringkat') renderPeringkatRapor();
+      if (RAPOR.tab === 'pengaturan') renderPengaturanRapor();
+    }).catch(err => {
+      grid.innerHTML = '<tbody><tr><td class="text-center text-danger py-4">Gagal memuat: ' + escAttr((err && err.message) || err) + '</td></tr></tbody>';
+    });
+  }
+
+  function renderHeaderRapor() {
+    const d = RAPOR.data, info = RAPOR.info;
+    document.getElementById('rapor-periode-label').innerText = d.label;
+    document.getElementById('rapor-periode-rentang').innerText = d.rentangLabel || '';
+    const badge = document.getElementById('rapor-status-badge');
+    badge.innerText = d.status === 'FINAL' ? 'FINAL' : 'DRAFT';
+    badge.className = 'badge ' + (d.status === 'FINAL' ? 'bg-success' : 'bg-warning text-dark');
+    let teks;
+    if (d.status === 'FINAL') teks = 'Difinalisasi oleh ' + (d.difinalisasiOleh || '-') + (d.difinalisasiPada ? ' pada ' + rpTampilWaktu(d.difinalisasiPada) : '') + '. Rapor terkunci dan sudah bisa dilihat masing-masing guru.';
+    else if (d.otomatisDihitungPada) teks = 'Nilai otomatis terakhir dihitung: ' + rpTampilWaktu(d.otomatisDihitungPada) + '. Guru baru bisa melihat rapor setelah periode difinalisasi.';
+    else teks = 'Nilai otomatis belum dihitung untuk periode ini. Klik "Hitung Nilai Otomatis" lebih dulu.';
+    document.getElementById('rapor-info-hitung').innerText = teks;
+    const draft = d.status !== 'FINAL';
+    const izin = d.izinInput || {};
+    const tampil = (id, ya) => { document.getElementById(id).style.display = ya ? '' : 'none'; };
+    tampil('rapor-btn-hitung', draft && info.bisaHitung);
+    tampil('rapor-btn-simpan', draft && (izin.A || izin.B || izin.C || izin.D || izin.info));
+    tampil('rapor-btn-final', draft && info.bisaFinalisasi);
+    tampil('rapor-btn-buka', !draft && info.bisaKelola);
+    perbaruiTombolSimpan();
+  }
+
+  function perbaruiTombolSimpan() {
+    const n = jumlahPerubahanRapor();
+    const btn = document.getElementById('rapor-btn-simpan');
+    btn.innerHTML = '<i class="bi bi-save"></i> Simpan Perubahan' + (n ? ' (' + n + ')' : '');
+    btn.disabled = n === 0;
+  }
+
+  // ------------------------------------------------------------ GRID NILAI
+  /** Nilai efektif satu sel: memperhitungkan ketikan yang belum disimpan. */
+  function rpItemEfektif(g, ind) {
+    const asli = g.items[ind.key] || { status: 'BELUM', nilai: null };
+    const mentah = RAPOR.dirty[g.nuptk + '|' + ind.key];
+    if (mentah === undefined) return asli;
+    const p = rpParseNilai(mentah);
+    if (p.galat) return asli;
+    return { status: p.status, nilai: p.nilai };
+  }
+  function rpParseNilai(mentah) {
+    const t = String(mentah == null ? '' : mentah).trim();
+    if (t === '') return { status: 'BELUM', nilai: null };
+    if (/^(tb|t\.b\.?|-)$/i.test(t)) return { status: 'TIDAK_BERLAKU', nilai: null };
+    const v = Number(t.replace(',', '.'));
+    if (!isFinite(v) || v < 0 || v > 10) return { galat: true };
+    return { status: 'NILAI', nilai: Math.round(v * 100) / 100 };
+  }
+  function rpHitungGuru(g) {
+    const d = RAPOR.data;
+    let jumlah = 0, bobot = 0, belum = 0;
+    d.indikator.forEach(ind => {
+      const it = rpItemEfektif(g, ind);
+      if (it.status === 'NILAI' && it.nilai !== null) { jumlah += it.nilai * ind.bobot; bobot += ind.bobot; }
+      else if (it.status === 'BELUM') belum++;
+    });
+    const rata = bobot > 0 ? Math.round((jumlah / bobot) * 100) / 100 : null;
+    return { jumlah, bobot, rata, belum, predikat: rpPredikat(rata, d.ambang) };
+  }
+
+  function renderGridRapor() {
+    const d = RAPOR.data;
+    const draft = d.status !== 'FINAL';
+    const izin = d.izinInput || {};
+    const ind = d.indikator || [];
+    const grid = document.getElementById('rapor-grid');
+    if (!d.guru || d.guru.length === 0) {
+      grid.innerHTML = '<tbody><tr><td class="text-center text-muted py-4">Belum ada staf aktif untuk dirapor.</td></tr></tbody>';
+      return;
+    }
+    // Baris judul aspek (colspan per aspek berurutan)
+    const kelompok = [];
+    ind.forEach(i => {
+      const akhir = kelompok[kelompok.length - 1];
+      if (akhir && akhir.aspek === i.aspek) akhir.n++; else kelompok.push({ aspek: i.aspek, n: 1 });
+    });
+    let h = '<thead>';
+    h += '<tr><th rowspan="2" class="rp-no">No</th><th rowspan="2" class="rp-nama">Nama</th>';
+    kelompok.forEach(k => { h += `<th colspan="${k.n}" class="rp-aspek rp-aspek-${k.aspek}">${escAttr(RAPOR_NAMA_ASPEK[k.aspek] || k.aspek)}</th>`; });
+    h += '<th rowspan="2">Teguran</th><th rowspan="2" style="min-width:160px;">Catatan</th><th rowspan="2">Rata-rata</th><th rowspan="2">Predikat</th><th rowspan="2">Belum</th></tr><tr>';
+    ind.forEach(i => {
+      const oto = i.sumber !== 'MANUAL';
+      h += `<th class="rp-ind" title="${escAttr(i.nama)} (bobot ${i.bobot})${oto ? ' - otomatis' : ''}">${escAttr(i.nama)}<div class="rp-bobot">bobot ${rpFmt(i.bobot)}</div></th>`;
+    });
+    h += '</tr></thead><tbody>';
+
+    d.guru.forEach((g, gi) => {
+      const mengajar = g.kategori === 'Mengajar';
+      h += `<tr data-gi="${gi}"><td class="rp-no">${gi + 1}</td><td class="rp-nama"><div class="fw-semibold">${escAttr(g.nama)}</div><div class="small text-muted">${escAttr(g.jabatan || (mengajar ? 'Guru' : 'Tidak mengajar'))}</div></td>`;
+      ind.forEach(i => {
+        const it = g.items[i.key] || { status: 'BELUM', nilai: null, ket: '' };
+        const otomatis = i.sumber !== 'MANUAL';
+        const bisaIsi = draft && !otomatis && izin[i.aspek] && !(i.aspek === 'B' && !mengajar);
+        if (bisaIsi) {
+          h += `<td class="rp-sel"><input class="form-control form-control-sm rapor-in" inputmode="decimal" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="${escAttr(i.key)}" data-gi="${gi}" value="${escAttr(rpTampilNilaiInput(it))}" aria-label="${escAttr(g.nama + ' - ' + i.nama)}"/></td>`;
+        } else {
+          let teks;
+          if (it.status === 'TIDAK_BERLAKU') teks = 'TB';
+          else if (it.status === 'NILAI' && it.nilai !== null) teks = rpFmt(it.nilai);
+          else teks = '-';
+          h += `<td class="rp-sel text-center ${otomatis ? 'rapor-oto' : 'rapor-kunci'}" title="${escAttr(it.ket || '')}">${teks}</td>`;
+        }
+      });
+      const infoBisa = draft && izin.info;
+      if (infoBisa) {
+        h += `<td class="rp-sel"><input class="form-control form-control-sm rapor-in" inputmode="numeric" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="TEGURAN" data-gi="${gi}" value="${g.teguran ? g.teguran : ''}" aria-label="Teguran ${escAttr(g.nama)}"/></td>`;
+        h += `<td><input class="form-control form-control-sm" maxlength="200" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="CATATAN" data-gi="${gi}" value="${escAttr(g.catatan || '')}" aria-label="Catatan ${escAttr(g.nama)}"/></td>`;
+      } else {
+        h += `<td class="text-center rapor-kunci">${g.teguran ? g.teguran : '-'}</td><td class="small rapor-kunci">${escAttr(g.catatan || '')}</td>`;
+      }
+      h += `<td class="text-center fw-bold" id="rp-rata-${gi}"></td><td class="text-center" id="rp-pred-${gi}"></td><td class="text-center small" id="rp-belum-${gi}"></td></tr>`;
+    });
+    h += '</tbody>';
+    grid.innerHTML = h;
+    d.guru.forEach((g, gi) => perbaruiBarisRapor(gi));
+    perbaruiTombolSimpan();
+  }
+
+  function perbaruiBarisRapor(gi) {
+    const g = RAPOR.data.guru[gi];
+    const r = rpHitungGuru(g);
+    document.getElementById('rp-rata-' + gi).innerText = rpFmt(r.rata);
+    document.getElementById('rp-pred-' + gi).innerHTML = r.rata === null ? '-' : `<span class="badge bg-${rpWarnaPredikat(r.predikat)}">${r.predikat}</span>`;
+    document.getElementById('rp-belum-' + gi).innerHTML = r.belum > 0 ? `<span class="text-danger fw-semibold">${r.belum}</span>` : '<span class="text-success">0</span>';
+  }
+
+  // Satu pendengar untuk seluruh grid (input, Enter = turun ke baris berikutnya)
+  document.addEventListener('input', function (e) {
+    const el = e.target;
+    if (!el || !el.closest || !el.closest('#rapor-grid') || !el.dataset || !el.dataset.k) return;
+    const gi = parseInt(el.dataset.gi, 10), g = RAPOR.data.guru[gi];
+    const kunci = el.dataset.n + '|' + el.dataset.k;
+    let asli;
+    if (el.dataset.k === 'TEGURAN') asli = g.teguran ? String(g.teguran) : '';
+    else if (el.dataset.k === 'CATATAN') asli = g.catatan || '';
+    else asli = rpTampilNilaiInput(g.items[el.dataset.k]);
+    const sama = (el.value.trim() === asli.trim());
+    if (sama) delete RAPOR.dirty[kunci]; else RAPOR.dirty[kunci] = el.value;
+    let salah = false;
+    if (el.dataset.k === 'TEGURAN') salah = el.value.trim() !== '' && !/^\d{1,2}$/.test(el.value.trim());
+    else if (el.dataset.k !== 'CATATAN') salah = !!rpParseNilai(el.value).galat;
+    el.classList.toggle('is-bad', salah);
+    el.classList.toggle('is-dirty', !sama && !salah);
+    perbaruiBarisRapor(gi);
+    perbaruiTombolSimpan();
+    if (RAPOR.tab === 'peringkat') renderPeringkatRapor();
+  });
+  document.addEventListener('keydown', function (e) {
+    const el = e.target;
+    if (e.key !== 'Enter' || !el || !el.closest || !el.closest('#rapor-grid') || !el.dataset || !el.dataset.k) return;
+    e.preventDefault();
+    const semua = Array.from(document.querySelectorAll('#rapor-grid input[data-k="' + el.dataset.k + '"]'));
+    const lanjut = semua[semua.indexOf(el) + 1];
+    if (lanjut) { lanjut.focus(); if (lanjut.select) lanjut.select(); }
+  });
+
+  /** Kumpulkan sel yang berubah menjadi daftar entries untuk Worker. Return {entries} atau {galat}. */
+  function susunEntriesRapor() {
+    const entries = [];
+    for (const kunci of Object.keys(RAPOR.dirty)) {
+      const pos = kunci.indexOf('|');
+      const nuptk = kunci.slice(0, pos), key = kunci.slice(pos + 1), mentah = RAPOR.dirty[kunci];
+      const g = RAPOR.data.guru.find(x => x.nuptk === nuptk);
+      const nama = g ? g.nama : nuptk;
+      if (key === 'TEGURAN') {
+        const t = String(mentah).trim();
+        if (t !== '' && !/^\d{1,2}$/.test(t)) return { galat: 'Teguran ' + nama + ' harus bilangan bulat 0 - 99.' };
+        entries.push({ nuptk, key, nilai: t === '' ? 0 : parseInt(t, 10) });
+      } else if (key === 'CATATAN') {
+        entries.push({ nuptk, key, keterangan: String(mentah).trim() });
+      } else {
+        const p = rpParseNilai(mentah);
+        if (p.galat) {
+          const ind = RAPOR.data.indikator.find(i => i.key === key);
+          return { galat: 'Nilai "' + (ind ? ind.nama : key) + '" untuk ' + nama + ' harus angka 0 - 10 (atau TB).' };
+        }
+        entries.push({ nuptk, key, status: p.status, nilai: p.nilai === null ? '' : p.nilai });
+      }
+    }
+    return { entries };
+  }
+
+  /** Simpan perubahan. Resolve true bila berhasil / tidak ada yang perlu disimpan. */
+  function simpanPerubahanRapor(tanpaNotif) {
+    if (!jumlahPerubahanRapor()) return Promise.resolve(true);
+    const s = susunEntriesRapor();
+    if (s.galat) { Swal.fire('Perlu diperbaiki', s.galat, 'warning'); return Promise.resolve(false); }
+    const btn = document.getElementById('rapor-btn-simpan');
+    btn.disabled = true;
+    return panggilBackendPromise('simpanNilaiRapor', SESSION_TOKEN, RAPOR.periode, s.entries).then(res => {
+      if (!res.success) { perbaruiTombolSimpan(); Swal.fire('Gagal Menyimpan', res.message, 'error'); return false; }
+      return panggilBackendPromise('getRaporPeriode', SESSION_TOKEN, RAPOR.periode).then(baru => {
+        if (baru.success) { RAPOR.data = baru; RAPOR.dirty = {}; renderHeaderRapor(); renderGridRapor(); }
+        if (!tanpaNotif) Swal.fire({ icon: 'success', title: 'Tersimpan', text: res.message, timer: 1400, showConfirmButton: false });
+        return true;
+      });
+    }).catch(err => { perbaruiTombolSimpan(); Swal.fire('Gagal Menyimpan', (err && err.message) || String(err), 'error'); return false; });
+  }
+
+  async function hitungRaporOtomatisUI() {
+    if (!(await simpanPerubahanRapor(true))) return;
+    Swal.fire({ title: 'Menghitung nilai otomatis...', text: 'Mengambil data absensi, sholat, dan kegiatan. Bisa memakan waktu beberapa detik.', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    panggilBackendPromise('hitungRaporOtomatis', SESSION_TOKEN, RAPOR.periode).then(res => {
+      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+      Swal.fire({ icon: res.sebagian ? 'info' : 'success', title: 'Selesai', text: res.message });
+      muatPeriodeRapor();
+    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+  }
+
+  async function finalisasiRaporUI(paksa) {
+    if (!(await simpanPerubahanRapor(true))) return;
+    if (!paksa) {
+      const ok = await Swal.fire({
+        icon: 'question', title: 'Finalisasi ' + rpLabelPeriode(RAPOR.periode) + '?',
+        html: 'Rapor dikunci dan disimpan sebagai salinan tetap. Setelah itu <b>guru dapat melihat rapornya</b>, dan perubahan data absen tidak lagi memengaruhi rapor ini. Admin masih bisa membukanya kembali.',
+        showCancelButton: true, confirmButtonText: 'Ya, finalisasi', cancelButtonText: 'Batal'
+      });
+      if (!ok.isConfirmed) return;
+    }
+    Swal.fire({ title: 'Memfinalisasi...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    panggilBackendPromise('finalisasiRapor', SESSION_TOKEN, RAPOR.periode, paksa === true).then(res => {
+      if (res.butuhKonfirmasi) {
+        const contoh = (res.contoh || []).map(c => '<li>' + escAttr(c.nama) + ' - ' + c.jumlah + ' sel</li>').join('');
+        return Swal.fire({
+          icon: 'warning', title: 'Masih ada nilai kosong',
+          html: '<div class="text-start small">' + escAttr(res.message) + ' (' + res.jumlahGuruBelum + ' orang). Sel kosong tidak ikut dihitung dan tampil "-" di rapor.<ul class="mt-2 mb-0">' + contoh + '</ul></div>',
+          showCancelButton: true, confirmButtonText: 'Tetap finalisasi', cancelButtonText: 'Lengkapi dulu', confirmButtonColor: '#dc3545'
+        }).then(r => { if (r.isConfirmed) finalisasiRaporUI(true); });
+      }
+      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+      Swal.fire({ icon: 'success', title: 'Terkunci', text: res.message });
+      muatPeriodeRapor();
+    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+  }
+
+  function bukaKembaliRaporUI() {
+    Swal.fire({
+      icon: 'warning', title: 'Buka kembali rapor?',
+      text: 'Rapor kembali berstatus Draft dan tidak bisa dilihat guru sampai difinalisasi ulang. Nilai otomatis sebaiknya dihitung ulang setelah itu.',
+      showCancelButton: true, confirmButtonText: 'Ya, buka kembali', cancelButtonText: 'Batal'
+    }).then(r => {
+      if (!r.isConfirmed) return;
+      panggilBackendPromise('bukaKembaliRapor', SESSION_TOKEN, RAPOR.periode).then(res => {
+        if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+        Swal.fire({ icon: 'success', title: 'Dibuka', text: res.message, timer: 1800, showConfirmButton: false });
+        muatPeriodeRapor();
+      }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+    });
+  }
+
+  // ------------------------------------------------------------- PERINGKAT
+  function renderPeringkatRapor() {
+    const d = RAPOR.data;
+    const body = document.getElementById('rapor-peringkat-body');
+    if (!d || !d.guru || !d.guru.length) { body.innerHTML = '<tr><td colspan="5" class="text-muted py-3">Belum ada data.</td></tr>'; return; }
+    const hitung = new Map(d.guru.map(g => [g, rpHitungGuru(g)]));
+    const { urut, peringkat } = rpPeringkatList(d.guru, g => hitung.get(g).rata);
+    body.innerHTML = urut.map(g => {
+      const r = hitung.get(g);
+      return `<tr><td>${peringkat.get(g) === null ? '-' : peringkat.get(g)}</td><td class="text-start">${escAttr(g.nama)}</td><td class="text-start">${escAttr(g.jabatan || '')}</td><td class="fw-bold">${rpFmt(r.rata)}</td><td>${r.rata === null ? '-' : `<span class="badge bg-${rpWarnaPredikat(r.predikat)}">${r.predikat}</span>`}</td></tr>`;
+    }).join('');
+  }
+
+  function muatRerataRapor() {
+    const awal = document.getElementById('rapor-rerata-awal').value, akhir = document.getElementById('rapor-rerata-akhir').value;
+    if (!awal || !akhir) return Swal.fire('Lengkapi', 'Pilih periode awal dan akhir.', 'warning');
+    if (awal > akhir) return Swal.fire('Rentang salah', 'Periode awal harus sebelum periode akhir.', 'warning');
+    const head = document.getElementById('rapor-rerata-head'), body = document.getElementById('rapor-rerata-body');
+    body.innerHTML = '<tr><td class="text-muted py-3">Memuat...</td></tr>';
+    panggilBackendPromise('getRaporRerata', SESSION_TOKEN, awal, akhir).then(res => {
+      if (!res.success) { body.innerHTML = '<tr><td class="text-danger py-3">' + escAttr(res.message) + '</td></tr>'; head.innerHTML = ''; return; }
+      if (!res.guru.length) { head.innerHTML = ''; body.innerHTML = '<tr><td class="text-muted py-3">' + escAttr(res.message || 'Belum ada rapor final pada rentang ini.') + '</td></tr>'; return; }
+      head.innerHTML = '<tr><th>Peringkat</th><th class="text-start">Nama</th><th class="text-start">Jabatan</th>' +
+        res.periodeList.map(p => '<th>' + escAttr(p.label) + '</th>').join('') + '<th>Rerata</th><th>Predikat</th></tr>';
+      const { urut, peringkat } = rpPeringkatList(res.guru, g => (g.rerata === null || g.rerata === undefined) ? null : g.rerata);
+      body.innerHTML = urut.map(g => '<tr><td>' + (peringkat.get(g) === null ? '-' : peringkat.get(g)) + '</td><td class="text-start">' + escAttr(g.nama) + '</td><td class="text-start">' + escAttr(g.jabatan || '') + '</td>' +
+        res.periodeList.map(p => '<td>' + rpFmt(g.rataPerPeriode[p.periode]) + '</td>').join('') +
+        '<td class="fw-bold">' + rpFmt(g.rerata) + '</td><td>' + (g.rerata === null || g.rerata === undefined ? '-' : `<span class="badge bg-${rpWarnaPredikat(g.predikat)}">${g.predikat}</span>`) + '</td></tr>').join('');
+    }).catch(err => { body.innerHTML = '<tr><td class="text-danger py-3">' + escAttr((err && err.message) || err) + '</td></tr>'; });
+  }
+
+  // ------------------------------------------------------------- PENGATURAN
+  function renderPengaturanRapor() {
+    const cfg = RAPOR.info && RAPOR.info.config;
+    if (!cfg || !RAPOR.info.bisaKelola) return;
+    RAPOR.setup = JSON.parse(JSON.stringify(cfg.indikator || []));
+    renderBarisIndikatorSetup();
+    const staf = (RAPOR.data && RAPOR.data.guru) || [];
+    const opsi = (terpilih) => staf.map(g => `<option value="${escAttr(g.nuptk)}" ${terpilih.indexOf(g.nuptk) !== -1 ? 'selected' : ''}>${escAttr(g.nama)}</option>`).join('');
+    document.getElementById('rapor-penilai-ped').innerHTML = opsi((cfg.penilai && cfg.penilai.pedagogik) || []);
+    document.getElementById('rapor-penilai-lain').innerHTML = opsi((cfg.penilai && cfg.penilai.lainnya) || []);
+    document.getElementById('rapor-setup-profil').innerHTML = staf.map(g => {
+      const p = (cfg.profil || {})[g.nuptk] || {};
+      return `<tr data-n="${escAttr(g.nuptk)}"><td><input class="form-control form-control-sm" type="number" min="1" max="999" data-f="urut" value="${p.urut || ''}"/></td><td>${escAttr(g.nama)}<div class="small text-muted">${escAttr(g.kategori)}</div></td><td><input class="form-control form-control-sm" maxlength="80" data-f="jabatan" value="${escAttr(p.jabatan || '')}"/></td><td><input class="form-control form-control-sm" maxlength="30" data-f="mulai" placeholder="mis. Juli 2018" value="${escAttr(p.mulai || '')}"/></td></tr>`;
+    }).join('');
+    const a = cfg.ambang || {};
+    document.getElementById('rapor-amb-sb').value = a.sangat_baik;
+    document.getElementById('rapor-amb-b').value = a.baik;
+    document.getElementById('rapor-amb-c').value = a.cukup;
+    document.getElementById('rapor-amb-s').value = a.sedang;
+    document.getElementById('rapor-tempat').value = cfg.tempat_titimangsa || '';
+    document.getElementById('rapor-acara-persen').value = cfg.ambang_acara_persen || 20;
+  }
+
+  function renderBarisIndikatorSetup() {
+    const tb = document.getElementById('rapor-setup-indikator');
+    tb.innerHTML = RAPOR.setup.map((ind, i) => {
+      const aspekOpt = ['A', 'B', 'C', 'D'].map(a => `<option value="${a}" ${ind.aspek === a ? 'selected' : ''}>${a}</option>`).join('');
+      const sumberOpt = Object.keys(RAPOR_LABEL_SUMBER).map(s => `<option value="${s}" ${ind.sumber === s ? 'selected' : ''}>${RAPOR_LABEL_SUMBER[s]}</option>`).join('');
+      let param = '<span class="text-muted small">-</span>';
+      if (ind.sumber === 'KEGIATAN_KHUSUS') {
+        param = `<input class="form-control form-control-sm" placeholder="kata kunci nama agenda" maxlength="100" value="${escAttr(ind.kataKunci || '')}" oninput="rpSetupUbah(${i},'kataKunci',this.value)" aria-label="Kata kunci agenda"/><div class="small text-muted">Agenda kegiatan khusus yang namanya memuat kata ini.</div>`;
+      } else if (ind.sumber === 'PESANTREN') {
+        const jenis = ind.jenis || [];
+        param = Object.keys(RAPOR_JENIS_PESANTREN).map(j => `<div class="form-check form-check-inline small"><input class="form-check-input" type="checkbox" id="rp-j-${i}-${j}" ${jenis.indexOf(j) !== -1 ? 'checked' : ''} onchange="rpSetupJenis(${i},'${j}',this.checked)"/><label class="form-check-label" for="rp-j-${i}-${j}">${RAPOR_JENIS_PESANTREN[j]}</label></div>`).join('');
+      }
+      return `<tr>
+        <td class="text-center"><input class="form-check-input" type="checkbox" ${ind.aktif !== false ? 'checked' : ''} onchange="rpSetupUbah(${i},'aktif',this.checked)" aria-label="Aktif"/></td>
+        <td style="width:70px;"><select class="form-select form-select-sm" onchange="rpSetupUbah(${i},'aspek',this.value)" aria-label="Aspek">${aspekOpt}</select></td>
+        <td style="min-width:220px;"><input class="form-control form-control-sm" maxlength="150" value="${escAttr(ind.nama)}" oninput="rpSetupUbah(${i},'nama',this.value)" aria-label="Nama indikator"/></td>
+        <td style="width:90px;"><input class="form-control form-control-sm" type="number" min="1" max="100" step="any" value="${ind.bobot}" oninput="rpSetupUbah(${i},'bobot',this.value)" aria-label="Bobot"/></td>
+        <td style="min-width:170px;"><select class="form-select form-select-sm" onchange="rpSetupSumber(${i},this.value)" aria-label="Sumber nilai">${sumberOpt}</select></td>
+        <td style="min-width:200px;">${param}</td>
+        <td class="text-nowrap">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="rpSetupPindah(${i},-1)" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan"><i class="bi bi-arrow-up"></i></button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="rpSetupPindah(${i},1)" ${i === RAPOR.setup.length - 1 ? 'disabled' : ''} aria-label="Turunkan"><i class="bi bi-arrow-down"></i></button>
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="rpSetupHapus(${i})" aria-label="Hapus"><i class="bi bi-trash"></i></button>
+        </td></tr>`;
+    }).join('');
+  }
+  function rpSetupUbah(i, f, v) { RAPOR.setup[i][f] = v; }
+  function rpSetupSumber(i, v) {
+    const ind = RAPOR.setup[i];
+    ind.sumber = v;
+    if (v === 'PESANTREN' && !(ind.jenis && ind.jenis.length)) ind.jenis = ['DZIKIR_MAKHSUS', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
+    renderBarisIndikatorSetup();
+  }
+  function rpSetupJenis(i, j, ya) {
+    const ind = RAPOR.setup[i];
+    const s = new Set(ind.jenis || []);
+    if (ya) s.add(j); else s.delete(j);
+    ind.jenis = Array.from(s);
+  }
+  function rpSetupPindah(i, arah) {
+    const j = i + arah;
+    if (j < 0 || j >= RAPOR.setup.length) return;
+    const t = RAPOR.setup[i]; RAPOR.setup[i] = RAPOR.setup[j]; RAPOR.setup[j] = t;
+    renderBarisIndikatorSetup();
+  }
+  function rpSetupHapus(i) {
+    Swal.fire({
+      icon: 'warning', title: 'Hapus indikator?',
+      text: 'Untuk sekadar menyembunyikan dari rapor, cukup hilangkan centang "Aktif" - nilainya tetap tersimpan. Hapus hanya bila indikator ini memang tidak akan dipakai lagi.',
+      showCancelButton: true, confirmButtonText: 'Hapus', cancelButtonText: 'Batal', confirmButtonColor: '#dc3545'
+    }).then(r => { if (r.isConfirmed) { RAPOR.setup.splice(i, 1); renderBarisIndikatorSetup(); } });
+  }
+  function tambahIndikatorRapor() {
+    if (!RAPOR.setup) return;
+    RAPOR.setup.push({ key: '', aspek: 'C', nama: '', bobot: 10, sumber: 'MANUAL', aktif: true });
+    renderBarisIndikatorSetup();
+  }
+
+  function simpanPengaturanRapor() {
+    const cfgLama = RAPOR.info.config || {};
+    const ambilMulti = id => Array.from(document.getElementById(id).selectedOptions).map(o => o.value);
+    const profil = Object.assign({}, cfgLama.profil || {});
+    document.querySelectorAll('#rapor-setup-profil tr[data-n]').forEach(tr => {
+      const n = tr.getAttribute('data-n');
+      const nilai = f => { const el = tr.querySelector('[data-f="' + f + '"]'); return el ? el.value.trim() : ''; };
+      profil[n] = { urut: nilai('urut') ? parseInt(nilai('urut'), 10) : null, jabatan: nilai('jabatan'), mulai: nilai('mulai') };
+    });
+    const config = {
+      indikator: RAPOR.setup.map(i => ({ key: i.key, aspek: i.aspek, nama: i.nama, bobot: Number(i.bobot), sumber: i.sumber, aktif: i.aktif !== false, kataKunci: i.kataKunci, jenis: i.jenis })),
+      penilai: { pedagogik: ambilMulti('rapor-penilai-ped'), lainnya: ambilMulti('rapor-penilai-lain') },
+      profil,
+      ambang: {
+        sangat_baik: parseFloat(document.getElementById('rapor-amb-sb').value), baik: parseFloat(document.getElementById('rapor-amb-b').value),
+        cukup: parseFloat(document.getElementById('rapor-amb-c').value), sedang: parseFloat(document.getElementById('rapor-amb-s').value)
+      },
+      tempat_titimangsa: document.getElementById('rapor-tempat').value.trim(),
+      ambang_acara_persen: parseFloat(document.getElementById('rapor-acara-persen').value)
+    };
+    Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    panggilBackendPromise('simpanRaporConfig', SESSION_TOKEN, config).then(res => {
+      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+      Swal.fire({ icon: 'success', title: 'Tersimpan', text: res.message, timer: 1800, showConfirmButton: false });
+      RAPOR.identitas = null;
+      return panggilBackendPromise('getRaporConfig', SESSION_TOKEN).then(baru => {
+        RAPOR.info = baru;
+        return konfirmasiBuangPerubahan().then(ok => { if (ok) muatPeriodeRapor(); });
+      });
+    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+  }
+
+  // ---------------------------------------------------------- LEMBAR RAPOR
+  function ambilIdentitasRapor() {
+    if (RAPOR.identitas) return Promise.resolve(RAPOR.identitas);
+    return panggilBackendPromise('getIdentitasSekolahUntukCetak', SESSION_TOKEN).then(r => { RAPOR.identitas = r || {}; return RAPOR.identitas; });
+  }
+
+  /**
+   * HTML lembar rapor. daftarGuru = array rapor guru (bentuk sama dengan hasil
+   * Worker); meta = { indikator, ambang, titimangsa, label, rentangLabel, final }.
+   * Satu halaman A4 per orang.
+   */
+  function bangunDokumenRapor(identitas, meta, daftarGuru, untukCetak) {
+    const schName = escAttr(identitas.nama_sekolah || 'SEKOLAH');
+    const schAddress = escAttr(identitas.alamat_sekolah || '-');
+    const wakasek = escAttr(identitas.nama_wakasek || '( .................................... )');
+    const a = meta.ambang || {};
+    const kriteria = [
+      ['Sangat Baik', rpFmt(a.sangat_baik) + ' - 10'],
+      ['Baik', rpFmt(a.baik) + ' - ' + rpFmt(a.sangat_baik - 0.01)],
+      ['Cukup', rpFmt(a.cukup) + ' - ' + rpFmt(a.baik - 0.01)],
+      ['Sedang', rpFmt(a.sedang) + ' - ' + rpFmt(a.cukup - 0.01)],
+      ['Kurang', '< ' + rpFmt(a.sedang)]
+    ];
+    const blokHadir = (judul, o) => {
+      const v = x => (x === null || x === undefined || x === 0) ? '-' : rpFmt(x);
+      o = o || {};
+      return `<table class="kecil"><thead><tr><th colspan="2">${judul}</th></tr></thead><tbody>
+        <tr><td>Sakit</td><td class="c">${v(o.sakit)}</td></tr><tr><td>Izin Dinas</td><td class="c">${v(o.izinDinas)}</td></tr>
+        <tr><td>Izin</td><td class="c">${v(o.izin)}</td></tr><tr><td>Tanpa Keterangan</td><td class="c">${v(o.tk)}</td></tr>
+        <tr><td>Terlambat</td><td class="c">${v(o.terlambat)}</td></tr></tbody></table>`;
+    };
+    const halaman = daftarGuru.map(g => {
+      const mengajar = g.kategori === 'Mengajar';
+      let baris = '';
+      ['A', 'B', 'C', 'D'].forEach(asp => {
+        if (asp === 'B' && !mengajar) return;
+        const daftar = meta.indikator.filter(i => i.aspek === asp);
+        if (!daftar.length) return;
+        baris += `<tr class="aspek"><td colspan="6">${escAttr(RAPOR_NAMA_ASPEK[asp])}</td></tr>`;
+        daftar.forEach((ind, n) => {
+          const it = (g.items && g.items[ind.key]) || { status: 'BELUM' };
+          const ada = it.status === 'NILAI' && it.nilai !== null && it.nilai !== undefined;
+          baris += `<tr><td class="c">${n + 1}</td><td>${escAttr(ind.nama)}</td><td class="c">${rpFmt(ind.bobot)}</td><td class="c">${ada ? rpFmt(it.nilai) : '-'}</td><td class="c">${ada ? rpFmt(it.nilai * ind.bobot) : '-'}</td><td class="ket">${escAttr(it.status === 'TIDAK_BERLAKU' ? 'Tidak berlaku' : (it.ket || ''))}</td></tr>`;
+        });
+      });
+      const kunciTtd = ruangTtdHtml(identitas.ttd_wakasek_url, 55);
+      return `<div class="halaman">
+        <div class="kop-surat">${bungkusKopSurat(identitas, `<h3 class="kop-title">${schName}</h3><p class="kop-subtitle">${schAddress}</p>`)}</div>
+        <div class="judul">RAPORT KINERJA GURU DAN TENAGA KEPENDIDIKAN${meta.final ? '' : ' <span class="draft">(DRAFT)</span>'}</div>
+        <table class="meta"><tr><td style="width:120px;">Nama</td><td>: ${escAttr(g.nama)}</td></tr>
+          <tr><td>NIY</td><td>: ${escAttr(g.nuptk)}</td></tr>
+          <tr><td>Jabatan</td><td>: ${escAttr(g.jabatan || '-')}</td></tr>
+          <tr><td>Mulai Khidmah</td><td>: ${escAttr(g.mulai || '-')}</td></tr>
+          <tr><td>Periode</td><td>: ${escAttr(meta.label)}${meta.rentangLabel ? ' (' + escAttr(meta.rentangLabel) + ')' : ''}</td></tr></table>
+        <table class="nilai"><thead><tr><th style="width:5%;">No</th><th>Aspek / Indikator Penilaian</th><th style="width:8%;">Bobot</th><th style="width:8%;">Nilai</th><th style="width:9%;">Jumlah</th><th style="width:22%;">Keterangan</th></tr></thead>
+          <tbody>${baris}
+          <tr class="total"><td colspan="2" class="r">JUMLAH / RATA-RATA</td><td class="c">${rpFmt(g.bobotTotal)}</td><td class="c">${rpFmt(g.rata)}</td><td class="c">${rpFmt(g.jumlah)}</td><td class="ket">${escAttr(g.predikat && g.rata !== null ? g.predikat : '-')}</td></tr></tbody></table>
+        <div class="dua">
+          <div><table class="kecil"><thead><tr><th colspan="2">Kriteria Penilaian (skala 0 - 10)</th></tr></thead><tbody>${kriteria.map(k => `<tr><td>${k[0]}</td><td class="c">${k[1]}</td></tr>`).join('')}</tbody></table>
+            <p class="teguran">Jumlah Teguran: <b>${g.teguran ? g.teguran : 0}</b></p></div>
+          <div>${blokHadir('Kehadiran Harian', g.harian)}</div>
+          <div>${mengajar ? blokHadir('Kehadiran KBM (jam)', g.kbm) : ''}</div>
+        </div>
+        <div class="catatan"><b>Catatan:</b> ${escAttr(g.catatan || '-')}</div>
+        <div class="ttd">
+          <div class="ttd-kanan">
+            <p>Ditetapkan di ${escAttr((meta.titimangsa && meta.titimangsa.tempat) || '..........')}</p>
+            <p>Tanggal ${escAttr((meta.titimangsa && meta.titimangsa.tanggal) || '..........')}</p>
+            <p style="margin-bottom:0; position:relative; z-index:1;">Penilai,<br/>Wakasek Bidang SDM</p>${kunciTtd}
+            <p class="fw-bold" style="text-decoration:underline; position:relative; z-index:1;">${wakasek}</p>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<html><head><meta charset="UTF-8"><title>Rapor GTK - ${escAttr(meta.label)}</title>
+      <style>
+        @page { size: A4; margin: 12mm; }
+        body { font-family: Arial, sans-serif; color:#000; background:#fff; font-size:11px; margin:0; }
+        .halaman { padding: 8px 14px; page-break-after: always; }
+        .halaman:last-child { page-break-after: auto; }
+        .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 10px; text-align:center; }
+        .kop-title { font-size:18px; font-weight:bold; text-transform:uppercase; margin:0; }
+        .kop-subtitle { font-size:11px; margin:4px 0 0 0; color:#333; }
+        .kop-baris-atas { font-size:15px; font-weight:600; text-transform:uppercase; margin:0; }
+        .judul { text-align:center; font-weight:bold; font-size:14px; margin:6px 0 8px; }
+        .draft { color:#b00; font-size:11px; }
+        table { border-collapse: collapse; width:100%; }
+        .meta td { padding:1px 2px; border:0; font-size:11.5px; }
+        .nilai th, .nilai td { border:1px solid #000; padding:3px 5px; vertical-align:middle; }
+        .nilai th { background:#e9e9e9; text-align:center; }
+        .nilai tr.aspek td { background:#f3f3f3; font-weight:bold; }
+        .nilai tr.total td { font-weight:bold; background:#f3f3f3; }
+        .c { text-align:center; } .r { text-align:right; } .ket { font-size:10px; }
+        .dua { display:flex; gap:10px; margin-top:10px; align-items:flex-start; }
+        .dua > div { flex:1; }
+        .kecil th, .kecil td { border:1px solid #000; padding:2px 5px; font-size:10.5px; }
+        .kecil th { background:#e9e9e9; text-align:center; }
+        .teguran { margin:6px 0 0; font-size:11px; }
+        .catatan { margin-top:10px; border:1px solid #000; padding:5px 7px; min-height:30px; font-size:11px; }
+        .ttd { margin-top:14px; display:flex; justify-content:flex-end; }
+        .ttd-kanan { width:46%; text-align:center; font-size:11px; }
+        .ttd-kanan p { margin:2px 0; }
+        .fw-bold { font-weight:bold; }
+        @media print { .halaman { padding:0; } }
+      </style></head><body>${halaman}${untukCetak ? `<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},800);},400);};<\/script>` : ''}</body></html>`;
+  }
+
+  function metaRaporDariData(d) {
+    return { indikator: d.indikator, ambang: d.ambang, titimangsa: d.titimangsa, label: d.label, rentangLabel: d.rentangLabel, final: d.status === 'FINAL' };
+  }
+  /** Rapor admin dengan ketikan yang belum disimpan sudah ikut dihitung ulang. */
+  function guruRaporEfektif(g) {
+    const r = rpHitungGuru(g);
+    const salinan = Object.assign({}, g, { items: {} });
+    RAPOR.data.indikator.forEach(ind => {
+      const it = rpItemEfektif(g, ind);
+      salinan.items[ind.key] = Object.assign({}, g.items[ind.key] || {}, it);
+    });
+    salinan.jumlah = Math.round(r.jumlah * 100) / 100; salinan.bobotTotal = r.bobot; salinan.rata = r.rata; salinan.predikat = r.predikat;
+    return salinan;
+  }
+
+  function isiPilihGuruCetak() {
+    const sel = document.getElementById('rapor-pilih-guru');
+    const dipilih = sel.value;
+    sel.innerHTML = '<option value="">- Semua Guru -</option>' + RAPOR.data.guru.map(g => `<option value="${escAttr(g.nuptk)}">${escAttr(g.nama)}</option>`).join('');
+    if (dipilih) sel.value = dipilih;
+  }
+
+  function daftarGuruCetakAdmin() {
+    const n = document.getElementById('rapor-pilih-guru').value;
+    const semua = RAPOR.data.guru.map(guruRaporEfektif);
+    return n ? semua.filter(g => g.nuptk === n) : semua;
+  }
+
+  function pratinjauRaporAdmin() {
+    if (!RAPOR.data) return;
+    if (!document.getElementById('rapor-pilih-guru').options.length) isiPilihGuruCetak();
+    ambilIdentitasRapor().then(identitas => {
+      const html = bangunDokumenRapor(identitas, metaRaporDariData(RAPOR.data), daftarGuruCetakAdmin(), false);
+      document.getElementById('rapor-frame-admin').srcdoc = html;
+    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+  }
+
+  function cetakRaporAdmin(mode) {
+    if (!RAPOR.data) return;
+    const daftar = daftarGuruCetakAdmin();
+    if (!daftar.length) return Swal.fire('Kosong', 'Tidak ada rapor untuk dicetak.', 'info');
+    if (mode === 'gambar' && daftar.length > 1) return Swal.fire('Pilih satu guru', 'Simpan Gambar hanya untuk satu guru. Untuk semua guru gunakan Cetak PDF.', 'info');
+    cetakDokumenRapor(mode, metaRaporDariData(RAPOR.data), daftar, 'Rapor-GTK-' + RAPOR.data.periode + (daftar.length === 1 ? '-' + daftar[0].nama.replace(/[^A-Za-z0-9]+/g, '_') : '') + '.png');
+  }
+
+  function cetakDokumenRapor(mode, meta, daftar, namaFilePng) {
+    Swal.fire({ title: 'Menyiapkan Dokumen...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    ambilIdentitasRapor().then(async identitas => {
+      if (mode === 'gambar') {
+        Swal.close();
+        const { settings, gagal } = await siapkanGambarKopUntukPng(identitas);
+        simpanDokumenSebagaiGambar(bangunDokumenRapor(settings, meta, daftar, false), namaFilePng, gagal);
+        return;
+      }
+      Swal.close();
+      const blob = new Blob([bangunDokumenRapor(identitas, meta, daftar, true)], { type: 'text/html' });
+      const w = window.open(URL.createObjectURL(blob), '_blank');
+      if (!w) Swal.fire('Pop-up Diblokir', 'Harap izinkan pop-up pada browser Anda untuk mencetak PDF.', 'warning');
+    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+  }
+
+  // -------------------------------------------------------------- RAPOR SAYA
+  function muatRaporSaya(periode) {
+    const kosong = document.getElementById('rapor-saya-kosong'), isi = document.getElementById('rapor-saya-isi');
+    panggilBackendPromise('getRaporSaya', SESSION_TOKEN, periode || null).then(async res => {
+      RAPOR.saya = res;
+      if (!res || !res.aktif) { isi.style.display = 'none'; kosong.style.display = 'block'; kosong.textContent = 'Rapor GTK belum diaktifkan oleh sekolah.'; return; }
+      if (!res.daftarPeriode.length) { isi.style.display = 'none'; kosong.style.display = 'block'; kosong.textContent = 'Belum ada rapor yang diterbitkan. Rapor muncul di sini setelah difinalisasi oleh sekolah.'; return; }
+      kosong.style.display = 'none'; isi.style.display = 'block';
+      const sel = document.getElementById('rapor-saya-periode');
+      sel.innerHTML = res.daftarPeriode.map(p => `<option value="${escAttr(p.periode)}" ${p.periode === res.periode ? 'selected' : ''}>${escAttr(p.label)}</option>`).join('');
+      const frame = document.getElementById('rapor-frame-saya');
+      if (!res.rapor) {
+        frame.srcdoc = '<html><body style="font-family:Arial;padding:24px;color:#555;">Anda tidak tercatat pada rapor periode ini.</body></html>';
+        return;
+      }
+      const identitas = await ambilIdentitasRapor();
+      frame.srcdoc = bangunDokumenRapor(identitas, { indikator: res.indikator, ambang: res.ambang, titimangsa: res.titimangsa, label: res.label, rentangLabel: res.rentangLabel, final: true }, [res.rapor], false);
+    }).catch(err => { kosong.style.display = 'block'; isi.style.display = 'none'; kosong.textContent = 'Gagal memuat rapor: ' + ((err && err.message) || err); });
+  }
+
+  function cetakRaporSaya(mode) {
+    const r = RAPOR.saya;
+    if (!r || !r.rapor) return Swal.fire('Tidak ada rapor', 'Tidak ada rapor pada periode ini.', 'info');
+    cetakDokumenRapor(mode, { indikator: r.indikator, ambang: r.ambang, titimangsa: r.titimangsa, label: r.label, rentangLabel: r.rentangLabel, final: true }, [r.rapor],
+      'Rapor-GTK-' + r.periode + '-' + r.rapor.nama.replace(/[^A-Za-z0-9]+/g, '_') + '.png');
   }
 
   function submitAbsenMasuk(e) {

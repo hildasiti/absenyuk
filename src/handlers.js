@@ -1,4 +1,4 @@
-import { sbSelect, sbInsert, sbInsertMany, sbUpdate, sbUpdateWhere, sbUpsertMany, sbDelete, sbDeleteWhere } from './supabase.js';
+import { sbSelect, sbSelectAll, sbInsert, sbInsertMany, sbUpdate, sbUpdateWhere, sbUpsertMany, sbDelete, sbDeleteWhere } from './supabase.js';
 import { createSession, getSession, destroySession } from './session.js';
 import { verifyAndMigratePassword, hashPassword } from './auth.js';
 import { getSettingsMap } from './settings.js';
@@ -1175,10 +1175,10 @@ async function getDashboardCharts(args, env) {
 const KV_KEY_ATURAN_PENILAIAN = 'ATURAN_PENILAIAN_GLOBAL';
 
 const DEFAULT_ATURAN_PENILAIAN = {
-  bobot_terlambat_kehadiran: '0.75',
+  bobot_terlambat_kehadiran: '0.8',
   bobot_alpa_kehadiran: '0',
-  bobot_sakit: '0.1',
-  bobot_izin: '0.2',
+  bobot_sakit: '0.9',
+  bobot_izin: '0.7',
   bobot_terlambat_jp: '0.5',
   bobot_alpa_jp: '1',
   bonus_per_impal: '0.5',
@@ -1498,12 +1498,14 @@ async function changeUsername(args, env) {
   await sbInsert(env, 'users', salinan);
 
   // Langkah 2: migrasikan riwayat di semua tabel yang menyimpan nuptk guru ini.
-  const TABEL_RIWAYAT_NUPTK = ['absen_masuk', 'kegiatan_umum', 'absen_kegiatan_khusus', 'cuti_guru', 'rekap_jam_pelajaran'];
+  const TABEL_RIWAYAT_NUPTK = ['absen_masuk', 'kegiatan_umum', 'absen_kegiatan_khusus', 'cuti_guru', 'rekap_jam_pelajaran', 'rapor_nilai'];
   const gagal = [];
   for (const tabel of TABEL_RIWAYAT_NUPTK) {
     try {
       await sbUpdate(env, tabel, 'nuptk', lama, { nuptk: baru });
     } catch (err) {
+      // rapor_nilai baru ada setelah fitur Rapor GTK dipasang - kalau tabelnya belum ada, abaikan.
+      if (tabel === 'rapor_nilai' && /PGRST205|does not exist|Could not find the table/i.test(err.message)) continue;
       gagal.push(`${tabel}: ${err.message}`);
     }
   }
@@ -1792,11 +1794,14 @@ async function deleteUser(args, env) {
   // --- Periksa semua tabel yang merujuk nuptk ini ---
   const q = encodeURIComponent(nuptk);
   const tabelOtomatis = Object.keys(BARIS_OTOMATIS);
-  const [hasilOtomatis, cuti, rekapJp, rekapImpal] = await Promise.all([
+  const [hasilOtomatis, cuti, rekapJp, rekapImpal, raporManual] = await Promise.all([
     Promise.all(tabelOtomatis.map((t) => sbSelect(env, t, `select=${BARIS_OTOMATIS[t].select}&nuptk=eq.${q}`))),
     sbSelect(env, 'cuti_guru', `select=nuptk&nuptk=eq.${q}`),
     sbSelect(env, 'rekap_jam_pelajaran', `select=nuptk&nuptk=eq.${q}`),
-    sbSelect(env, 'rekap_jam_pelajaran', `select=nuptk&nuptk_impal=eq.${q}`)
+    sbSelect(env, 'rekap_jam_pelajaran', `select=nuptk&nuptk_impal=eq.${q}`),
+    // Nilai rapor yang diisi manual oleh penilai = riwayat nyata (tabel rapor_nilai tanpa foreign key,
+    // jadi harus dicek di sini). Dibungkus catch: kalau tabelnya belum dibuat, dianggap kosong.
+    sbSelect(env, 'rapor_nilai', `select=nuptk&nuptk=eq.${q}&sumber=eq.MANUAL&status=neq.BELUM`).catch(() => [])
   ]);
 
   const rincianNyata = [];
@@ -1816,6 +1821,7 @@ async function deleteUser(args, env) {
   if (cuti.length) rincianNyata.push({ label: 'Cuti / Sakit', jumlah: cuti.length });
   if (rekapJp.length) rincianNyata.push({ label: 'Rekap Jam Pelajaran', jumlah: rekapJp.length });
   if (rekapImpal.length) rincianNyata.push({ label: 'Tercatat sebagai Guru Pengganti (Impal)', jumlah: rekapImpal.length });
+  if (raporManual.length) rincianNyata.push({ label: 'Nilai Rapor GTK', jumlah: raporManual.length });
 
   if (rincianNyata.length) {
     return {
@@ -1839,6 +1845,8 @@ async function deleteUser(args, env) {
   for (const t of Object.keys(jumlahOtomatis)) {
     terhapusOtomatis += await sbDeleteWhere(env, t, { nuptk, ...BARIS_OTOMATIS[t].filter });
   }
+  // Sisa baris rapor otomatis/kosong milik akun ini ikut dibersihkan (tabel tanpa foreign key, tidak boleh jadi yatim).
+  try { await sbDeleteWhere(env, 'rapor_nilai', { nuptk }); } catch (e) { /* tabel belum ada / tidak ada baris */ }
   try {
     await sbDelete(env, 'users', 'nuptk', nuptk);
   } catch (err) {
@@ -3304,6 +3312,822 @@ async function jalankanAutoSholatManual(args, env) {
 }
 
 // ====================================================================
+// RAPOR GTK - rapor kinerja bulanan guru & tenaga kependidikan
+// ====================================================================
+// Periode rapor = periode payroll (tanggal 21 - 20), diberi kunci 'YYYY-MM'
+// berdasarkan bulan AKHIR periode (21 Des - 20 Jan = '2027-01' = "Januari 2027").
+//
+// Penyimpanan:
+//  - Konfigurasi per sekolah (daftar indikator, bobot, penilai, jabatan/mulai
+//    khidmah, ambang predikat) di Cloudflare KV, kunci RAPOR_CFG_<sekolah_id>
+//    (pola yang sama dengan Aturan Penilaian global). Rapor aktif untuk sebuah
+//    sekolah HANYA kalau konfigurasinya ada.
+//  - Nilai per guru per indikator di tabel rapor_nilai (otomatis & manual).
+//  - Status periode (DRAFT/FINAL) + salinan tetap (snapshot) di rapor_periode.
+//    Setelah FINAL, rapor dibaca dari snapshot sehingga perubahan absen
+//    sesudahnya tidak mengubah rapor yang sudah terbit.
+// Skala nilai 0 - 10 (skor Kehadiran 0-100 dibagi 10).
+
+const NAMA_BULAN_RAPOR = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const NAMA_BULAN_RAPOR_SINGKAT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const ROLE_STAF_RAPOR = ['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'];
+const ASPEK_RAPOR = {
+  A: 'A. PENILAIAN KEDISIPLINAN',
+  B: 'B. PEDAGOGIK',
+  C: 'C. PENILAIAN KEPRIBADIAN',
+  D: 'D. PROFESIONAL'
+};
+const SUMBER_RAPOR_OTOMATIS = ['KEHADIRAN', 'KETEPATAN', 'TAWASUL', 'SHOLAT', 'PESANTREN', 'KEGIATAN_KHUSUS'];
+const SUMBER_RAPOR_SEMUA = [...SUMBER_RAPOR_OTOMATIS, 'MANUAL'];
+const JENIS_PESANTREN_DEFAULT = ['DZIKIR_MAKHSUS', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
+const KEY_BLOK_KEHADIRAN = ['H_SAKIT', 'H_IZIN_DINAS', 'H_IZIN', 'H_TK', 'H_TERLAMBAT', 'K_SAKIT', 'K_IZIN_DINAS', 'K_IZIN', 'K_TK', 'K_TERLAMBAT'];
+const STATUS_SHOLAT_SAH = ['Berjamaah', 'Bertugas', 'Haid'];
+const STATUS_KEGIATAN_DIKECUALIKAN = ['Izin Terkonfirmasi', 'Sakit'];
+const STATUS_KHUSUS_DIKECUALIKAN = ['Izin', 'Sakit', 'Izin Terkonfirmasi', 'Tugas Luar', 'Cuti'];
+
+const bulatkan2 = (x) => Math.round(x * 100) / 100;
+
+function templateConfigRapor() {
+  const I = (key, aspek, nama, sumber, extra) => Object.assign({ key, aspek, nama, sumber, bobot: 10, aktif: true }, extra || {});
+  return {
+    aktif: true,
+    indikator: [
+      I('I01', 'A', 'Jumlah Kehadiran & Absensi', 'KEHADIRAN'),
+      I('I02', 'A', 'Kepatuhan terhadap Tata Tertib Guru', 'MANUAL'),
+      I('I03', 'A', 'Ketepatan Waktu Setiap Kegiatan Sekolah dan Yayasan', 'KETEPATAN'),
+      I('I04', 'B', 'Menyelesaikan Administrasi Guru', 'MANUAL'),
+      I('I05', 'B', 'Melakukan Asesmen Siswa', 'MANUAL'),
+      I('I06', 'B', 'Kreatif dan Inovatif dalam Mengajar', 'MANUAL'),
+      I('I07', 'B', 'Supervisi Pembelajaran', 'MANUAL'),
+      I('I08', 'C', 'Tawasul Harian', 'TAWASUL'),
+      I('I09', 'C', 'Shalat Dzuhur / Ashar', 'SHOLAT'),
+      I('I10', 'C', 'Adab Suluk (Dzikir Makhsus, Pengajian Arbain, Qini Nasional)', 'PESANTREN', { jenis: JENIS_PESANTREN_DEFAULT.slice() }),
+      I('I11', 'C', 'Perhatian dan Aktif Terlibat dalam Kegiatan Sekolah', 'MANUAL'),
+      I('I12', 'C', 'Piket Pembiasaan', 'MANUAL'),
+      I('I13', 'C', 'Berpenampilan Rapih dan Sopan', 'MANUAL'),
+      I('I14', 'C', 'Adab dan Etika', 'MANUAL'),
+      I('I15', 'D', 'Standar Pelayanan', 'MANUAL'),
+      I('I16', 'D', 'Mengikuti Rapat Evaluasi GTK', 'KEGIATAN_KHUSUS', { kataKunci: 'rapat' }),
+      I('I17', 'D', 'Mengikuti Pelatihan Mandiri', 'KEGIATAN_KHUSUS', { kataKunci: 'pelatihan' }),
+      I('I18', 'D', 'Aktif dalam Kegiatan KKG', 'KEGIATAN_KHUSUS', { kataKunci: 'kkg' }),
+      I('I19', 'D', 'Membuat Karya (Alat Peraga, Karya Ilmiah)', 'MANUAL')
+    ],
+    penilai: { pedagogik: [], lainnya: [] },
+    profil: {},
+    ambang: { sangat_baik: 9, baik: 7.01, cukup: 5.51, sedang: 4.01 },
+    tempat_titimangsa: '',
+    ambang_acara_persen: 20
+  };
+}
+
+async function bacaConfigRapor(env, sekolahId) {
+  const raw = await env.SESSIONS.get(`RAPOR_CFG_${sekolahId}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+async function tulisConfigRapor(env, sekolahId, cfg) {
+  await env.SESSIONS.put(`RAPOR_CFG_${sekolahId}`, JSON.stringify(cfg));
+}
+
+/** Admin Utama wajib memilih sekolah; role lain selalu sekolah miliknya sendiri. */
+function sekolahIdRapor(user, requestedSekolahId) {
+  if (user.role === 'ADMIN_UTAMA') return requestedSekolahId || null;
+  return user.sekolahId || null;
+}
+
+function rentangPeriodeRapor(periode) {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(String(periode || ''));
+  if (!m) return null;
+  const tahun = parseInt(m[1], 10), bulan = parseInt(m[2], 10);
+  const start = new Date(Date.UTC(tahun, bulan - 2, 21));
+  const end = new Date(Date.UTC(tahun, bulan - 1, 20));
+  return {
+    periode: `${m[1]}-${m[2]}`, start, end, startStr: toDateStr(start), endStr: toDateStr(end),
+    label: `${NAMA_BULAN_RAPOR[bulan - 1]} ${tahun}`,
+    rentangLabel: `21 ${NAMA_BULAN_RAPOR_SINGKAT[start.getUTCMonth()]} ${start.getUTCFullYear()} - 20 ${NAMA_BULAN_RAPOR_SINGKAT[bulan - 1]} ${tahun}`
+  };
+}
+
+function periodeRaporBerjalan() {
+  return toDateStr(getPeriodeBerjalan().end).slice(0, 7);
+}
+
+function labelPeriodeRapor(periode) {
+  const info = rentangPeriodeRapor(periode);
+  return info ? info.label : String(periode);
+}
+
+function tanggalTitimangsaRapor() {
+  const { year, month, day } = nowJakarta();
+  return `${String(day).padStart(2, '0')} ${NAMA_BULAN_RAPOR[month - 1]} ${year}`;
+}
+
+/** Hak input per aspek. Pedagogik (B): Admin + penilai Kurikulum. Lainnya: Admin + Piket + penilai SDM. */
+function hitungIzinRapor(user, cfg) {
+  const nuptk = String(user.nuptk).trim();
+  const penilai = cfg.penilai || {};
+  const admin = isAdminAny(user);
+  const pedagogik = admin || (penilai.pedagogik || []).includes(nuptk);
+  const lainnya = admin || isRole(user, 'PIKET') || (penilai.lainnya || []).includes(nuptk);
+  return { A: lainnya, B: pedagogik, C: lainnya, D: lainnya, info: lainnya };
+}
+
+function bisaLihatSemuaRapor(user, cfg) {
+  if (isAdminAny(user) || isRole(user, 'KEPALA_SEKOLAH', 'PIKET')) return true;
+  const iz = hitungIzinRapor(user, cfg);
+  return iz.A || iz.B;
+}
+
+function predikatRapor(rata, ambang) {
+  if (rata === null || rata === undefined) return '-';
+  if (rata >= ambang.sangat_baik) return 'Sangat Baik';
+  if (rata >= ambang.baik) return 'Baik';
+  if (rata >= ambang.cukup) return 'Cukup';
+  if (rata >= ambang.sedang) return 'Sedang';
+  return 'Kurang';
+}
+
+/** Rapikan & validasi konfigurasi dari frontend. Return { cfg } atau { galat }. */
+function bersihkanConfigRapor(input, lama) {
+  if (!input || typeof input !== 'object') return { galat: 'Konfigurasi tidak valid.' };
+  const daftar = Array.isArray(input.indikator) ? input.indikator : [];
+  if (daftar.length < 1 || daftar.length > 40) return { galat: 'Jumlah indikator harus 1 sampai 40.' };
+
+  const keyDipakai = new Set();
+  const keyLama = new Set((lama.indikator || []).map((i) => i.key));
+  let urutBaru = 100;
+  const indikator = [];
+  for (const raw of daftar) {
+    const nama = String(raw.nama || '').trim().slice(0, 150);
+    if (!nama) return { galat: 'Nama indikator tidak boleh kosong.' };
+    const aspek = String(raw.aspek || '').trim();
+    if (!ASPEK_RAPOR[aspek]) return { galat: `Aspek indikator "${nama}" tidak valid.` };
+    const sumber = String(raw.sumber || 'MANUAL').trim();
+    if (!SUMBER_RAPOR_SEMUA.includes(sumber)) return { galat: `Sumber nilai indikator "${nama}" tidak valid.` };
+    const bobot = Number(raw.bobot);
+    if (!isFinite(bobot) || bobot <= 0 || bobot > 100) return { galat: `Bobot indikator "${nama}" harus lebih dari 0 dan paling besar 100.` };
+
+    let key = String(raw.key || '').trim();
+    if (!/^I\d{2,3}$/.test(key) || keyDipakai.has(key)) {
+      do { key = 'I' + (urutBaru++); } while (keyDipakai.has(key) || keyLama.has(key));
+    }
+    keyDipakai.add(key);
+
+    const ind = { key, aspek, nama, sumber, bobot, aktif: raw.aktif !== false };
+    if (sumber === 'KEGIATAN_KHUSUS') {
+      ind.kataKunci = String(raw.kataKunci || '').trim().slice(0, 100);
+      if (!ind.kataKunci) return { galat: `Indikator "${nama}" bersumber Kegiatan Khusus, isi kata kunci nama agenda.` };
+    }
+    if (sumber === 'PESANTREN') {
+      const jenis = (Array.isArray(raw.jenis) ? raw.jenis : []).filter((j) => KEGIATAN_IDENTIK.includes(j));
+      if (jenis.length === 0) return { galat: `Indikator "${nama}" bersumber Kegiatan Pesantren, pilih minimal satu jenis kegiatan.` };
+      ind.jenis = jenis;
+    }
+    indikator.push(ind);
+  }
+
+  const bersihNuptk = (arr) => Array.from(new Set((Array.isArray(arr) ? arr : []).map((x) => String(x).trim()).filter(Boolean))).slice(0, 100);
+  const penilai = {
+    pedagogik: bersihNuptk(input.penilai && input.penilai.pedagogik),
+    lainnya: bersihNuptk(input.penilai && input.penilai.lainnya)
+  };
+
+  const profil = {};
+  Object.keys(input.profil || {}).slice(0, 500).forEach((n) => {
+    const p = input.profil[n] || {};
+    const urut = parseInt(p.urut, 10);
+    profil[String(n).trim()] = {
+      jabatan: String(p.jabatan || '').trim().slice(0, 80),
+      mulai: String(p.mulai || '').trim().slice(0, 30),
+      urut: isFinite(urut) && urut > 0 ? urut : null
+    };
+  });
+
+  const a = input.ambang || {};
+  const ambang = {
+    sangat_baik: Number(a.sangat_baik), baik: Number(a.baik), cukup: Number(a.cukup), sedang: Number(a.sedang)
+  };
+  const nilaiAmbang = [ambang.sangat_baik, ambang.baik, ambang.cukup, ambang.sedang];
+  if (nilaiAmbang.some((x) => !isFinite(x) || x < 0 || x > 10)) return { galat: 'Ambang predikat harus angka 0 sampai 10.' };
+  if (!(ambang.sangat_baik > ambang.baik && ambang.baik > ambang.cukup && ambang.cukup > ambang.sedang)) {
+    return { galat: 'Ambang predikat harus menurun: Sangat Baik > Baik > Cukup > Sedang.' };
+  }
+
+  const persen = Number(input.ambang_acara_persen);
+  return {
+    cfg: {
+      aktif: true, indikator, penilai, profil, ambang,
+      tempat_titimangsa: String(input.tempat_titimangsa || '').trim().slice(0, 60),
+      ambang_acara_persen: isFinite(persen) && persen >= 1 && persen <= 100 ? persen : 20
+    }
+  };
+}
+
+/**
+ * Susun hasil rapor semua guru dari konfigurasi + baris rapor_nilai.
+ * Status tiap sel: NILAI (ada angka), TIDAK_BERLAKU (dikeluarkan dari rata-rata),
+ * BELUM (belum dinilai, tidak ikut dihitung). Pedagogik (aspek B) otomatis
+ * TIDAK_BERLAKU untuk staf berkategori "Tidak Mengajar".
+ */
+function susunRaporPeriode(cfg, users, nilaiRows) {
+  const indikatorAktif = (cfg.indikator || []).filter((i) => i.aktif !== false);
+  const peta = {};
+  nilaiRows.forEach((r) => {
+    const n = String(r.nuptk).trim();
+    if (!peta[n]) peta[n] = {};
+    peta[n][r.indikator_key] = r;
+  });
+  const profil = cfg.profil || {};
+  const roster = users
+    .filter((u) => ROLE_STAF_RAPOR.includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif')
+    .sort((a, b) => {
+      const ua = (profil[String(a.nuptk).trim()] || {}).urut || 99999;
+      const ub = (profil[String(b.nuptk).trim()] || {}).urut || 99999;
+      if (ua !== ub) return ua - ub;
+      return String(a.nama).localeCompare(String(b.nama), 'id');
+    });
+
+  return roster.map((u) => {
+    const nuptk = String(u.nuptk).trim();
+    const baris = peta[nuptk] || {};
+    const kategori = u.kategori || 'Mengajar';
+    const items = {};
+    let jumlah = 0, bobotTotal = 0, belum = 0;
+    indikatorAktif.forEach((ind) => {
+      let it;
+      if (ind.aspek === 'B' && kategori !== 'Mengajar') {
+        it = { status: 'TIDAK_BERLAKU', nilai: null, ket: 'Tidak mengajar', sumber: 'OTOMATIS' };
+      } else {
+        const r = baris[ind.key];
+        if (!r || r.status === 'BELUM') {
+          it = { status: 'BELUM', nilai: null, ket: '', sumber: ind.sumber === 'MANUAL' ? 'MANUAL' : 'OTOMATIS' };
+        } else {
+          it = { status: r.status, nilai: (r.nilai === null || r.nilai === undefined) ? null : Number(r.nilai), ket: r.keterangan || '', sumber: r.sumber || 'MANUAL' };
+        }
+      }
+      items[ind.key] = it;
+      if (it.status === 'NILAI' && it.nilai !== null) { jumlah += it.nilai * ind.bobot; bobotTotal += ind.bobot; }
+      else if (it.status === 'BELUM') belum++;
+    });
+    const rata = bobotTotal > 0 ? bulatkan2(jumlah / bobotTotal) : null;
+    const angka = (k) => (baris[k] && baris[k].nilai !== null && baris[k].nilai !== undefined) ? Number(baris[k].nilai) : null;
+    const p = profil[nuptk] || {};
+    return {
+      nuptk, nama: u.nama, kategori, jabatan: p.jabatan || '', mulai: p.mulai || '', urut: p.urut || null,
+      items, jumlah: bulatkan2(jumlah), bobotTotal, rata, predikat: predikatRapor(rata, cfg.ambang),
+      jumlahBelum: belum,
+      teguran: angka('TEGURAN') || 0,
+      catatan: baris.CATATAN ? (baris.CATATAN.keterangan || '') : '',
+      harian: { sakit: angka('H_SAKIT'), izinDinas: angka('H_IZIN_DINAS'), izin: angka('H_IZIN'), tk: angka('H_TK'), terlambat: angka('H_TERLAMBAT') },
+      kbm: { sakit: angka('K_SAKIT'), izinDinas: angka('K_IZIN_DINAS'), izin: angka('K_IZIN'), tk: angka('K_TK'), terlambat: angka('K_TERLAMBAT') }
+    };
+  });
+}
+
+function ringkasIndikatorRapor(cfg) {
+  return (cfg.indikator || []).filter((i) => i.aktif !== false)
+    .map((i) => ({ key: i.key, aspek: i.aspek, nama: i.nama, bobot: i.bobot, sumber: i.sumber }));
+}
+
+async function upsertBertahap(env, tabel, baris, kolomKonflik, ukuran) {
+  const per = ukuran || 400;
+  for (let i = 0; i < baris.length; i += per) {
+    await sbUpsertMany(env, tabel, baris.slice(i, i + per), kolomKonflik);
+  }
+}
+
+async function ambilPeriodeRaporRow(env, sekolahId, periode, kolom) {
+  const rows = await sbSelect(env, 'rapor_periode', `select=${kolom || '*'}&sekolah_id=eq.${encodeURIComponent(sekolahId)}&periode=eq.${periode}&limit=1`);
+  return rows[0] || null;
+}
+
+// --------------------------------------------------------------------
+// HANDLER
+// --------------------------------------------------------------------
+
+/** Status Rapor GTK untuk pengguna yang sedang login (menentukan menu mana yang tampil). */
+async function getRaporConfig(args, env) {
+  const [token, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { aktif: false };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  const bisaKelola = isAdminAny(user);
+  if (!sekolahId) return { aktif: false, bisaKelola, perluPilihSekolah: user.role === 'ADMIN_UTAMA' };
+
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  const aktif = !!cfg && cfg.aktif !== false;
+  if (!aktif) return { aktif: false, bisaKelola };
+
+  const bisaLihatSemua = bisaLihatSemuaRapor(user, cfg);
+  return {
+    aktif: true, bisaKelola, bisaLihatSemua,
+    bisaFinalisasi: isAdminAny(user) || isRole(user, 'KEPALA_SEKOLAH'),
+    bisaHitung: isAdminAny(user) || isRole(user, 'KEPALA_SEKOLAH', 'PIKET'),
+    izinInput: hitungIzinRapor(user, cfg),
+    periodeBerjalan: periodeRaporBerjalan(),
+    config: (bisaKelola || bisaLihatSemua) ? cfg : null
+  };
+}
+
+async function aktifkanRapor(args, env) {
+  const [token, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+
+  const ada = await bacaConfigRapor(env, sekolahId);
+  if (ada) {
+    if (ada.aktif === false) { ada.aktif = true; await tulisConfigRapor(env, sekolahId, ada); }
+    return { success: true, message: 'Rapor GTK sudah aktif untuk sekolah ini.' };
+  }
+  await tulisConfigRapor(env, sekolahId, templateConfigRapor());
+  return { success: true, message: 'Rapor GTK diaktifkan dengan 19 indikator bawaan. Lengkapi Jabatan, Mulai Khidmah, dan Penilai di tab Pengaturan.' };
+}
+
+async function simpanRaporConfig(args, env) {
+  const [token, configBaru, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const lama = await bacaConfigRapor(env, sekolahId);
+  if (!lama) return { success: false, message: 'Rapor GTK belum diaktifkan untuk sekolah ini.' };
+
+  const hasil = bersihkanConfigRapor(configBaru, lama);
+  if (hasil.galat) return { success: false, message: hasil.galat };
+  await tulisConfigRapor(env, sekolahId, hasil.cfg);
+  return { success: true, message: 'Pengaturan Rapor GTK disimpan. Berlaku untuk periode yang belum difinalisasi.' };
+}
+
+async function getRaporPeriode(args, env) {
+  const [token, periode, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { success: false, message: 'Sesi habis, silakan login ulang.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || cfg.aktif === false) return { success: false, message: 'Rapor GTK belum diaktifkan untuk sekolah ini.' };
+  if (!bisaLihatSemuaRapor(user, cfg)) return { success: false, message: 'Akses ditolak.' };
+  const info = rentangPeriodeRapor(periode);
+  if (!info) return { success: false, message: 'Periode tidak valid.' };
+
+  const dasar = {
+    success: true, periode: info.periode, label: info.label, rentangLabel: info.rentangLabel,
+    izinInput: hitungIzinRapor(user, cfg), aspek: ASPEK_RAPOR, ambang: cfg.ambang
+  };
+
+  const periodeRow = await ambilPeriodeRaporRow(env, sekolahId, info.periode);
+  if (periodeRow && periodeRow.status === 'FINAL' && periodeRow.snapshot) {
+    const s = periodeRow.snapshot;
+    return Object.assign(dasar, {
+      status: 'FINAL', difinalisasiOleh: periodeRow.difinalisasi_oleh, difinalisasiPada: periodeRow.difinalisasi_pada,
+      indikator: s.indikator, ambang: s.ambang || cfg.ambang, titimangsa: s.titimangsa, guru: s.guru,
+      otomatisDihitungPada: periodeRow.otomatis_dihitung_pada || null
+    });
+  }
+
+  const [users, nilaiRows] = await Promise.all([
+    getUsersListCached(env, sekolahId),
+    sbSelectAll(env, 'rapor_nilai', `sekolah_id=eq.${encodeURIComponent(sekolahId)}&periode=eq.${info.periode}&order=nuptk.asc,indikator_key.asc`)
+  ]);
+  return Object.assign(dasar, {
+    status: 'DRAFT', indikator: ringkasIndikatorRapor(cfg),
+    titimangsa: { tempat: cfg.tempat_titimangsa || '', tanggal: tanggalTitimangsaRapor() },
+    guru: susunRaporPeriode(cfg, users, nilaiRows),
+    otomatisDihitungPada: periodeRow ? periodeRow.otomatis_dihitung_pada : null
+  });
+}
+
+/** Tarik semua nilai yang bisa dihitung dari data absensi, simpan sebagai baris OTOMATIS di rapor_nilai. */
+async function hitungRaporOtomatis(args, env) {
+  const [token, periode, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user) && !isRole(user, 'KEPALA_SEKOLAH', 'PIKET')) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || cfg.aktif === false) return { success: false, message: 'Rapor GTK belum diaktifkan untuk sekolah ini.' };
+  const info = rentangPeriodeRapor(periode);
+  if (!info) return { success: false, message: 'Periode tidak valid.' };
+  if (info.periode > periodeRaporBerjalan()) return { success: false, message: 'Periode ini belum dimulai.' };
+
+  const periodeRow = await ambilPeriodeRaporRow(env, sekolahId, info.periode, 'status');
+  if (periodeRow && periodeRow.status === 'FINAL') {
+    return { success: false, message: 'Periode ini sudah difinalisasi. Buka kembali dulu bila perlu menghitung ulang.' };
+  }
+
+  const hasil = await hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, info, user);
+  await upsertBertahap(env, 'rapor_nilai', hasil.baris, 'sekolah_id,periode,nuptk,indikator_key');
+  await sbUpsertMany(env, 'rapor_periode', [{
+    sekolah_id: sekolahId, periode: info.periode, tgl_mulai: info.startStr, tgl_selesai: info.endStr,
+    status: 'DRAFT', otomatis_dihitung_pada: new Date().toISOString()
+  }], 'sekolah_id,periode');
+
+  return {
+    success: true, jumlahGuru: hasil.jumlahGuru, jumlahIndikatorOtomatis: hasil.jumlahIndikatorOtomatis, sebagian: hasil.sebagian,
+    message: `Nilai otomatis dihitung untuk ${hasil.jumlahGuru} orang (${hasil.jumlahIndikatorOtomatis} indikator otomatis). Nilai manual tidak diubah.`
+      + (hasil.sebagian ? ` Periode belum berakhir, jadi dihitung sampai ${hasil.akhirEfektif}. Hitung ulang setelah tanggal 20.` : '')
+  };
+}
+
+async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, user) {
+  let info = infoAsli;
+  const indikatorOto = (cfg.indikator || []).filter((i) => i.aktif !== false && SUMBER_RAPOR_OTOMATIS.includes(i.sumber));
+  const punyaSumber = (s) => indikatorOto.some((i) => i.sumber === s);
+
+  const jenisDibutuhkan = new Set();
+  if (punyaSumber('TAWASUL')) jenisDibutuhkan.add('BRIEFING_TAWASUL');
+  if (punyaSumber('SHOLAT')) { jenisDibutuhkan.add('SHOLAT_DZUHUR'); jenisDibutuhkan.add('SHOLAT_ASHAR'); }
+  indikatorOto.filter((i) => i.sumber === 'PESANTREN').forEach((i) => (i.jenis || []).forEach((j) => jenisDibutuhkan.add(j)));
+  const daftarJenis = Array.from(jenisDibutuhkan);
+
+  // Periode yang BELUM berakhir dihitung sampai hari ini saja. Tanpa pembatas ini, hari-hari
+  // mendatang yang belum punya baris absen ikut terhitung "Tanpa Keterangan" oleh jaring
+  // pengaman getPayrollReport (cocok untuk periode yang sudah lewat, menyesatkan di tengah periode).
+  // Batasnya KEMARIN, bukan hari ini: absen hari ini belum lengkap (cron Auto Alpa baru jalan sore/malam).
+  const hariIni = nowJakarta().dateStr;
+  const kemarin = toDateStr(new Date(new Date(hariIni).getTime() - 86400000));
+  const sebagian = info.endStr > kemarin;
+  const akhirEfektif = sebagian ? kemarin : info.endStr;
+  if (akhirEfektif < info.startStr) throw new Error('Periode ini baru dimulai hari ini, belum ada data yang bisa dihitung.');
+  info = Object.assign({}, info, { endStr: akhirEfektif });
+
+  const filterSekolah = `sekolah_id=eq.${encodeURIComponent(sekolahId)}`;
+  const perluKhusus = punyaSumber('KETEPATAN') || punyaSumber('KEGIATAN_KHUSUS');
+
+  const [users, nilaiGuru, payroll, jp, jadwal, khusus, ...umumPerJenis] = await Promise.all([
+    getUsersListCached(env, sekolahId),
+    punyaSumber('KEHADIRAN') ? getNilaiGuru([token, info.startStr, info.endStr, sekolahId], env) : [],
+    getPayrollReport([token, info.startStr, info.endStr, sekolahId], env),
+    getPayrollJamPelajaran([token, info.startStr, info.endStr, sekolahId], env),
+    punyaSumber('KEGIATAN_KHUSUS') ? getJadwalKegiatanCached(env, sekolahId) : [],
+    perluKhusus
+      ? sbSelectAll(env, 'absen_kegiatan_khusus', `select=nuptk,tanggal_lapor,nama_kegiatan,status_kehadiran&${filterSekolah}&tanggal_lapor=gte.${info.startStr}&tanggal_lapor=lte.${info.endStr}&order=id.asc`)
+      : [],
+    ...daftarJenis.map((j) =>
+      sbSelectAll(env, 'kegiatan_umum', `select=nuptk,tanggal,jenis_kegiatan,status&${filterSekolah}&tanggal=gte.${info.startStr}&tanggal=lte.${info.endStr}&jenis_kegiatan=eq.${j}&order=tanggal.asc,nuptk.asc`))
+  ]);
+
+  const umumByJenis = {};
+  daftarJenis.forEach((j, i) => { umumByJenis[j] = umumPerJenis[i]; });
+
+  const roster = users.filter((u) => ROLE_STAF_RAPOR.includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif');
+  const mapNilai = {}; (nilaiGuru || []).forEach((r) => { mapNilai[String(r.nuptk).trim()] = r; });
+  const mapPay = {}; payroll.forEach((r) => { mapPay[String(r.nuptk).trim()] = r; });
+  const mapJp = {}; jp.forEach((r) => { mapJp[String(r.nuptk).trim()] = r; });
+
+  // Ringkasan baris kegiatan_umum per jenis -> per nuptk
+  const umumPerGuru = (jenis) => {
+    const m = {};
+    (umumByJenis[jenis] || []).forEach((r) => {
+      const n = String(r.nuptk).trim();
+      if (!m[n]) m[n] = [];
+      m[n].push(r);
+    });
+    return m;
+  };
+  const khususPerGuru = {};
+  khusus.forEach((r) => {
+    const n = String(r.nuptk).trim();
+    if (!khususPerGuru[n]) khususPerGuru[n] = [];
+    khususPerGuru[n].push(r);
+  });
+
+  // Acara pesantren: sesi (jenis + tanggal) yang dihadiri minimal sekian persen staf dianggap benar-benar diadakan.
+  const persen = cfg.ambang_acara_persen || 20;
+  const ambangAcara = Math.min(roster.length || 1, Math.max(2, Math.ceil((roster.length * persen) / 100)));
+  const acaraPerJenis = {};
+  const hitungAcara = (jenis) => {
+    if (acaraPerJenis[jenis]) return acaraPerJenis[jenis];
+    const hadirPerTanggal = {};
+    (umumByJenis[jenis] || []).forEach((r) => {
+      if (r.status === 'Hadir') hadirPerTanggal[r.tanggal] = (hadirPerTanggal[r.tanggal] || 0) + 1;
+    });
+    const set = new Set(Object.keys(hadirPerTanggal).filter((t) => hadirPerTanggal[t] >= ambangAcara));
+    acaraPerJenis[jenis] = set;
+    return set;
+  };
+
+  const bersihNama = (s) => String(s || '').trim().toLowerCase().split('(')[0].trim();
+  const sekarang = new Date().toISOString();
+  const baris = [];
+  const dasar = (nuptk, key) => ({
+    sekolah_id: sekolahId, periode: info.periode, nuptk, indikator_key: key,
+    sumber: 'OTOMATIS', diisi_oleh: user.nama, diubah_pada: sekarang
+  });
+  const catatNilai = (nuptk, key, nilai, ket) => {
+    baris.push(Object.assign(dasar(nuptk, key), { nilai: Math.min(10, Math.max(0, bulatkan2(nilai))), status: 'NILAI', keterangan: ket }));
+  };
+  const catatTB = (nuptk, key, ket) => {
+    baris.push(Object.assign(dasar(nuptk, key), { nilai: null, status: 'TIDAK_BERLAKU', keterangan: ket }));
+  };
+  const gabungKet = (bagian) => bagian.filter(Boolean).join(', ');
+
+  for (const u of roster) {
+    const n = String(u.nuptk).trim();
+    const pay = mapPay[n] || { hadir: 0, terlambat: 0, sakit: 0, izin: 0, tugasLuar: 0, alpa: 0, cuti: 0 };
+    const jpRow = mapJp[n] || { terlambat: 0, sakit: 0, izin: 0, tugasLuar: 0, alpa: 0 };
+    const hariHadir = pay.hadir + pay.terlambat;
+
+    for (const ind of indikatorOto) {
+      const k = ind.key;
+      if (ind.aspek === 'B' && (u.kategori || 'Mengajar') !== 'Mengajar') continue;
+
+      if (ind.sumber === 'KEHADIRAN') {
+        const skor = mapNilai[n] ? mapNilai[n].skorKehadiran : null;
+        if (skor === null || skor === undefined) { catatTB(n, k, 'Belum ada data absen pada periode ini'); continue; }
+        const ket = gabungKet([
+          pay.hadir ? `Hadir ${pay.hadir}` : '', pay.terlambat ? `terlambat ${pay.terlambat}` : '',
+          pay.sakit ? `sakit/cuti ${pay.sakit}` : '', pay.izin ? `izin ${pay.izin}` : '',
+          pay.tugasLuar ? `tugas dinas ${pay.tugasLuar}` : '', pay.alpa ? `tanpa keterangan ${pay.alpa}` : ''
+        ]);
+        catatNilai(n, k, skor / 10, ket);
+      } else if (ind.sumber === 'KETEPATAN') {
+        let tepat = pay.hadir, total = hariHadir, dariKhusus = 0;
+        (khususPerGuru[n] || []).forEach((r) => {
+          if (r.status_kehadiran === 'Hadir') { tepat++; total++; dariKhusus++; }
+          else if (r.status_kehadiran === 'Terlambat') { total++; dariKhusus++; }
+        });
+        if (total === 0) { catatTB(n, k, 'Belum ada data kehadiran'); continue; }
+        catatNilai(n, k, (tepat / total) * 10, `Tepat waktu ${tepat} dari ${total} kehadiran${dariKhusus ? ` (termasuk ${dariKhusus} kegiatan khusus)` : ''}`);
+      } else if (ind.sumber === 'TAWASUL') {
+        const baru = (umumPerGuru('BRIEFING_TAWASUL')[n] || []).filter((r) => r.status === 'Hadir');
+        const hariTawasul = new Set(baru.map((r) => r.tanggal)).size;
+        if (hariHadir === 0) { catatTB(n, k, 'Belum ada hari hadir'); continue; }
+        catatNilai(n, k, (Math.min(hariTawasul, hariHadir) / hariHadir) * 10, `Ikut Tawasul ${Math.min(hariTawasul, hariHadir)} dari ${hariHadir} hari hadir`);
+      } else if (ind.sumber === 'SHOLAT') {
+        let sah = 0, total = 0;
+        ['SHOLAT_DZUHUR', 'SHOLAT_ASHAR'].forEach((j) => {
+          (umumPerGuru(j)[n] || []).forEach((r) => {
+            if (STATUS_KEGIATAN_DIKECUALIKAN.includes(r.status)) return;
+            total++;
+            if (STATUS_SHOLAT_SAH.includes(r.status)) sah++;
+          });
+        });
+        if (total === 0) { catatTB(n, k, 'Tidak ada data sholat pada periode ini'); continue; }
+        catatNilai(n, k, (sah / total) * 10, `Sah ${sah} dari ${total} waktu wajib`);
+      } else if (ind.sumber === 'PESANTREN') {
+        let acara = 0, hadir = 0, dikecualikan = 0;
+        (ind.jenis || []).forEach((j) => {
+          const sesi = hitungAcara(j);
+          acara += sesi.size;
+          (umumPerGuru(j)[n] || []).forEach((r) => {
+            if (!sesi.has(r.tanggal)) return;
+            if (r.status === 'Hadir') hadir++;
+            else if (STATUS_KEGIATAN_DIKECUALIKAN.includes(r.status)) dikecualikan++;
+          });
+        });
+        if (acara === 0) { catatTB(n, k, 'Tidak ada acara tercatat pada periode ini'); continue; }
+        const penyebut = acara - dikecualikan;
+        if (penyebut <= 0) { catatTB(n, k, 'Seluruh acara berstatus izin/sakit'); continue; }
+        catatNilai(n, k, (Math.min(hadir, penyebut) / penyebut) * 10, `Hadir ${Math.min(hadir, penyebut)} dari ${penyebut} acara`);
+      } else if (ind.sumber === 'KEGIATAN_KHUSUS') {
+        const kata = String(ind.kataKunci || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+        const agenda = jadwal.filter((a) => {
+          if (!a.tanggal || a.tanggal < info.startStr || a.tanggal > info.endStr) return false;
+          const nm = String(a.nama || '').toLowerCase();
+          return kata.some((w) => nm.includes(w));
+        });
+        const diundang = agenda.filter((a) => (a.tipe_peserta || 'Semua GTK') !== 'Terbatas' || (a.daftar_peserta || []).map((x) => String(x).trim()).includes(n));
+        if (diundang.length === 0) { catatTB(n, k, 'Tidak ada agenda pada periode ini'); continue; }
+        let hadir = 0, dikecualikan = 0;
+        diundang.forEach((a) => {
+          const bersihA = bersihNama(a.nama);
+          const row = (khususPerGuru[n] || []).find((r) => {
+            if (r.tanggal_lapor !== a.tanggal) return false;
+            const rn = bersihNama(r.nama_kegiatan);
+            return rn === bersihA || rn.includes(bersihA);
+          });
+          if (!row) return;
+          if (row.status_kehadiran === 'Hadir' || row.status_kehadiran === 'Terlambat') hadir++;
+          else if (STATUS_KHUSUS_DIKECUALIKAN.includes(row.status_kehadiran)) dikecualikan++;
+        });
+        const penyebut = diundang.length - dikecualikan;
+        if (penyebut <= 0) { catatTB(n, k, 'Seluruh agenda berstatus izin/sakit'); continue; }
+        catatNilai(n, k, (hadir / penyebut) * 10, `Hadir ${hadir} dari ${penyebut} agenda`);
+      }
+    }
+
+    // Blok Kehadiran Harian & KBM (angka murni untuk lembar rapor)
+    const blok = {
+      H_SAKIT: pay.sakit, H_IZIN_DINAS: pay.tugasLuar, H_IZIN: pay.izin, H_TK: pay.alpa, H_TERLAMBAT: pay.terlambat,
+      K_SAKIT: jpRow.sakit, K_IZIN_DINAS: jpRow.tugasLuar, K_IZIN: jpRow.izin, K_TK: jpRow.alpa, K_TERLAMBAT: jpRow.terlambat
+    };
+    KEY_BLOK_KEHADIRAN.forEach((key) => {
+      baris.push(Object.assign(dasar(n, key), { nilai: blok[key] || 0, status: 'NILAI', keterangan: null }));
+    });
+  }
+
+  return { baris, jumlahGuru: roster.length, jumlahIndikatorOtomatis: indikatorOto.length, sebagian, akhirEfektif };
+}
+
+/** Simpan nilai manual (dan Teguran/Catatan). Kosong = belum dinilai; status TIDAK_BERLAKU = dikeluarkan dari rata-rata. */
+async function simpanNilaiRapor(args, env) {
+  const [token, periode, entries, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { success: false, message: 'Sesi habis, silakan login ulang.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || cfg.aktif === false) return { success: false, message: 'Rapor GTK belum diaktifkan untuk sekolah ini.' };
+  const info = rentangPeriodeRapor(periode);
+  if (!info) return { success: false, message: 'Periode tidak valid.' };
+  if (!Array.isArray(entries) || entries.length === 0) return { success: true, message: 'Tidak ada perubahan untuk disimpan.', jumlah: 0 };
+  if (entries.length > 3000) return { success: false, message: 'Terlalu banyak perubahan sekaligus (maksimal 3000 sel).' };
+
+  const izin = hitungIzinRapor(user, cfg);
+  const [periodeRow, users] = await Promise.all([
+    ambilPeriodeRaporRow(env, sekolahId, info.periode, 'status'),
+    getUsersListCached(env, sekolahId)
+  ]);
+  if (periodeRow && periodeRow.status === 'FINAL') {
+    return { success: false, message: 'Rapor periode ini sudah difinalisasi dan terkunci.' };
+  }
+
+  const mapUser = {}; users.forEach((u) => { mapUser[String(u.nuptk).trim()] = u; });
+  const mapInd = {}; (cfg.indikator || []).forEach((i) => { mapInd[i.key] = i; });
+  const sekarang = new Date().toISOString();
+  const upserts = [];
+  const galat = [];
+
+  for (const e of entries) {
+    const nuptk = String(e.nuptk || '').trim();
+    const key = String(e.key || '').trim();
+    const u = mapUser[nuptk];
+    if (!u) { galat.push(`Akun ${nuptk || '(kosong)'} tidak ditemukan`); continue; }
+    const dasar = { sekolah_id: sekolahId, periode: info.periode, nuptk, indikator_key: key, sumber: 'MANUAL', diisi_oleh: user.nama, diubah_pada: sekarang };
+
+    if (key === 'TEGURAN') {
+      if (!izin.info) { galat.push('Anda tidak berhak mengisi Teguran'); continue; }
+      const t = (e.nilai === '' || e.nilai === null || e.nilai === undefined) ? 0 : Number(e.nilai);
+      if (!Number.isInteger(t) || t < 0 || t > 99) { galat.push(`Teguran ${u.nama} harus bilangan bulat 0 sampai 99`); continue; }
+      upserts.push(Object.assign(dasar, { nilai: t, status: 'NILAI', keterangan: null }));
+      continue;
+    }
+    if (key === 'CATATAN') {
+      if (!izin.info) { galat.push('Anda tidak berhak mengisi Catatan'); continue; }
+      upserts.push(Object.assign(dasar, { nilai: null, status: 'NILAI', keterangan: String(e.keterangan || '').trim().slice(0, 200) }));
+      continue;
+    }
+
+    const ind = mapInd[key];
+    if (!ind || ind.aktif === false) { galat.push(`Indikator ${key || '(kosong)'} tidak dikenal`); continue; }
+    if (ind.sumber !== 'MANUAL') { galat.push(`"${ind.nama}" terisi otomatis dan tidak bisa diubah manual`); continue; }
+    if (!izin[ind.aspek]) { galat.push(`Anda tidak berhak menilai aspek ${ASPEK_RAPOR[ind.aspek]}`); continue; }
+    if (ind.aspek === 'B' && (u.kategori || 'Mengajar') !== 'Mengajar') continue;
+
+    if (e.status === 'TIDAK_BERLAKU') {
+      upserts.push(Object.assign(dasar, { nilai: null, status: 'TIDAK_BERLAKU', keterangan: null }));
+    } else if (e.nilai === null || e.nilai === undefined || String(e.nilai).trim() === '') {
+      upserts.push(Object.assign(dasar, { nilai: null, status: 'BELUM', keterangan: null }));
+    } else {
+      const v = Number(String(e.nilai).replace(',', '.'));
+      if (!isFinite(v) || v < 0 || v > 10) { galat.push(`Nilai "${ind.nama}" untuk ${u.nama} harus 0 sampai 10`); continue; }
+      upserts.push(Object.assign(dasar, { nilai: bulatkan2(v), status: 'NILAI', keterangan: null }));
+    }
+  }
+
+  if (galat.length) {
+    return { success: false, message: galat.slice(0, 3).join('; ') + (galat.length > 3 ? ` (dan ${galat.length - 3} lainnya)` : '') + '. Tidak ada yang disimpan.' };
+  }
+  await upsertBertahap(env, 'rapor_nilai', upserts, 'sekolah_id,periode,nuptk,indikator_key');
+  return { success: true, jumlah: upserts.length, message: `${upserts.length} nilai tersimpan.` };
+}
+
+async function finalisasiRapor(args, env) {
+  const [token, periode, paksa, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user) && !isRole(user, 'KEPALA_SEKOLAH')) return { success: false, message: 'Akses ditolak. Finalisasi khusus Admin dan Kepala Sekolah.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || cfg.aktif === false) return { success: false, message: 'Rapor GTK belum diaktifkan untuk sekolah ini.' };
+  const info = rentangPeriodeRapor(periode);
+  if (!info) return { success: false, message: 'Periode tidak valid.' };
+
+  const periodeRow = await ambilPeriodeRaporRow(env, sekolahId, info.periode, 'status,otomatis_dihitung_pada');
+  if (periodeRow && periodeRow.status === 'FINAL') return { success: false, message: 'Periode ini sudah difinalisasi.' };
+  if (!periodeRow || !periodeRow.otomatis_dihitung_pada) {
+    return { success: false, message: 'Jalankan "Hitung Nilai Otomatis" dulu sebelum finalisasi.' };
+  }
+
+  const [users, nilaiRows] = await Promise.all([
+    getUsersListCached(env, sekolahId),
+    sbSelectAll(env, 'rapor_nilai', `sekolah_id=eq.${encodeURIComponent(sekolahId)}&periode=eq.${info.periode}&order=nuptk.asc,indikator_key.asc`)
+  ]);
+  const guru = susunRaporPeriode(cfg, users, nilaiRows);
+  if (guru.length === 0) return { success: false, message: 'Tidak ada staf aktif untuk dirapor.' };
+
+  const totalBelum = guru.reduce((a, g) => a + g.jumlahBelum, 0);
+  if (totalBelum > 0 && paksa !== true) {
+    const daftar = guru.filter((g) => g.jumlahBelum > 0).slice(0, 8).map((g) => ({ nama: g.nama, jumlah: g.jumlahBelum }));
+    return {
+      success: false, butuhKonfirmasi: true, jumlahBelum: totalBelum,
+      jumlahGuruBelum: guru.filter((g) => g.jumlahBelum > 0).length, contoh: daftar,
+      message: `Masih ada ${totalBelum} nilai yang belum diisi.`
+    };
+  }
+
+  const snapshot = {
+    indikator: ringkasIndikatorRapor(cfg), ambang: cfg.ambang,
+    titimangsa: { tempat: cfg.tempat_titimangsa || '', tanggal: tanggalTitimangsaRapor() },
+    guru
+  };
+  await sbUpsertMany(env, 'rapor_periode', [{
+    sekolah_id: sekolahId, periode: info.periode, tgl_mulai: info.startStr, tgl_selesai: info.endStr,
+    status: 'FINAL', snapshot, difinalisasi_oleh: user.nama, difinalisasi_pada: new Date().toISOString()
+  }], 'sekolah_id,periode');
+  return { success: true, message: `Rapor ${info.label} difinalisasi untuk ${guru.length} orang dan kini terkunci.` };
+}
+
+async function bukaKembaliRapor(args, env) {
+  const [token, periode, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak. Hanya Admin yang bisa membuka kembali rapor.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const info = rentangPeriodeRapor(periode);
+  if (!info) return { success: false, message: 'Periode tidak valid.' };
+
+  const row = await ambilPeriodeRaporRow(env, sekolahId, info.periode, 'status');
+  if (!row || row.status !== 'FINAL') return { success: false, message: 'Periode ini belum difinalisasi.' };
+  await sbUpsertMany(env, 'rapor_periode', [{
+    sekolah_id: sekolahId, periode: info.periode, status: 'DRAFT', snapshot: null, difinalisasi_oleh: null, difinalisasi_pada: null
+  }], 'sekolah_id,periode');
+  return { success: true, message: `Rapor ${info.label} dibuka kembali (Draft). Guru tidak bisa melihatnya sampai difinalisasi lagi.` };
+}
+
+/** Rapor milik sendiri (hanya periode yang sudah FINAL). */
+async function getRaporSaya(args, env) {
+  const [token, periode] = args;
+  const user = await requireUser(env, token);
+  if (!user) return { aktif: false };
+  const sekolahId = user.sekolahId;
+  if (!sekolahId) return { aktif: false };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || cfg.aktif === false) return { aktif: false };
+
+  const daftar = await sbSelect(env, 'rapor_periode', `select=periode&sekolah_id=eq.${encodeURIComponent(sekolahId)}&status=eq.FINAL&order=periode.desc&limit=36`);
+  const daftarPeriode = daftar.map((d) => ({ periode: d.periode, label: labelPeriodeRapor(d.periode) }));
+  if (daftarPeriode.length === 0) return { aktif: true, daftarPeriode: [], periode: null, rapor: null };
+
+  const pilih = (periode && daftarPeriode.some((d) => d.periode === periode)) ? periode : daftarPeriode[0].periode;
+  const row = await ambilPeriodeRaporRow(env, sekolahId, pilih, 'snapshot');
+  const s = row && row.snapshot;
+  const saya = s ? (s.guru || []).find((g) => String(g.nuptk).trim() === String(user.nuptk).trim()) : null;
+  const info = rentangPeriodeRapor(pilih);
+  return {
+    aktif: true, daftarPeriode, periode: pilih, label: info.label, rentangLabel: info.rentangLabel,
+    indikator: s ? s.indikator : [], aspek: ASPEK_RAPOR, ambang: s ? (s.ambang || cfg.ambang) : cfg.ambang,
+    titimangsa: s ? s.titimangsa : null, rapor: saya || null
+  };
+}
+
+/** Rerata beberapa periode (semester / tahun ajaran) dari rapor yang sudah FINAL. Khusus Admin & Kepala Sekolah. */
+async function getRaporRerata(args, env) {
+  const [token, periodeAwal, periodeAkhir, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user) && !isRole(user, 'KEPALA_SEKOLAH')) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || cfg.aktif === false) return { success: false, message: 'Rapor GTK belum diaktifkan untuk sekolah ini.' };
+  const a = rentangPeriodeRapor(periodeAwal), b = rentangPeriodeRapor(periodeAkhir);
+  if (!a || !b || a.periode > b.periode) return { success: false, message: 'Rentang periode tidak valid.' };
+
+  const rows = await sbSelect(env, 'rapor_periode',
+    `select=periode,snapshot&sekolah_id=eq.${encodeURIComponent(sekolahId)}&status=eq.FINAL&periode=gte.${a.periode}&periode=lte.${b.periode}&order=periode.asc&limit=24`);
+  if (rows.length === 0) return { success: true, periodeList: [], guru: [], message: 'Belum ada rapor FINAL pada rentang ini.' };
+
+  const peta = {};
+  rows.forEach((r) => {
+    ((r.snapshot && r.snapshot.guru) || []).forEach((g) => {
+      const n = String(g.nuptk).trim();
+      if (!peta[n]) peta[n] = { nuptk: n, nama: g.nama, jabatan: g.jabatan || '', rataPerPeriode: {} };
+      peta[n].nama = g.nama;
+      if (g.jabatan) peta[n].jabatan = g.jabatan;
+      if (g.rata !== null && g.rata !== undefined) peta[n].rataPerPeriode[r.periode] = g.rata;
+    });
+  });
+  const ambang = (rows[rows.length - 1].snapshot && rows[rows.length - 1].snapshot.ambang) || cfg.ambang;
+  const guru = Object.values(peta).map((g) => {
+    const nilai = Object.values(g.rataPerPeriode);
+    const rerata = nilai.length ? bulatkan2(nilai.reduce((x, y) => x + y, 0) / nilai.length) : null;
+    return Object.assign(g, { jumlahPeriode: nilai.length, rerata, predikat: predikatRapor(rerata, ambang) });
+  }).sort((x, y) => (y.rerata === null ? -1 : y.rerata) - (x.rerata === null ? -1 : x.rerata));
+  guru.forEach((g, i) => { g.peringkat = i + 1; });
+
+  return {
+    success: true,
+    periodeList: rows.map((r) => ({ periode: r.periode, label: labelPeriodeRapor(r.periode) })),
+    guru
+  };
+}
+
+
+// ====================================================================
 // PETA NAMA FUNGSI -> HANDLER
 // Nama-nama ini dipanggil langsung dari index.html lewat shim
 // google.script.run (nama variabel dipertahankan untuk kompatibilitas,
@@ -3369,6 +4193,16 @@ export const handlers = {
   updateRekapJamPelajaran,
   deleteRekapJamPelajaran,
   getNilaiGuru,
+  getRaporConfig,
+  aktifkanRapor,
+  simpanRaporConfig,
+  getRaporPeriode,
+  hitungRaporOtomatis,
+  simpanNilaiRapor,
+  finalisasiRapor,
+  bukaKembaliRapor,
+  getRaporSaya,
+  getRaporRerata,
   simpanTokenFCM,
   kirimNotifikasiAdmin
 };

@@ -39,6 +39,22 @@ export async function sbSelect(env, table, queryString = '') {
 }
 
 /**
+ * Select SEMUA baris dengan paginasi (PostgREST membatasi 1000 baris per request;
+ * tanpa ini hasil query besar terpotong diam-diam). Query WAJIB menyertakan
+ * `order=` yang stabil supaya halaman tidak saling tumpang tindih.
+ */
+export async function sbSelectAll(env, table, queryString = '', ukuranHalaman = 1000, maksHalaman = 30) {
+  const hasil = [];
+  for (let h = 0; h < maksHalaman; h++) {
+    const q = `${queryString}${queryString ? '&' : ''}limit=${ukuranHalaman}&offset=${h * ukuranHalaman}`;
+    const rows = await sbSelect(env, table, q);
+    for (const r of rows) hasil.push(r);
+    if (rows.length < ukuranHalaman) break;
+  }
+  return hasil;
+}
+
+/**
  * Insert BANYAK baris sekaligus dalam 1 request HTTP (PostgREST mendukung body
  * berupa array). Dipakai khusus di fungsi-fungsi otomasi (auto alpa, auto tidak
  * absen) yang bisa memproses puluhan/ratusan baris sekaligus - insert satu-satu
