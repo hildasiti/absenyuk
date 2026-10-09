@@ -1987,12 +1987,12 @@
 // Cukup ganti WORKER_API_URL di bawah kalau URL Worker berubah.
 // ==========================================
 
-var WORKER_API_URL = 'https://absenyuk.hildasitiawaliyah.workers.dev';
+var WORKER_API_URL = 'https://api.idrisiyyah.my.id';
 // Alamat cadangan Worker (mis. domain sendiri seperti https://api.idrisiyyah.my.id).
 // Sebagian operator seluler/WiFi di Indonesia memblokir atau sangat memperlambat
 // *.workers.dev; kalau alamat pertama gagal, percobaan berikutnya otomatis memakai
 // alamat berikutnya di daftar ini. Isi setelah domain Worker disiapkan.
-var WORKER_API_URLS = [WORKER_API_URL];
+var WORKER_API_URLS = [WORKER_API_URL, 'https://absenyuk.hildasitiawaliyah.workers.dev'];
 
 // Fungsi-fungsi backend yang butuh tahu "sekolah mana" saat dipanggil oleh
 // Admin Utama (yang bisa kelola lintas sekolah). Daftar ini HARUS cocok
