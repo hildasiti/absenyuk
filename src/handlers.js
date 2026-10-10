@@ -132,6 +132,7 @@ KEGIATAN_IDENTIK.forEach((nama) => {
   };
 });
 
+const JENIS_LAPORAN_PESANTREN = ['DZIKIR_MAKHSUS', 'PENGAJIAN_AHAD', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
 const STATUS_ABSEN_VALID = ['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Tugas Luar', 'Tanpa Keterangan', 'Cuti'];
 
 // ====================================================================
@@ -2253,6 +2254,32 @@ async function getReport(args, env) {
   let query = `sekolah_id=eq.${sekolahId}&${config.dateField}=gte.${sDateStr}&${config.dateField}=lte.${eDateStr}`;
   if (config.jenisKegiatan) query += `&jenis_kegiatan=eq.${config.jenisKegiatan}`;
   const rows = await sbSelect(env, config.table, query);
+
+  // Kegiatan Pesantren tidak diabsen semua guru dan TIDAK ada auto "Tidak Absen" (cron hanya
+  // untuk Sholat). Supaya laporan lengkap: pada tanggal yang benar-benar ada acaranya (minimal
+  // 20% staf aktif tercatat Hadir, aturan sama dengan Rapor GTK), staf aktif yang tidak punya
+  // baris ditambahkan sebagai "Tidak Absen". Hanya tampilan laporan - tidak menulis ke database.
+  if (JENIS_LAPORAN_PESANTREN.includes(config.jenisKegiatan)) {
+    const users = (await getUsersListCached(env, sekolahId)).filter((u) =>
+      ['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif');
+    const hadirPerTgl = {}, adaPerTgl = {};
+    rows.forEach((r) => {
+      if (r.status === 'Hadir') hadirPerTgl[r.tanggal] = (hadirPerTgl[r.tanggal] || 0) + 1;
+      (adaPerTgl[r.tanggal] = adaPerTgl[r.tanggal] || new Set()).add(String(r.nuptk).trim());
+    });
+    const ambang = Math.min(users.length || 1, Math.max(2, Math.ceil(users.length * 0.2)));
+    for (const tgl of Object.keys(hadirPerTgl).filter((t) => hadirPerTgl[t] >= ambang)) {
+      const cuti = await getGuruCutiAktifHariIni(env, sekolahId, tgl);
+      users.forEach((u) => {
+        const n = String(u.nuptk).trim();
+        if (adaPerTgl[tgl].has(n) || cuti[n]) return;
+        rows.push({
+          id: '-', tanggal: tgl, nuptk: n, nama: String(u.nama).trim(), kegiatan: config.jenisKegiatan,
+          status: 'Tidak Absen', catatan: 'Tidak melakukan absen pada kegiatan ini.', timestamp: ''
+        });
+      });
+    }
+  }
 
   const filterTarget = String(filterNuptk).trim();
 

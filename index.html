@@ -1675,7 +1675,7 @@
           <div class='col-6 col-md-3'><label class='form-label small fw-semibold mb-1' for='rapor-amb-b'>Baik mulai</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-amb-b'/></div>
           <div class='col-6 col-md-3'><label class='form-label small fw-semibold mb-1' for='rapor-amb-c'>Cukup mulai</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-amb-c'/></div>
           <div class='col-6 col-md-3'><label class='form-label small fw-semibold mb-1' for='rapor-amb-s'>Sedang mulai</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-amb-s'/></div>
-          <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-tempat'>Tempat penetapan (&quot;Ditetapkan di&quot;)</label><input class='form-control' id='rapor-tempat' maxlength='60'/></div>
+          <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-tempat'>Kota tanda tangan (kosong = Tasikmalaya)</label><input class='form-control' id='rapor-tempat' maxlength='60'/></div>
           <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-acara-persen'>Acara Pesantren dianggap diadakan jika dihadiri minimal (% staf)</label><input class='form-control' type='number' min='1' max='100' id='rapor-acara-persen'/></div>
         </div>
         <small class='text-muted d-block mt-2'>Bobot kehadiran (terlambat, izin, sakit) tetap diatur di menu <strong>Aturan Penilaian</strong> milik Admin Utama dan dipakai juga oleh rapor.</small>
@@ -4500,7 +4500,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           baris += `<tr><td class="c">${n + 1}</td><td>${escAttr(ind.nama)}</td><td class="c">${rpFmt(ind.bobot)}</td><td class="c">${ada ? rpFmt(it.nilai) : '-'}</td><td class="c">${ada ? rpFmt(it.nilai * ind.bobot) : '-'}</td><td class="ket">${escAttr(it.status === 'TIDAK_BERLAKU' ? 'Tidak berlaku' : (it.ket || ''))}</td></tr>`;
         });
       });
-      const kunciTtd = ruangTtdHtml(identitas.ttd_wakasek_url, 55);
+      const kunciTtd = ruangTtdHtml(identitas.ttd_wakasek_url, 38);
       return `<div class="halaman">
         <div class="kop-surat">${bungkusKopSurat(identitas, `<h3 class="kop-title">${schName}</h3><p class="kop-subtitle">${schAddress}</p>`)}</div>
         <div class="judul">RAPORT KINERJA GURU DAN TENAGA KEPENDIDIKAN${meta.final ? '' : ' <span class="draft">(DRAFT)</span>'}</div>
@@ -4519,9 +4519,13 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         </div>
         <div class="catatan"><b>Catatan:</b> ${escAttr(g.catatan || '-')}</div>
         <div class="ttd">
-          <div class="ttd-kanan">
-            <p>Ditetapkan di ${escAttr((meta.titimangsa && meta.titimangsa.tempat) || '..........')}</p>
-            <p>Tanggal ${escAttr((meta.titimangsa && meta.titimangsa.tanggal) || '..........')}</p>
+          <div class="ttd-kolom">
+            <p>&nbsp;</p>
+            <p style="margin-bottom:0;">Yang dinilai,<br/>&nbsp;</p><div style="height:38px;"></div>
+            <p class="fw-bold" style="text-decoration:underline;">${escAttr(g.nama)}</p>
+          </div>
+          <div class="ttd-kolom">
+            <p>${escAttr((meta.titimangsa && meta.titimangsa.tempat) || 'Tasikmalaya')}, ${escAttr((meta.titimangsa && meta.titimangsa.tanggal) || '..........')}</p>
             <p style="margin-bottom:0; position:relative; z-index:1;">Penilai,<br/>Wakasek Bidang SDM</p>${kunciTtd}
             <p class="fw-bold" style="text-decoration:underline; position:relative; z-index:1;">${wakasek}</p>
           </div>
@@ -4531,31 +4535,32 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
     return `<html><head><meta charset="UTF-8"><title>Rapor GTK - ${escAttr(meta.label)}</title>
       <style>
-        body { font-family: Arial, sans-serif; color:#000; background:#fff; font-size:11px; margin:0; }
+        body { font-family: Arial, sans-serif; color:#000; background:#fff; font-size:10.5px; margin:0; line-height:1.2; }
         .halaman { padding: 8px 14px; page-break-after: always; }
         .halaman:last-child { page-break-after: auto; }
-        .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 10px; text-align:center; }
+        .kop-surat { border-bottom: 3px double #000; padding-bottom: 4px; margin-bottom: 6px; text-align:center; }
         .kop-title { font-size:18px; font-weight:bold; text-transform:uppercase; margin:0; }
         .kop-subtitle { font-size:11px; margin:4px 0 0 0; color:#333; }
         .kop-baris-atas { font-size:15px; font-weight:600; text-transform:uppercase; margin:0; }
-        .judul { text-align:center; font-weight:bold; font-size:14px; margin:6px 0 8px; }
+        .judul { text-align:center; font-weight:bold; font-size:13px; margin:4px 0 5px; }
         .draft { color:#b00; font-size:11px; }
         table { border-collapse: collapse; width:100%; }
-        .meta td { padding:1px 2px; border:0; font-size:11.5px; }
-        .nilai th, .nilai td { border:1px solid #000; padding:3px 5px; vertical-align:middle; }
+        .meta td { padding:0 2px; border:0; font-size:11px; }
+        .nilai { font-size:10.5px; }
+        .nilai th, .nilai td { border:1px solid #000; padding:1px 5px; vertical-align:middle; }
         .nilai th { background:#e9e9e9; text-align:center; }
         .nilai tr.aspek td { background:#f3f3f3; font-weight:bold; }
         .nilai tr.total td { font-weight:bold; background:#f3f3f3; }
         .c { text-align:center; } .r { text-align:right; } .ket { font-size:10px; }
-        .dua { display:flex; gap:10px; margin-top:10px; align-items:flex-start; }
+        .dua { display:flex; gap:10px; margin-top:6px; align-items:flex-start; page-break-inside:avoid; break-inside:avoid; }
         .dua > div { flex:1; }
-        .kecil th, .kecil td { border:1px solid #000; padding:2px 5px; font-size:10.5px; }
+        .kecil th, .kecil td { border:1px solid #000; padding:1px 5px; font-size:10px; }
         .kecil th { background:#e9e9e9; text-align:center; }
-        .teguran { margin:6px 0 0; font-size:11px; }
-        .catatan { margin-top:10px; border:1px solid #000; padding:5px 7px; min-height:30px; font-size:11px; }
-        .ttd { margin-top:14px; display:flex; justify-content:flex-end; }
-        .ttd-kanan { width:46%; text-align:center; font-size:11px; }
-        .ttd-kanan p { margin:2px 0; }
+        .teguran { margin:4px 0 0; font-size:10.5px; }
+        .catatan { margin-top:6px; border:1px solid #000; padding:3px 7px; min-height:20px; font-size:10.5px; page-break-inside:avoid; break-inside:avoid; }
+        .ttd { margin-top:8px; display:flex; justify-content:space-between; page-break-inside:avoid; break-inside:avoid; }
+        .ttd-kolom { width:42%; text-align:center; font-size:10.5px; }
+        .ttd-kolom p { margin:1px 0; }
         .fw-bold { font-weight:bold; }
         @media print { .halaman { padding:0; } }
       </style></head><body>${halaman}${untukCetak ? `<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},800);},400);};<\/script>` : ''}</body></html>`;
@@ -4579,8 +4584,15 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   function isiPilihGuruCetak() {
     const sel = document.getElementById('rapor-pilih-guru');
     const dipilih = sel.value;
+    const pertama = !sel.options.length;
     sel.innerHTML = '<option value="">- Semua Guru -</option>' + RAPOR.data.guru.map(g => `<option value="${escAttr(g.nuptk)}">${escAttr(g.nama)}</option>`).join('');
     if (dipilih) sel.value = dipilih;
+    else if (pertama) {
+      // Default pratinjau: hanya rapor milik sendiri (kalau ikut dinilai), selain itu guru pertama.
+      // Pilih "- Semua Guru -" kalau butuh seluruhnya.
+      const sendiri = RAPOR.data.guru.find(g => String(g.nuptk).trim() === String(USER_DATA.nuptk || '').trim());
+      sel.value = sendiri ? sendiri.nuptk : (RAPOR.data.guru[0] ? RAPOR.data.guru[0].nuptk : '');
+    }
   }
 
   function daftarGuruCetakAdmin() {
