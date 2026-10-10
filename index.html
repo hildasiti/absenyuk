@@ -1579,6 +1579,7 @@
       <div class='d-flex flex-wrap gap-2 mb-2' id='rapor-toolbar'>
         <button class='btn btn-outline-primary' id='rapor-btn-hitung' onclick='hitungRaporOtomatisUI()'><i class='bi bi-arrow-repeat'></i> Hitung Nilai Otomatis</button>
         <button class='btn btn-success' id='rapor-btn-simpan' onclick='simpanPerubahanRapor()'><i class='bi bi-save'></i> Simpan Perubahan</button>
+        <button class='btn btn-outline-secondary' id='rapor-btn-peserta' onclick='aturPesertaRapor()' title='Pilih siapa saja yang ikut dirapor pada periode ini'><i class='bi bi-people'></i> Atur Peserta</button>
         <button class='btn btn-warning text-white fw-bold' id='rapor-btn-final' onclick='finalisasiRaporUI(false)'><i class='bi bi-lock-fill'></i> Finalisasi Periode</button>
         <button class='btn btn-outline-danger' id='rapor-btn-buka' onclick='bukaKembaliRaporUI()'><i class='bi bi-unlock'></i> Buka Kembali</button>
       </div>
@@ -2006,7 +2007,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
   'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadGambarIdentitas', 'hapusGambarIdentitas',
   'getRaporConfig', 'aktifkanRapor', 'simpanRaporConfig', 'getRaporPeriode', 'hitungRaporOtomatis',
-  'simpanNilaiRapor', 'finalisasiRapor', 'bukaKembaliRapor', 'getRaporRerata'
+  'simpanNilaiRapor', 'finalisasiRapor', 'bukaKembaliRapor', 'getRaporRerata', 'simpanPesertaRapor'
 ];
 
 (function () {
@@ -4050,6 +4051,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     tampil('rapor-btn-hitung', draft && info.bisaHitung);
     tampil('rapor-btn-simpan', draft && (izin.A || izin.B || izin.C || izin.D || izin.info));
     tampil('rapor-btn-final', draft && info.bisaFinalisasi);
+    tampil('rapor-btn-peserta', draft && info.bisaKelola);
     tampil('rapor-btn-buka', !draft && info.bisaKelola);
     perbaruiTombolSimpan();
   }
@@ -4262,6 +4264,34 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       }
       if (!res.success) return Swal.fire('Gagal', res.message, 'error');
       Swal.fire({ icon: 'success', title: 'Terkunci', text: res.message });
+      muatPeriodeRapor();
+    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+  }
+
+  /** Dialog pilih siapa saja yang ikut dirapor pada periode ini (guru baru/keluar/nonaktif). */
+  async function aturPesertaRapor() {
+    if (!RAPOR.data || !RAPOR.data.semuaStaf) return;
+    if (!(await simpanPerubahanRapor(true))) return;
+    const daftar = RAPOR.data.semuaStaf;
+    const baris = daftar.map(s =>
+      `<label class="d-flex align-items-center gap-2 py-1 border-bottom" style="cursor:pointer;">
+         <input type="checkbox" class="form-check-input mt-0 rp-peserta" value="${escAttr(s.nuptk)}" ${s.ikut ? 'checked' : ''}/>
+         <span class="flex-grow-1 text-start">${escAttr(s.nama)}</span>
+         ${s.status !== 'Aktif' ? '<span class="badge bg-secondary">Nonaktif</span>' : ''}
+       </label>`).join('');
+    const r = await Swal.fire({
+      title: 'Peserta Rapor ' + RAPOR.data.label,
+      width: 'min(95vw, 480px)',
+      html: '<div class="small text-muted text-start mb-2">Centang siapa saja yang dirapor pada periode ini. Guru baru yang belum bergabung atau guru yang sudah keluar bisa dikeluarkan; guru nonaktif yang masih bertugas di periode ini bisa dimasukkan. Pengaturan ini hanya berlaku untuk periode ini.</div>' +
+            '<div style="max-height:50vh; overflow:auto; border:1px solid #dee2e6; border-radius:6px; padding:4px 10px;">' + baris + '</div>',
+      showCancelButton: true, confirmButtonText: 'Simpan', cancelButtonText: 'Batal',
+      preConfirm: () => Array.from(document.querySelectorAll('.rp-peserta:checked')).map(el => el.value)
+    });
+    if (!r.isConfirmed) return;
+    Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    panggilBackendPromise('simpanPesertaRapor', SESSION_TOKEN, RAPOR.periode, r.value).then(res => {
+      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+      Swal.fire({ icon: 'success', title: 'Tersimpan', text: res.message });
       muatPeriodeRapor();
     }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
   }

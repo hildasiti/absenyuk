@@ -3518,6 +3518,7 @@ function bersihkanConfigRapor(input, lama) {
   return {
     cfg: {
       aktif: true, indikator, penilai, profil, ambang,
+      peserta: (lama && lama.peserta) || {},
       tempat_titimangsa: String(input.tempat_titimangsa || '').trim().slice(0, 60),
       ambang_acara_persen: isFinite(persen) && persen >= 1 && persen <= 100 ? persen : 20
     }
@@ -3530,7 +3531,33 @@ function bersihkanConfigRapor(input, lama) {
  * BELUM (belum dinilai, tidak ikut dihitung). Pedagogik (aspek B) otomatis
  * TIDAK_BERLAKU untuk staf berkategori "Tidak Mengajar".
  */
-function susunRaporPeriode(cfg, users, nilaiRows) {
+/**
+ * Staf yang ikut dirapor pada SEBUAH periode. Aturan bawaan (bukan hanya "yang aktif hari ini",
+ * karena itu membuat guru yang baru dinonaktifkan hilang dari bulan-bulan lalu dan guru baru
+ * muncul di bulan sebelum ia bergabung):
+ *   - sudah punya nilai tersimpan di periode itu -> ikut (data tidak boleh "hilang")
+ *   - selain itu: ikut bila berstatus Aktif DAN akunnya dibuat sebelum periode berakhir
+ * Admin bisa menimpa per orang per periode lewat cfg.peserta[periode] = { tambah:[], keluar:[] }.
+ * Return [{ u, nuptk, bawaan, ikut }] untuk semua staf (termasuk yang tidak ikut).
+ */
+function daftarStafPeriodeRapor(cfg, users, periode, endStr, nuptkAdaNilai) {
+  const ov = (cfg.peserta || {})[periode] || {};
+  const tambah = new Set((ov.tambah || []).map(String));
+  const keluar = new Set((ov.keluar || []).map(String));
+  return users
+    .filter((u) => ROLE_STAF_RAPOR.includes(String(u.role).trim()))
+    .map((u) => {
+      const nuptk = String(u.nuptk).trim();
+      const dibuat = u.created_at ? String(u.created_at).slice(0, 10) : '';
+      const bawaan = nuptkAdaNilai.has(nuptk) || (String(u.status).trim() === 'Aktif' && (!dibuat || dibuat <= endStr));
+      const ikut = keluar.has(nuptk) ? false : (tambah.has(nuptk) ? true : bawaan);
+      return { u, nuptk, bawaan, ikut };
+    });
+}
+
+function susunRaporPeriode(cfg, users, nilaiRows, periode, endStr) {
+  const adaNilai = new Set(nilaiRows.map((r) => String(r.nuptk).trim()));
+  const ikutSet = new Set(daftarStafPeriodeRapor(cfg, users, periode, endStr, adaNilai).filter((d) => d.ikut).map((d) => d.nuptk));
   const indikatorAktif = (cfg.indikator || []).filter((i) => i.aktif !== false);
   const peta = {};
   nilaiRows.forEach((r) => {
@@ -3540,7 +3567,7 @@ function susunRaporPeriode(cfg, users, nilaiRows) {
   });
   const profil = cfg.profil || {};
   const roster = users
-    .filter((u) => ROLE_STAF_RAPOR.includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif')
+    .filter((u) => ikutSet.has(String(u.nuptk).trim()))
     .sort((a, b) => {
       const ua = (profil[String(a.nuptk).trim()] || {}).urut || 99999;
       const ub = (profil[String(b.nuptk).trim()] || {}).urut || 99999;
@@ -3695,8 +3722,14 @@ async function getRaporPeriode(args, env) {
   return Object.assign(dasar, {
     status: 'DRAFT', indikator: ringkasIndikatorRapor(cfg),
     titimangsa: { tempat: cfg.tempat_titimangsa || '', tanggal: tanggalTitimangsaRapor() },
-    guru: susunRaporPeriode(cfg, users, nilaiRows),
-    otomatisDihitungPada: periodeRow ? periodeRow.otomatis_dihitung_pada : null
+    guru: susunRaporPeriode(cfg, users, nilaiRows, info.periode, info.endStr),
+    otomatisDihitungPada: periodeRow ? periodeRow.otomatis_dihitung_pada : null,
+    // Daftar semua staf untuk dialog "Atur Peserta Periode" (hanya yang berhak mengubahnya).
+    semuaStaf: isAdminAny(user)
+      ? daftarStafPeriodeRapor(cfg, users, info.periode, info.endStr, new Set(nilaiRows.map((r) => String(r.nuptk).trim())))
+          .map((d) => ({ nuptk: d.nuptk, nama: d.u.nama, status: String(d.u.status).trim(), kategori: d.u.kategori || 'Mengajar', ikut: d.ikut }))
+          .sort((a, b) => String(a.nama).localeCompare(String(b.nama), 'id'))
+      : undefined
   });
 }
 
@@ -3773,7 +3806,11 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
   const umumByJenis = {};
   daftarJenis.forEach((j, i) => { umumByJenis[j] = umumPerJenis[i]; });
 
-  const roster = users.filter((u) => ROLE_STAF_RAPOR.includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif');
+  // Peserta periode ini: sama persis dengan yang tampil di getRaporPeriode (aturan bawaan + penimpaan admin).
+  const barisAda = await sbSelectAll(env, 'rapor_nilai', `select=nuptk&${filterSekolah}&periode=eq.${infoAsli.periode}&order=nuptk.asc,indikator_key.asc`);
+  const adaNilai = new Set(barisAda.map((r) => String(r.nuptk).trim()));
+  const ikutSet = new Set(daftarStafPeriodeRapor(cfg, users, infoAsli.periode, infoAsli.endStr, adaNilai).filter((d) => d.ikut).map((d) => d.nuptk));
+  const roster = users.filter((u) => ikutSet.has(String(u.nuptk).trim()));
   const mapNilai = {}; (nilaiGuru || []).forEach((r) => { mapNilai[String(r.nuptk).trim()] = r; });
   const mapPay = {}; payroll.forEach((r) => { mapPay[String(r.nuptk).trim()] = r; });
   const mapJp = {}; jp.forEach((r) => { mapJp[String(r.nuptk).trim()] = r; });
@@ -4017,8 +4054,8 @@ async function finalisasiRapor(args, env) {
     getUsersListCached(env, sekolahId),
     sbSelectAll(env, 'rapor_nilai', `sekolah_id=eq.${encodeURIComponent(sekolahId)}&periode=eq.${info.periode}&order=nuptk.asc,indikator_key.asc`)
   ]);
-  const guru = susunRaporPeriode(cfg, users, nilaiRows);
-  if (guru.length === 0) return { success: false, message: 'Tidak ada staf aktif untuk dirapor.' };
+  const guru = susunRaporPeriode(cfg, users, nilaiRows, info.periode, info.endStr);
+  if (guru.length === 0) return { success: false, message: 'Tidak ada staf untuk dirapor pada periode ini.' };
 
   const totalBelum = guru.reduce((a, g) => a + g.jumlahBelum, 0);
   if (totalBelum > 0 && paksa !== true) {
@@ -4086,6 +4123,44 @@ async function getRaporSaya(args, env) {
 }
 
 /** Rerata beberapa periode (semester / tahun ajaran) dari rapor yang sudah FINAL. Khusus Admin & Kepala Sekolah. */
+/** Atur siapa saja yang ikut dirapor pada satu periode (hanya Admin, hanya periode Draft). */
+async function simpanPesertaRapor(args, env) {
+  const [token, periode, daftarIkut, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || cfg.aktif === false) return { success: false, message: 'Rapor GTK belum diaktifkan untuk sekolah ini.' };
+  const info = rentangPeriodeRapor(periode);
+  if (!info) return { success: false, message: 'Periode tidak valid.' };
+  if (!Array.isArray(daftarIkut)) return { success: false, message: 'Daftar peserta tidak valid.' };
+
+  const periodeRow = await ambilPeriodeRaporRow(env, sekolahId, info.periode, 'status');
+  if (periodeRow && periodeRow.status === 'FINAL') return { success: false, message: 'Periode ini sudah difinalisasi. Buka kembali dulu untuk mengubah peserta.' };
+
+  const [users, nilaiRows] = await Promise.all([
+    getUsersListCached(env, sekolahId),
+    sbSelectAll(env, 'rapor_nilai', `select=nuptk&sekolah_id=eq.${encodeURIComponent(sekolahId)}&periode=eq.${info.periode}&order=nuptk.asc,indikator_key.asc`)
+  ]);
+  const adaNilai = new Set(nilaiRows.map((r) => String(r.nuptk).trim()));
+  const mau = new Set(daftarIkut.map((x) => String(x).trim()));
+  const tambah = [], keluar = [];
+  daftarStafPeriodeRapor(cfg, users, info.periode, info.endStr, adaNilai).forEach((d) => {
+    const ingin = mau.has(d.nuptk);
+    if (ingin && !d.bawaan) tambah.push(d.nuptk);
+    else if (!ingin && d.bawaan) keluar.push(d.nuptk);
+  });
+
+  cfg.peserta = cfg.peserta || {};
+  if (tambah.length === 0 && keluar.length === 0) delete cfg.peserta[info.periode];
+  else cfg.peserta[info.periode] = { tambah, keluar };
+  // Simpan paling banyak 36 periode terakhir supaya konfigurasi tidak membengkak.
+  Object.keys(cfg.peserta).sort().slice(0, Math.max(0, Object.keys(cfg.peserta).length - 36)).forEach((k) => delete cfg.peserta[k]);
+  await tulisConfigRapor(env, sekolahId, cfg);
+  return { success: true, message: `Peserta rapor ${info.label} disimpan (${mau.size} orang). Jalankan "Hitung Nilai Otomatis" lagi agar nilai orang yang baru ditambahkan terisi.` };
+}
+
 async function getRaporRerata(args, env) {
   const [token, periodeAwal, periodeAkhir, requestedSekolahId] = args;
   const user = await requireUser(env, token);
@@ -4203,6 +4278,7 @@ export const handlers = {
   bukaKembaliRapor,
   getRaporSaya,
   getRaporRerata,
+  simpanPesertaRapor,
   simpanTokenFCM,
   kirimNotifikasiAdmin
 };
