@@ -316,11 +316,11 @@
   .rapor-grid-wrap { max-height: 70vh; overflow: auto; }
   .rapor-grid { font-size: 0.82rem; min-width: max-content; }
   .rapor-grid thead th { position: sticky; top: 0; z-index: 3; background: #e9ecef; text-align: center; vertical-align: middle; }
-  .rapor-grid thead tr:nth-child(2) th { top: 34px; }
+  .rapor-grid thead tr:nth-child(2) th { top: var(--rp-tinggi-baris1, 34px); }
   .rapor-grid .rp-nama { position: sticky; left: 0; z-index: 2; background: #fff; min-width: 190px; max-width: 230px; }
   .rapor-grid thead .rp-nama { z-index: 4; background: #e9ecef; }
   .rapor-grid .rp-no { text-align: center; width: 38px; }
-  .rapor-grid .rp-ind { min-width: 96px; max-width: 130px; font-weight: 600; font-size: 0.74rem; }
+  .rapor-grid .rp-ind { min-width: 150px; max-width: 170px; width: 160px; font-weight: 600; font-size: 0.74rem; white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }
   .rapor-grid .rp-bobot { font-weight: 400; color: #6c757d; font-size: 0.68rem; }
   .rapor-grid .rp-aspek { background: #dbe7f3 !important; }
   .rapor-grid .rp-sel { min-width: 74px; }
@@ -1678,6 +1678,13 @@
           <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-tempat'>Kota tanda tangan (kosong = Tasikmalaya)</label><input class='form-control' id='rapor-tempat' maxlength='60'/></div>
           <div class='col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-acara-persen'>Acara Pesantren dianggap diadakan jika dihadiri minimal (% staf)</label><input class='form-control' type='number' min='1' max='100' id='rapor-acara-persen'/></div>
         </div>
+        <h6 class='fw-bold text-secondary mt-3 mb-1'>Nilai Kehadiran Kegiatan Pesantren (skala 0 - 10)</h6>
+        <div class='row g-2'>
+          <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-pes-majelis'>Hadir di Majelis</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-pes-majelis'/></div>
+          <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-pes-streaming'>Hadir Streaming</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-pes-streaming'/></div>
+          <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-pes-berhalangan'>Berhalangan</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-pes-berhalangan'/></div>
+        </div>
+        <small class='text-muted d-block mt-1'>Nilai indikator Pesantren = rata-rata nilai tiap acara. Tidak absen dihitung 0; Sakit / Izin Terkonfirmasi tidak dihitung.</small>
         <small class='text-muted d-block mt-2'>Bobot kehadiran (terlambat, izin, sakit) tetap diatur di menu <strong>Aturan Penilaian</strong> milik Admin Utama dan dipakai juga oleh rapor.</small>
       </div>
 
@@ -4147,6 +4154,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     });
     h += '</tbody>';
     grid.innerHTML = h;
+    try { const tr1 = grid.querySelector('thead tr'); if (tr1) grid.style.setProperty('--rp-tinggi-baris1', tr1.offsetHeight + 'px'); } catch (e) {}
     d.guru.forEach((g, gi) => perbaruiBarisRapor(gi));
     perbaruiTombolSimpan();
   }
@@ -4363,6 +4371,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     document.getElementById('rapor-amb-s').value = a.sedang;
     document.getElementById('rapor-tempat').value = cfg.tempat_titimangsa || '';
     document.getElementById('rapor-acara-persen').value = cfg.ambang_acara_persen || 20;
+    const np = Object.assign({ majelis: 10, streaming: 7, berhalangan: 0 }, cfg.nilai_pesantren || {});
+    document.getElementById('rapor-pes-majelis').value = np.majelis;
+    document.getElementById('rapor-pes-streaming').value = np.streaming;
+    document.getElementById('rapor-pes-berhalangan').value = np.berhalangan;
   }
 
   function renderBarisIndikatorSetup() {
@@ -4441,7 +4453,11 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         cukup: parseFloat(document.getElementById('rapor-amb-c').value), sedang: parseFloat(document.getElementById('rapor-amb-s').value)
       },
       tempat_titimangsa: document.getElementById('rapor-tempat').value.trim(),
-      ambang_acara_persen: parseFloat(document.getElementById('rapor-acara-persen').value)
+      ambang_acara_persen: parseFloat(document.getElementById('rapor-acara-persen').value),
+      nilai_pesantren: {
+        majelis: document.getElementById('rapor-pes-majelis').value, streaming: document.getElementById('rapor-pes-streaming').value,
+        berhalangan: document.getElementById('rapor-pes-berhalangan').value
+      }
     };
     Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
     panggilBackendPromise('simpanRaporConfig', SESSION_TOKEN, config).then(res => {

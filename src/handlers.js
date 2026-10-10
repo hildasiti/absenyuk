@@ -2264,7 +2264,7 @@ async function getReport(args, env) {
       ['GURU', 'KEPALA_SEKOLAH', 'PIKET', 'ADMIN_SEKOLAH'].includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif');
     const hadirPerTgl = {}, adaPerTgl = {};
     rows.forEach((r) => {
-      if (r.status === 'Hadir') hadirPerTgl[r.tanggal] = (hadirPerTgl[r.tanggal] || 0) + 1;
+      if (STATUS_PESANTREN_HADIR.includes(r.status)) hadirPerTgl[r.tanggal] = (hadirPerTgl[r.tanggal] || 0) + 1;
       (adaPerTgl[r.tanggal] = adaPerTgl[r.tanggal] || new Set()).add(String(r.nuptk).trim());
     });
     const ambang = Math.min(users.length || 1, Math.max(2, Math.ceil(users.length * 0.2)));
@@ -3368,6 +3368,9 @@ const SUMBER_RAPOR_OTOMATIS = ['KEHADIRAN', 'KETEPATAN', 'TAWASUL', 'SHOLAT', 'P
 const SUMBER_RAPOR_SEMUA = [...SUMBER_RAPOR_OTOMATIS, 'MANUAL'];
 const JENIS_PESANTREN_DEFAULT = ['DZIKIR_MAKHSUS', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
 const KEY_BLOK_KEHADIRAN = ['H_SAKIT', 'H_IZIN_DINAS', 'H_IZIN', 'H_TK', 'H_TERLAMBAT', 'K_SAKIT', 'K_IZIN_DINAS', 'K_IZIN', 'K_TK', 'K_TERLAMBAT'];
+// Kegiatan Pesantren memakai opsi 'Hadir di Majelis' / 'Hadir Streaming' / 'Berhalangan' (bukan 'Hadir');
+// 'Hadir' tetap diterima untuk data lama.
+const STATUS_PESANTREN_HADIR = ['Hadir', 'Hadir di Majelis', 'Hadir Streaming'];
 const STATUS_SHOLAT_SAH = ['Berjamaah', 'Bertugas', 'Haid'];
 const STATUS_KEGIATAN_DIKECUALIKAN = ['Izin Terkonfirmasi', 'Sakit'];
 const STATUS_KHUSUS_DIKECUALIKAN = ['Izin', 'Sakit', 'Izin Terkonfirmasi', 'Tugas Luar', 'Cuti'];
@@ -3384,26 +3387,25 @@ function templateConfigRapor() {
       I('I03', 'A', 'Ketepatan Waktu Setiap Kegiatan Sekolah dan Yayasan', 'KETEPATAN'),
       I('I04', 'B', 'Menyelesaikan Administrasi Guru', 'MANUAL'),
       I('I05', 'B', 'Melakukan Asesmen Siswa', 'MANUAL'),
+      I('I20', 'B', 'Membawa Perangkat/Administrasi Pembelajaran', 'MANUAL'),
       I('I06', 'B', 'Kreatif dan Inovatif dalam Mengajar', 'MANUAL'),
-      I('I07', 'B', 'Supervisi Pembelajaran', 'MANUAL'),
       I('I08', 'C', 'Tawasul Harian', 'TAWASUL'),
       I('I09', 'C', 'Shalat Dzuhur / Ashar', 'SHOLAT'),
       I('I10', 'C', 'Adab Suluk (Dzikir Makhsus, Pengajian Arbain, Qini Nasional)', 'PESANTREN', { jenis: JENIS_PESANTREN_DEFAULT.slice() }),
       I('I11', 'C', 'Perhatian dan Aktif Terlibat dalam Kegiatan Sekolah', 'MANUAL'),
-      I('I12', 'C', 'Piket Pembiasaan', 'MANUAL'),
-      I('I13', 'C', 'Berpenampilan Rapih dan Sopan', 'MANUAL'),
-      I('I14', 'C', 'Adab dan Etika', 'MANUAL'),
+      I('I12', 'C', 'Piket Pembiasaan Sesuai Jadwal', 'MANUAL'),
+      I('I13', 'C', 'Berpenampilan Rapih dan Sopan (seragam sesuai ketentuan)', 'MANUAL'),
       I('I15', 'D', 'Standar Pelayanan', 'MANUAL'),
       I('I16', 'D', 'Mengikuti Rapat Evaluasi GTK', 'KEGIATAN_KHUSUS', { kataKunci: 'rapat' }),
       I('I17', 'D', 'Mengikuti Pelatihan Mandiri', 'KEGIATAN_KHUSUS', { kataKunci: 'pelatihan' }),
-      I('I18', 'D', 'Aktif dalam Kegiatan KKG', 'KEGIATAN_KHUSUS', { kataKunci: 'kkg' }),
-      I('I19', 'D', 'Membuat Karya (Alat Peraga, Karya Ilmiah)', 'MANUAL')
+      I('I18', 'D', 'Aktif dalam Kegiatan KKG', 'KEGIATAN_KHUSUS', { kataKunci: 'kkg' })
     ],
     penilai: { pedagogik: [], lainnya: [] },
     profil: {},
     ambang: { sangat_baik: 9, baik: 7.01, cukup: 5.51, sedang: 4.01 },
     tempat_titimangsa: '',
-    ambang_acara_persen: 20
+    ambang_acara_persen: 20,
+    nilai_pesantren: { majelis: 10, streaming: 7, berhalangan: 0 }
   };
 }
 
@@ -3542,12 +3544,20 @@ function bersihkanConfigRapor(input, lama) {
   }
 
   const persen = Number(input.ambang_acara_persen);
+  const np = input.nilai_pesantren || {};
+  const nilaiPes = {};
+  for (const [k, def] of [['majelis', 10], ['streaming', 7], ['berhalangan', 0]]) {
+    const v = np[k] === '' || np[k] === undefined || np[k] === null ? def : Number(np[k]);
+    if (!isFinite(v) || v < 0 || v > 10) return { galat: 'Nilai kehadiran pesantren harus angka 0 sampai 10.' };
+    nilaiPes[k] = v;
+  }
   return {
     cfg: {
       aktif: true, indikator, penilai, profil, ambang,
       peserta: (lama && lama.peserta) || {},
       tempat_titimangsa: String(input.tempat_titimangsa || '').trim().slice(0, 60),
-      ambang_acara_persen: isFinite(persen) && persen >= 1 && persen <= 100 ? persen : 20
+      ambang_acara_persen: isFinite(persen) && persen >= 1 && persen <= 100 ? persen : 20,
+      nilai_pesantren: nilaiPes
     }
   };
 }
@@ -3867,7 +3877,7 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
     if (acaraPerJenis[jenis]) return acaraPerJenis[jenis];
     const hadirPerTanggal = {};
     (umumByJenis[jenis] || []).forEach((r) => {
-      if (r.status === 'Hadir') hadirPerTanggal[r.tanggal] = (hadirPerTanggal[r.tanggal] || 0) + 1;
+      if (STATUS_PESANTREN_HADIR.includes(r.status)) hadirPerTanggal[r.tanggal] = (hadirPerTanggal[r.tanggal] || 0) + 1;
     });
     const set = new Set(Object.keys(hadirPerTanggal).filter((t) => hadirPerTanggal[t] >= ambangAcara));
     acaraPerJenis[jenis] = set;
@@ -3933,20 +3943,24 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
         if (total === 0) { catatTB(n, k, 'Tidak ada data sholat pada periode ini'); continue; }
         catatNilai(n, k, (sah / total) * 10, `Sah ${sah} dari ${total} waktu wajib`);
       } else if (ind.sumber === 'PESANTREN') {
-        let acara = 0, hadir = 0, dikecualikan = 0;
+        const np = Object.assign({ majelis: 10, streaming: 7, berhalangan: 0 }, cfg.nilai_pesantren || {});
+        let acara = 0, poin = 0, dikecualikan = 0, nM = 0, nS = 0, nB = 0;
         (ind.jenis || []).forEach((j) => {
           const sesi = hitungAcara(j);
           acara += sesi.size;
           (umumPerGuru(j)[n] || []).forEach((r) => {
             if (!sesi.has(r.tanggal)) return;
-            if (r.status === 'Hadir') hadir++;
+            if (r.status === 'Hadir di Majelis' || r.status === 'Hadir') { nM++; poin += Number(np.majelis); }
+            else if (r.status === 'Hadir Streaming') { nS++; poin += Number(np.streaming); }
+            else if (r.status === 'Berhalangan') { nB++; poin += Number(np.berhalangan); }
             else if (STATUS_KEGIATAN_DIKECUALIKAN.includes(r.status)) dikecualikan++;
           });
         });
         if (acara === 0) { catatTB(n, k, 'Tidak ada acara tercatat pada periode ini'); continue; }
         const penyebut = acara - dikecualikan;
         if (penyebut <= 0) { catatTB(n, k, 'Seluruh acara berstatus izin/sakit'); continue; }
-        catatNilai(n, k, (Math.min(hadir, penyebut) / penyebut) * 10, `Hadir ${Math.min(hadir, penyebut)} dari ${penyebut} acara`);
+        const ket = `Majelis ${nM}, streaming ${nS}, berhalangan ${nB} dari ${penyebut} acara`;
+        catatNilai(n, k, Math.min(10, poin / penyebut), ket);
       } else if (ind.sumber === 'KEGIATAN_KHUSUS') {
         const kata = String(ind.kataKunci || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
         const agenda = jadwal.filter((a) => {
