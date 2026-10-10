@@ -4505,7 +4505,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         <div class="kop-surat">${bungkusKopSurat(identitas, `<h3 class="kop-title">${schName}</h3><p class="kop-subtitle">${schAddress}</p>`)}</div>
         <div class="judul">RAPORT KINERJA GURU DAN TENAGA KEPENDIDIKAN${meta.final ? '' : ' <span class="draft">(DRAFT)</span>'}</div>
         <table class="meta"><tr><td style="width:120px;">Nama</td><td>: ${escAttr(g.nama)}</td></tr>
-          <tr><td>NIY</td><td>: ${escAttr(g.nuptk)}</td></tr>
           <tr><td>Jabatan</td><td>: ${escAttr(g.jabatan || '-')}</td></tr>
           <tr><td>Mulai Khidmah</td><td>: ${escAttr(g.mulai || '-')}</td></tr>
           <tr><td>Periode</td><td>: ${escAttr(meta.label)}${meta.rentangLabel ? ' (' + escAttr(meta.rentangLabel) + ')' : ''}</td></tr></table>
@@ -4532,7 +4531,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
     return `<html><head><meta charset="UTF-8"><title>Rapor GTK - ${escAttr(meta.label)}</title>
       <style>
-        @page { size: A4; margin: 12mm; }
+        @page { size: A4; }
         body { font-family: Arial, sans-serif; color:#000; background:#fff; font-size:11px; margin:0; }
         .halaman { padding: 8px 14px; page-break-after: always; }
         .halaman:last-child { page-break-after: auto; }
