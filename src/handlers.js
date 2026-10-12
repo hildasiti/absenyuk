@@ -3453,6 +3453,15 @@ const JENIS_PENDAMPINGAN = [
   { kunci: 'dzuhur', jenis: 'SHOLAT_DZUHUR', label: 'Dzuhur', status: ['Bertugas'] },
   { kunci: 'ashar', jenis: 'SHOLAT_ASHAR', label: 'Ashar', status: ['Bertugas'] }
 ];
+
+/** Penugasan efektif satu guru pada satu periode: penyesuaian admin kalau ada, kalau tidak default sekolah. */
+function penugasanEfektif(cfg, periode, nuptk) {
+  const ov = ((cfg.kuota || {})[periode] || {})[String(nuptk).trim()];
+  const sumber = ov || cfg.kuota_default || {};
+  const hasil = {};
+  JENIS_PENDAMPINGAN.forEach((j) => { hasil[j.kunci] = Number(sumber[j.kunci]) || 0; });
+  return hasil;
+}
 const SUMBER_RAPOR_SEMUA = [...SUMBER_RAPOR_OTOMATIS, 'MANUAL'];
 const JENIS_PESANTREN_DEFAULT = ['DZIKIR_MAKHSUS', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
 const KEY_BLOK_KEHADIRAN = ['H_SAKIT', 'H_IZIN_DINAS', 'H_IZIN', 'H_TK', 'H_TERLAMBAT', 'K_SAKIT', 'K_IZIN_DINAS', 'K_IZIN', 'K_TK', 'K_TERLAMBAT'];
@@ -3493,7 +3502,8 @@ function templateConfigRapor() {
     ambang: { sangat_baik: 9, baik: 7.01, cukup: 5.51, sedang: 4.01 },
     tempat_titimangsa: '',
     ambang_acara_persen: 20,
-    nilai_pesantren: { majelis: 10, streaming: 7, berhalangan: 0 }
+    nilai_pesantren: { majelis: 10, streaming: 7, berhalangan: 0 },
+    kuota_default: { dhuha: 10, dzuhur: 8, ashar: 8 }
   };
 }
 
@@ -3623,6 +3633,13 @@ function bersihkanConfigRapor(input, lama) {
     return { galat: 'Ambang predikat harus menurun: Sangat Baik > Baik > Cukup > Sedang.' };
   }
 
+  const kd = input.kuota_default || {};
+  const kuotaDefault = {};
+  for (const j of JENIS_PENDAMPINGAN) {
+    const v = kd[j.kunci] === '' || kd[j.kunci] === undefined || kd[j.kunci] === null ? 0 : Number(kd[j.kunci]);
+    if (!Number.isInteger(v) || v < 0 || v > 60) return { galat: `Default penugasan ${j.label} harus bilangan bulat 0 sampai 60.` };
+    kuotaDefault[j.kunci] = v;
+  }
   const persen = Number(input.ambang_acara_persen);
   const np = input.nilai_pesantren || {};
   const nilaiPes = {};
@@ -3638,7 +3655,8 @@ function bersihkanConfigRapor(input, lama) {
       kuota: (lama && lama.kuota) || {},
       tempat_titimangsa: String(input.tempat_titimangsa || '').trim().slice(0, 60),
       ambang_acara_persen: isFinite(persen) && persen >= 1 && persen <= 100 ? persen : 20,
-      nilai_pesantren: nilaiPes
+      nilai_pesantren: nilaiPes,
+      kuota_default: kuotaDefault
     }
   };
 }
@@ -3846,7 +3864,7 @@ async function getRaporPeriode(args, env) {
     guru: susunRaporPeriode(cfg, users, nilaiRows, info.periode, info.endStr),
     otomatisDihitungPada: periodeRow ? periodeRow.otomatis_dihitung_pada : null,
     kuota: isAdminAny(user) ? ((cfg.kuota || {})[info.periode] || {}) : undefined,
-    kuotaSebelumnya: isAdminAny(user) ? ((cfg.kuota || {})[periodeSebelumnyaRapor(info.periode)] || {}) : undefined,
+    kuotaDefault: isAdminAny(user) ? (cfg.kuota_default || {}) : undefined,
     // Daftar semua staf untuk dialog "Atur Peserta Periode" (hanya yang berhak mengubahnya).
     semuaStaf: isAdminAny(user)
       ? daftarStafPeriodeRapor(cfg, users, info.periode, info.endStr, new Set(nilaiRows.map((r) => String(r.nuptk).trim())))
@@ -4030,7 +4048,7 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
         if (total === 0) { catatTB(n, k, 'Tidak ada data sholat pada periode ini'); continue; }
         catatNilai(n, k, (sah / total) * 10, `Sah ${sah} dari ${total} waktu wajib`);
       } else if (ind.sumber === 'PENDAMPINGAN') {
-        const kuotaGuru = ((cfg.kuota || {})[infoAsli.periode] || {})[n] || {};
+        const kuotaGuru = penugasanEfektif(cfg, infoAsli.periode, n);
         const rasio = [], ket = [];
         JENIS_PENDAMPINGAN.forEach((j) => {
           const kuota = Number(kuotaGuru[j.kunci]) || 0;
@@ -4293,16 +4311,18 @@ async function simpanKuotaPendampingan(args, env) {
     for (const j of JENIS_PENDAMPINGAN) {
       const v = k[j.kunci] === '' || k[j.kunci] === null || k[j.kunci] === undefined ? 0 : Number(k[j.kunci]);
       if (!Number.isInteger(v) || v < 0 || v > 60) return { success: false, message: `Penugasan ${j.label} harus bilangan bulat 0 sampai 60.` };
-      if (v > 0) baris[j.kunci] = v;
+      baris[j.kunci] = v;
     }
-    if (Object.keys(baris).length) bersih[String(nuptk).trim()] = baris;
+    // Simpan hanya yang berbeda dari default sekolah (penyesuaian per guru).
+    const def = cfg.kuota_default || {};
+    if (JENIS_PENDAMPINGAN.some((j) => baris[j.kunci] !== (Number(def[j.kunci]) || 0))) bersih[String(nuptk).trim()] = baris;
   }
 
   cfg.kuota = cfg.kuota || {};
   if (Object.keys(bersih).length === 0) delete cfg.kuota[info.periode]; else cfg.kuota[info.periode] = bersih;
   Object.keys(cfg.kuota).sort().slice(0, Math.max(0, Object.keys(cfg.kuota).length - 36)).forEach((k) => delete cfg.kuota[k]);
   await tulisConfigRapor(env, sekolahId, cfg);
-  return { success: true, message: `Penugasan piket pembiasaan ${info.label} disimpan untuk ${Object.keys(bersih).length} guru. Jalankan "Hitung Nilai Otomatis" lagi agar nilai terbarui.` };
+  return { success: true, message: `Penugasan piket pembiasaan ${info.label} disimpan (${Object.keys(bersih).length} guru berbeda dari default). Jalankan "Hitung Nilai Otomatis" lagi agar nilai terbarui.` };
 }
 
 /** Kuota & realisasi pendampingan milik guru sendiri pada periode berjalan (panel di menu Kegiatan Sekolah). */
@@ -4316,8 +4336,8 @@ async function getPendampinganSaya(args, env) {
   const { start, end, label } = getPeriodeBerjalan();
   const sDateStr = toDateStr(start), eDateStr = toDateStr(end);
   const periode = eDateStr.slice(0, 7);
-  const kuota = (((cfg.kuota || {})[periode]) || {})[String(user.nuptk).trim()];
-  if (!kuota || !JENIS_PENDAMPINGAN.some((j) => kuota[j.kunci] > 0)) return { ada: false };
+  const kuota = penugasanEfektif(cfg, periode, user.nuptk);
+  if (!JENIS_PENDAMPINGAN.some((j) => kuota[j.kunci] > 0)) return { ada: false };
 
   const rows = await sbSelect(env, 'kegiatan_umum',
     `sekolah_id=eq.${encodeURIComponent(user.sekolahId)}&nuptk=eq.${encodeURIComponent(user.nuptk)}&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}` +

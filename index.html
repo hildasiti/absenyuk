@@ -1595,8 +1595,7 @@
       <div class='d-flex flex-wrap gap-2 mb-2' id='rapor-toolbar'>
         <button class='btn btn-outline-primary' id='rapor-btn-hitung' onclick='hitungRaporOtomatisUI()'><i class='bi bi-arrow-repeat'></i> Hitung Nilai Otomatis</button>
         <button class='btn btn-success' id='rapor-btn-simpan' onclick='simpanPerubahanRapor()'><i class='bi bi-save'></i> Simpan Perubahan</button>
-        <button class='btn btn-outline-secondary' id='rapor-btn-peserta' onclick='aturPesertaRapor()' title='Pilih siapa saja yang ikut dirapor pada periode ini'><i class='bi bi-people'></i> Atur Peserta</button>
-        <button class='btn btn-outline-secondary' id='rapor-btn-kuota' onclick='aturKuotaPendampinganRapor()' title='Penugasan piket pembiasaan (Dhuha, Dzuhur, Ashar) per guru untuk periode ini'><i class='bi bi-person-check'></i> Penugasan Piket Pembiasaan</button>
+        <button class='btn btn-outline-secondary' id='rapor-btn-peserta' onclick='aturPesertaRapor()' title='Atur siapa yang ikut dirapor dan penugasan piket pembiasaan tiap guru pada periode ini'><i class='bi bi-people'></i> Peserta &amp; Penugasan</button>
         <button class='btn btn-warning text-white fw-bold' id='rapor-btn-final' onclick='finalisasiRaporUI(false)'><i class='bi bi-lock-fill'></i> Finalisasi Periode</button>
         <button class='btn btn-outline-danger' id='rapor-btn-buka' onclick='bukaKembaliRaporUI()'><i class='bi bi-unlock'></i> Buka Kembali</button>
       </div>
@@ -1693,6 +1692,13 @@
           <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-pes-berhalangan'>Berhalangan</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-pes-berhalangan'/></div>
         </div>
         <small class='text-muted d-block mt-1'>Nilai indikator Pesantren = rata-rata nilai tiap acara. Tidak absen dihitung 0; Sakit / Izin Terkonfirmasi tidak dihitung.</small>
+        <h6 class='fw-bold text-secondary mt-3 mb-1'>Penugasan Piket Pembiasaan - Default per Bulan</h6>
+        <div class='row g-2'>
+          <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-def-dhuha'>Pendampingan Dhuha</label><input class='form-control' type='number' min='0' max='60' step='1' id='rapor-def-dhuha'/></div>
+          <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-def-dzuhur'>Pendampingan Dzuhur</label><input class='form-control' type='number' min='0' max='60' step='1' id='rapor-def-dzuhur'/></div>
+          <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-def-ashar'>Pendampingan Ashar</label><input class='form-control' type='number' min='0' max='60' step='1' id='rapor-def-ashar'/></div>
+        </div>
+        <small class='text-muted d-block mt-1'>Berlaku otomatis untuk semua guru setiap bulan. Guru yang penugasannya berbeda diatur per periode lewat tombol <strong>Peserta &amp; Penugasan</strong>. Kosong/0 = tidak ada penugasan jenis itu.</small>
         <small class='text-muted d-block mt-2'>Bobot kehadiran (terlambat, izin, sakit) tetap diatur di menu <strong>Aturan Penilaian</strong> milik Admin Utama dan dipakai juga oleh rapor.</small>
       </div>
 
@@ -4067,7 +4073,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     tampil('rapor-btn-simpan', draft && (izin.A || izin.B || izin.C || izin.D || izin.info));
     tampil('rapor-btn-final', draft && info.bisaFinalisasi);
     tampil('rapor-btn-peserta', draft && info.bisaKelola);
-    tampil('rapor-btn-kuota', draft && info.bisaKelola);
     tampil('rapor-btn-buka', !draft && info.bisaKelola);
     perbaruiTombolSimpan();
   }
@@ -4285,78 +4290,65 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
   }
 
-  /** Dialog pilih siapa saja yang ikut dirapor pada periode ini (guru baru/keluar/nonaktif). */
+  /** Satu dialog: siapa yang ikut dirapor pada periode ini + penugasan piket pembiasaan tiap guru (default dari Pengaturan Rapor). */
   async function aturPesertaRapor() {
     if (!RAPOR.data || !RAPOR.data.semuaStaf) return;
     if (!(await simpanPerubahanRapor(true))) return;
     const daftar = RAPOR.data.semuaStaf;
-    const baris = daftar.map(s =>
-      `<label class="d-flex align-items-center gap-2 py-1 border-bottom" style="cursor:pointer;">
-         <input type="checkbox" class="form-check-input mt-0 rp-peserta" value="${escAttr(s.nuptk)}" ${s.ikut ? 'checked' : ''}/>
-         <span class="flex-grow-1 text-start">${escAttr(s.nama)}</span>
-         ${s.status !== 'Aktif' ? '<span class="badge bg-secondary">Nonaktif</span>' : ''}
-       </label>`).join('');
-    const r = await Swal.fire({
-      title: 'Peserta Rapor ' + RAPOR.data.label,
-      width: 'min(95vw, 480px)',
-      html: '<div class="small text-muted text-start mb-2">Centang siapa saja yang dirapor pada periode ini. Guru baru yang belum bergabung atau guru yang sudah keluar bisa dikeluarkan; guru nonaktif yang masih bertugas di periode ini bisa dimasukkan. Pengaturan ini hanya berlaku untuk periode ini.</div>' +
-            '<div style="max-height:50vh; overflow:auto; border:1px solid #dee2e6; border-radius:6px; padding:4px 10px;">' + baris + '</div>',
-      showCancelButton: true, confirmButtonText: 'Simpan', cancelButtonText: 'Batal',
-      preConfirm: () => Array.from(document.querySelectorAll('.rp-peserta:checked')).map(el => el.value)
-    });
-    if (!r.isConfirmed) return;
-    Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    panggilBackendPromise('simpanPesertaRapor', SESSION_TOKEN, RAPOR.periode, r.value).then(res => {
-      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
-      Swal.fire({ icon: 'success', title: 'Tersimpan', text: res.message });
-      muatPeriodeRapor();
-    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
-  }
-
-  /** Dialog penugasan piket pembiasaan (Dhuha/Dzuhur/Ashar) per guru untuk periode ini. */
-  async function aturKuotaPendampinganRapor() {
-    if (!RAPOR.data || !RAPOR.data.semuaStaf) return;
-    if (!(await simpanPerubahanRapor(true))) return;
     const kuota = RAPOR.data.kuota || {};
-    const sebelumnya = RAPOR.data.kuotaSebelumnya || {};
-    const daftar = RAPOR.data.semuaStaf.filter(s => s.ikut);
+    const def = RAPOR.data.kuotaDefault || {};
     const kolom = [['dhuha', 'Dhuha'], ['dzuhur', 'Dzuhur'], ['ashar', 'Ashar']];
-    const input = (nuptk, k) => `<input type="number" min="0" max="60" step="1" class="form-control form-control-sm text-center rp-kuota" data-n="${escAttr(nuptk)}" data-k="${k}" value="${(kuota[nuptk] && kuota[nuptk][k]) || ''}" style="min-width:56px;"/>`;
-    const baris = daftar.map(s => `<tr><td class="text-start">${escAttr(s.nama)}</td>${kolom.map(([k]) => `<td>${input(s.nuptk, k)}</td>`).join('')}</tr>`).join('');
-    const adaSebelumnya = Object.keys(sebelumnya).length > 0;
+    const nilaiAwal = (nuptk, k) => {
+      const sumber = kuota[nuptk] || def;
+      const v = Number(sumber[k]) || 0;
+      return v ? v : '';
+    };
+    const baris = daftar.map(s =>
+      `<tr>
+         <td class="text-start"><label class="d-flex align-items-center gap-2 mb-0" style="cursor:pointer;">
+           <input type="checkbox" class="form-check-input mt-0 rp-peserta" value="${escAttr(s.nuptk)}" ${s.ikut ? 'checked' : ''}/>
+           <span>${escAttr(s.nama)}</span>${s.status !== 'Aktif' ? ' <span class="badge bg-secondary">Nonaktif</span>' : ''}
+         </label></td>
+         ${kolom.map(([k]) => `<td><input type="number" min="0" max="60" step="1" class="form-control form-control-sm text-center rp-kuota" data-n="${escAttr(s.nuptk)}" data-k="${k}" value="${nilaiAwal(s.nuptk, k)}" style="min-width:54px;"/></td>`).join('')}
+       </tr>`).join('');
+    const teksDefault = kolom.map(([k, l]) => `${l} ${Number(def[k]) || 0}`).join(', ');
     const r = await Swal.fire({
-      title: 'Penugasan Piket Pembiasaan ' + RAPOR.data.label,
-      width: 'min(96vw, 560px)',
-      html: '<div class="small text-muted text-start mb-2">Isi jumlah penugasan piket pembiasaan (pendampingan) yang harus dilakukan tiap guru pada periode ini. Kosongkan jika guru tidak punya penugasan. Realisasi dihitung otomatis dari absen Kegiatan Sekolah berstatus <b>Bertugas</b>. Ketidakhadiran dalam bentuk apa pun tidak mengurangi jumlah penugasan.</div>' +
-        `<div class="d-flex gap-2 mb-2">${adaSebelumnya ? '<button type="button" class="btn btn-sm btn-outline-primary" id="rp-kuota-salin">Salin dari periode sebelumnya</button>' : ''}<button type="button" class="btn btn-sm btn-outline-secondary" id="rp-kuota-kosongkan">Kosongkan semua</button></div>` +
-        '<div style="max-height:50vh; overflow:auto; border:1px solid #dee2e6; border-radius:6px;"><table class="table table-sm align-middle mb-0"><thead class="table-light" style="position:sticky;top:0;"><tr><th class="text-start">Guru</th>' + kolom.map(([, l]) => `<th>${l}</th>`).join('') + '</tr></thead><tbody>' + baris + '</tbody></table></div>',
+      title: 'Peserta & Penugasan ' + RAPOR.data.label,
+      width: 'min(96vw, 600px)',
+      html: '<div class="small text-muted text-start mb-2"><b>Peserta:</b> centang siapa saja yang dirapor pada periode ini (guru baru/keluar bisa dikeluarkan, guru nonaktif yang masih bertugas bisa dimasukkan).<br>' +
+            '<b>Penugasan Piket Pembiasaan:</b> jumlah pendampingan per guru pada periode ini. Terisi otomatis dari default (<b>' + escAttr(teksDefault) + '</b>, diatur di Pengaturan Rapor); ubah hanya untuk guru yang berbeda. Kosong = tidak ada penugasan jenis itu. Realisasi dihitung dari absen berstatus <b>Bertugas</b>; ketidakhadiran tidak mengurangi penugasan.</div>' +
+            '<div class="text-start mb-2"><button type="button" class="btn btn-sm btn-outline-secondary" id="rp-kuota-default">Kembalikan penugasan ke default</button></div>' +
+            '<div style="max-height:52vh; overflow:auto; border:1px solid #dee2e6; border-radius:6px;"><table class="table table-sm align-middle mb-0"><thead class="table-light" style="position:sticky;top:0;z-index:1;"><tr><th class="text-start">Guru</th>' + kolom.map(([, l]) => `<th class="text-center">${l}</th>`).join('') + '</tr></thead><tbody>' + baris + '</tbody></table></div>',
       didOpen: () => {
-        const salin = document.getElementById('rp-kuota-salin');
-        if (salin) salin.onclick = () => document.querySelectorAll('.rp-kuota').forEach(el => { el.value = (sebelumnya[el.dataset.n] && sebelumnya[el.dataset.n][el.dataset.k]) || ''; });
-        document.getElementById('rp-kuota-kosongkan').onclick = () => document.querySelectorAll('.rp-kuota').forEach(el => { el.value = ''; });
+        document.getElementById('rp-kuota-default').onclick = () => document.querySelectorAll('.rp-kuota').forEach(el => { const v = Number(def[el.dataset.k]) || 0; el.value = v ? v : ''; });
       },
       showCancelButton: true, confirmButtonText: 'Simpan', cancelButtonText: 'Batal',
       preConfirm: () => {
-        const hasil = {};
+        const peserta = Array.from(document.querySelectorAll('.rp-peserta:checked')).map(el => el.value);
+        const ikut = new Set(peserta);
+        const kuotaBaru = {};
         let salah = false;
         document.querySelectorAll('.rp-kuota').forEach(el => {
+          if (!ikut.has(el.dataset.n)) return;
           const v = el.value.trim();
-          if (v === '') return;
-          const angka = Number(v);
+          const angka = v === '' ? 0 : Number(v);
           if (!Number.isInteger(angka) || angka < 0 || angka > 60) { salah = true; return; }
-          (hasil[el.dataset.n] = hasil[el.dataset.n] || {})[el.dataset.k] = angka;
+          (kuotaBaru[el.dataset.n] = kuotaBaru[el.dataset.n] || {})[el.dataset.k] = angka;
         });
-        if (salah) { Swal.showValidationMessage('Jumlah penugasan harus bilangan bulat 0 sampai 60.'); return false; }
-        return hasil;
+        if (salah) { Swal.showValidationMessage('Penugasan harus bilangan bulat 0 sampai 60.'); return false; }
+        return { peserta, kuota: kuotaBaru };
       }
     });
     if (!r.isConfirmed) return;
     Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    panggilBackendPromise('simpanKuotaPendampingan', SESSION_TOKEN, RAPOR.periode, r.value).then(res => {
-      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
-      Swal.fire({ icon: 'success', title: 'Tersimpan', text: res.message });
+    try {
+      const res1 = await panggilBackendPromise('simpanPesertaRapor', SESSION_TOKEN, RAPOR.periode, r.value.peserta);
+      if (!res1.success) return Swal.fire('Gagal', res1.message, 'error');
+      const res2 = await panggilBackendPromise('simpanKuotaPendampingan', SESSION_TOKEN, RAPOR.periode, r.value.kuota);
+      if (!res2.success) return Swal.fire('Peserta tersimpan, penugasan gagal', res2.message, 'error').then(() => muatPeriodeRapor());
+      Swal.fire({ icon: 'success', title: 'Tersimpan', text: 'Peserta dan penugasan piket pembiasaan disimpan. Jalankan "Hitung Nilai Otomatis" lagi agar nilai terbarui.' });
       muatPeriodeRapor();
-    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+    } catch (err) { Swal.fire('Gagal', (err && err.message) || String(err), 'error'); }
   }
 
   function bukaKembaliRaporUI() {
@@ -4426,6 +4418,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     document.getElementById('rapor-pes-majelis').value = np.majelis;
     document.getElementById('rapor-pes-streaming').value = np.streaming;
     document.getElementById('rapor-pes-berhalangan').value = np.berhalangan;
+    const kd = cfg.kuota_default || {};
+    ['dhuha', 'dzuhur', 'ashar'].forEach(k => { document.getElementById('rapor-def-' + k).value = kd[k] ? kd[k] : ''; });
   }
 
   function renderBarisIndikatorSetup() {
@@ -4498,6 +4492,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       },
       tempat_titimangsa: document.getElementById('rapor-tempat').value.trim(),
       ambang_acara_persen: parseFloat(document.getElementById('rapor-acara-persen').value),
+      kuota_default: {
+        dhuha: document.getElementById('rapor-def-dhuha').value, dzuhur: document.getElementById('rapor-def-dzuhur').value, ashar: document.getElementById('rapor-def-ashar').value
+      },
       nilai_pesantren: {
         majelis: document.getElementById('rapor-pes-majelis').value, streaming: document.getElementById('rapor-pes-streaming').value,
         berhalangan: document.getElementById('rapor-pes-berhalangan').value
