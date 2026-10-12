@@ -1420,6 +1420,18 @@
                 <label class='form-label mb-1' for='u-kwj-jp'>Kewajiban Mengajar (JP/minggu)</label>
                 <input class='form-control' id='u-kwj-jp' min='1' max='60' placeholder='Sesuai SK, biasanya 20-35' title='Kewajiban Mengajar (JP/minggu) - sesuai SK, biasanya 20-35' type='number'/>
             </div>
+            <div class='col-12 col-md-4'>
+                <label class='form-label mb-1' for='u-urut'>No. Urut di Rapor <small class='text-muted fw-normal'>(opsional)</small></label>
+                <input class='form-control' id='u-urut' type='number' min='1' max='999' placeholder='Kosong = urut abjad'/>
+            </div>
+            <div class='col-12 col-md-4'>
+                <label class='form-label mb-1' for='u-jabatan'>Jabatan <small class='text-muted fw-normal'>(tampil di rapor)</small></label>
+                <input class='form-control' id='u-jabatan' maxlength='80' placeholder='mis. Wk. SDM - Guru Kelas 4A'/>
+            </div>
+            <div class='col-12 col-md-4'>
+                <label class='form-label mb-1' for='u-mulai'>Mulai Khidmah <small class='text-muted fw-normal'>(tampil di rapor)</small></label>
+                <input class='form-control' id='u-mulai' maxlength='30' placeholder='mis. Juli 2018'/>
+            </div>
             <div class='col-12 d-grid d-md-flex justify-content-md-end'>
                 <button class='btn btn-primary px-4' style='white-space: nowrap;' type='submit'><i class='bi bi-person-plus me-1'></i> Tambah</button>
             </div>
@@ -1662,16 +1674,7 @@
         </div>
       </div>
 
-      <div class='card p-3 shadow-sm border-0 mb-3'>
-        <h6 class='fw-bold text-secondary mb-1'>Data di lembar rapor</h6>
-        <p class='text-muted small mb-2'>Jabatan dan Mulai Khidmah tampil di kepala rapor. No. urut menentukan urutan guru (kosong = urut abjad di bawahnya).</p>
-        <div class='table-responsive'>
-          <table class='table table-sm table-bordered align-middle mb-0'>
-            <thead class='table-secondary'><tr><th style='width:90px;'>No. urut</th><th>Nama</th><th>Jabatan</th><th>Mulai Khidmah</th></tr></thead>
-            <tbody id='rapor-setup-profil'></tbody>
-          </table>
-        </div>
-      </div>
+      <div class='alert alert-light border small mb-3'><i class='bi bi-info-circle'></i> No. urut, Jabatan, dan Mulai Khidmah yang tampil di lembar rapor diatur di menu <strong>Data Guru</strong> (tombol Edit pada tiap guru).</div>
 
       <div class='card p-3 shadow-sm border-0 mb-3'>
         <h6 class='fw-bold text-secondary mb-2'>Predikat &amp; lain-lain</h6>
@@ -4412,10 +4415,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const opsi = (terpilih) => staf.map(g => `<option value="${escAttr(g.nuptk)}" ${terpilih.indexOf(g.nuptk) !== -1 ? 'selected' : ''}>${escAttr(g.nama)}</option>`).join('');
     document.getElementById('rapor-penilai-ped').innerHTML = opsi((cfg.penilai && cfg.penilai.pedagogik) || []);
     document.getElementById('rapor-penilai-lain').innerHTML = opsi((cfg.penilai && cfg.penilai.lainnya) || []);
-    document.getElementById('rapor-setup-profil').innerHTML = staf.map(g => {
-      const p = (cfg.profil || {})[g.nuptk] || {};
-      return `<tr data-n="${escAttr(g.nuptk)}"><td><input class="form-control form-control-sm" type="number" min="1" max="999" data-f="urut" value="${p.urut || ''}"/></td><td>${escAttr(g.nama)}<div class="small text-muted">${escAttr(g.kategori)}</div></td><td><input class="form-control form-control-sm" maxlength="80" data-f="jabatan" value="${escAttr(p.jabatan || '')}"/></td><td><input class="form-control form-control-sm" maxlength="30" data-f="mulai" placeholder="mis. Juli 2018" value="${escAttr(p.mulai || '')}"/></td></tr>`;
-    }).join('');
     const a = cfg.ambang || {};
     document.getElementById('rapor-amb-sb').value = a.sangat_baik;
     document.getElementById('rapor-amb-b').value = a.baik;
@@ -4490,16 +4489,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   function simpanPengaturanRapor() {
     const cfgLama = RAPOR.info.config || {};
     const ambilMulti = id => Array.from(document.getElementById(id).selectedOptions).map(o => o.value);
-    const profil = Object.assign({}, cfgLama.profil || {});
-    document.querySelectorAll('#rapor-setup-profil tr[data-n]').forEach(tr => {
-      const n = tr.getAttribute('data-n');
-      const nilai = f => { const el = tr.querySelector('[data-f="' + f + '"]'); return el ? el.value.trim() : ''; };
-      profil[n] = { urut: nilai('urut') ? parseInt(nilai('urut'), 10) : null, jabatan: nilai('jabatan'), mulai: nilai('mulai') };
-    });
     const config = {
       indikator: RAPOR.setup.map(i => ({ key: i.key, aspek: i.aspek, nama: i.nama, bobot: Number(i.bobot), sumber: i.sumber, aktif: i.aktif !== false, kataKunci: i.kataKunci, jenis: i.jenis })),
       penilai: { pedagogik: ambilMulti('rapor-penilai-ped'), lainnya: ambilMulti('rapor-penilai-lain') },
-      profil,
       ambang: {
         sangat_baik: parseFloat(document.getElementById('rapor-amb-sb').value), baik: parseFloat(document.getElementById('rapor-amb-b').value),
         cukup: parseFloat(document.getElementById('rapor-amb-c').value), sedang: parseFloat(document.getElementById('rapor-amb-s').value)
@@ -5185,7 +5177,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         email: '-', password: document.getElementById('u-pass').value,
         role: document.getElementById('u-role').value,
         kategori: document.getElementById('u-kategori').value,
-        kewajibanMengajarJp: document.getElementById('u-kategori').value === 'Mengajar' ? document.getElementById('u-kwj-jp').value : null
+        kewajibanMengajarJp: document.getElementById('u-kategori').value === 'Mengajar' ? document.getElementById('u-kwj-jp').value : null,
+        noUrutRapor: document.getElementById('u-urut').value, jabatan: document.getElementById('u-jabatan').value,
+        mulaiKhidmah: document.getElementById('u-mulai').value
     };
     if (USER_DATA.role === 'ADMIN_UTAMA') {
       if (!CURRENT_SEKOLAH_ID) { Swal.fire('Pilih Sekolah Dulu', 'Pilih sekolah di pojok kiri atas sebelum menambah akun.', 'warning'); return; }
@@ -5287,6 +5281,15 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
             <input id="edit-u-kwj-jp" type="number" min="1" max="60" class="form-control mb-2" value="${guru.kewajibanMengajarJp || ''}" placeholder="Sesuai SK, biasanya 20-35" />
           </div>
 
+          <div class="row g-2 mb-2">
+            <div class="col-4"><label class="form-label small fw-semibold">No. Urut Rapor</label>
+              <input id="edit-u-urut" type="number" min="1" max="999" class="form-control" value="${guru.noUrutRapor || ''}" placeholder="Kosong = abjad" /></div>
+            <div class="col-8"><label class="form-label small fw-semibold">Mulai Khidmah</label>
+              <input id="edit-u-mulai" maxlength="30" class="form-control" value="${escAttr(guru.mulaiKhidmah || '')}" placeholder="mis. Juli 2018" /></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Jabatan <span class="text-muted fw-normal">(tampil di rapor)</span></label>
+              <input id="edit-u-jabatan" maxlength="80" class="form-control" value="${escAttr(guru.jabatan || '')}" placeholder="mis. Wk. SDM - Guru Kelas 4A" /></div>
+          </div>
+
           <label class="form-label small fw-semibold">Status</label>
           <select id="edit-u-status" class="form-select mb-2">
             <option value="Aktif" ${guru.status === 'Aktif' ? 'selected' : ''}>Aktif</option>
@@ -5307,6 +5310,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           role: document.getElementById('edit-u-role').value,
           kategori: document.getElementById('edit-u-kategori').value,
           kewajibanMengajarJp: document.getElementById('edit-u-kategori').value === 'Mengajar' ? document.getElementById('edit-u-kwj-jp').value : null,
+          noUrutRapor: document.getElementById('edit-u-urut').value,
+          jabatan: document.getElementById('edit-u-jabatan').value,
+          mulaiKhidmah: document.getElementById('edit-u-mulai').value,
           status: document.getElementById('edit-u-status').value,
           password: document.getElementById('edit-u-password').value
         };

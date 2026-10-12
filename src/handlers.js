@@ -1385,13 +1385,55 @@ async function saveSettingsData(args, env) {
 // USERS / GURU
 // ====================================================================
 
+/** Profil rapor (no. urut, jabatan, mulai khidmah) kini bagian dari data guru. Validasi input dari form. */
+function profilRaporDariForm(userData) {
+  const out = {};
+  if (userData.noUrutRapor !== undefined) {
+    const n = parseInt(userData.noUrutRapor, 10);
+    out.no_urut_rapor = isFinite(n) && n >= 1 && n <= 999 ? n : null;
+  }
+  if (userData.jabatan !== undefined) out.jabatan = String(userData.jabatan || '').trim().slice(0, 80) || null;
+  if (userData.mulaiKhidmah !== undefined) out.mulai_khidmah = String(userData.mulaiKhidmah || '').trim().slice(0, 30) || null;
+  return out;
+}
+
+/**
+ * Sekali jalan: salin profil lama yang tersimpan di konfigurasi rapor (cfg.profil) ke kolom data guru
+ * (hanya yang masih kosong), lalu kosongkan cfg.profil. Kalau kolom belum dibuat di Supabase, update gagal
+ * dan profil lama dibiarkan (tetap dipakai sebagai cadangan).
+ */
+async function migrasiProfilRapor(env, sekolahId) {
+  if (!sekolahId) return;
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || !cfg.profil || !Object.keys(cfg.profil).length) return;
+  const users = await sbSelect(env, 'users', `sekolah_id=eq.${encodeURIComponent(sekolahId)}`);
+  for (const nuptk of Object.keys(cfg.profil)) {
+    const p = cfg.profil[nuptk] || {};
+    const u = users.find((x) => String(x.nuptk).trim() === String(nuptk).trim());
+    if (!u) continue;
+    const data = {};
+    if (!u.jabatan && p.jabatan) data.jabatan = p.jabatan;
+    if (!u.no_urut_rapor && p.urut) data.no_urut_rapor = p.urut;
+    if (!u.mulai_khidmah && p.mulai) data.mulai_khidmah = p.mulai;
+    if (Object.keys(data).length) await sbUpdate(env, 'users', 'nuptk', u.nuptk, data);
+  }
+  cfg.profil = {};
+  await tulisConfigRapor(env, sekolahId, cfg);
+  await invalidate(env, `USERS_CACHE_${sekolahId}`);
+}
+
 async function getUsers(args, env) {
   const [token, requestedSekolahId] = args;
   const user = await requireUser(env, token);
   if (!isAdminAny(user)) return [];
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
+  try { await migrasiProfilRapor(env, sekolahId); } catch (e) { /* kolom baru belum ada / gagal: abaikan, profil lama tetap terbaca */ }
   const result = await getUsersListCached(env, sekolahId);
-  return result.map((u) => ({ id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, email: u.email, role: u.role, status: u.status, kategori: u.kategori || 'Mengajar', kewajibanMengajarJp: u.kewajiban_mengajar_jp || null }));
+  return result.map((u) => ({
+    id: u.legacy_id, nuptk: u.nuptk, nama: u.nama, email: u.email, role: u.role, status: u.status, kategori: u.kategori || 'Mengajar',
+    kewajibanMengajarJp: u.kewajiban_mengajar_jp || null,
+    noUrutRapor: u.no_urut_rapor || null, jabatan: u.jabatan || '', mulaiKhidmah: u.mulai_khidmah || ''
+  }));
 }
 
 async function saveUser(args, env) {
@@ -1423,7 +1465,8 @@ async function saveUser(args, env) {
       nuptk, sekolah_id: sekolahId, legacy_id: generateShortID('U'), nama: userData.nama, email: userData.email,
       password: userData.password, role: userData.role, status: 'Aktif',
       created_at: new Date().toISOString(), kategori: userData.kategori || 'Mengajar',
-      kewajiban_mengajar_jp: userData.kewajibanMengajarJp ? parseInt(userData.kewajibanMengajarJp, 10) : null
+      kewajiban_mengajar_jp: userData.kewajibanMengajarJp ? parseInt(userData.kewajibanMengajarJp, 10) : null,
+      ...profilRaporDariForm(userData)
     });
   } catch (err) {
     // NUPTK/Username adalah primary key GLOBAL (dipakai bersama di semua sekolah,
@@ -1459,7 +1502,8 @@ async function updateUser(args, env) {
   const dataUpdate = {
     nama: userData.nama, email: userData.email, role: userData.role,
     status: userData.status, kategori: userData.kategori || 'Mengajar',
-    kewajiban_mengajar_jp: userData.kewajibanMengajarJp ? parseInt(userData.kewajibanMengajarJp, 10) : null
+    kewajiban_mengajar_jp: userData.kewajibanMengajarJp ? parseInt(userData.kewajibanMengajarJp, 10) : null,
+    ...profilRaporDariForm(userData)
   };
   // Password cuma diupdate kalau memang diisi ulang (kolom dikosongkan di form = tidak diubah).
   if (userData.password && String(userData.password).trim() !== '') {
@@ -3566,16 +3610,8 @@ function bersihkanConfigRapor(input, lama) {
     lainnya: bersihNuptk(input.penilai && input.penilai.lainnya)
   };
 
-  const profil = {};
-  Object.keys(input.profil || {}).slice(0, 500).forEach((n) => {
-    const p = input.profil[n] || {};
-    const urut = parseInt(p.urut, 10);
-    profil[String(n).trim()] = {
-      jabatan: String(p.jabatan || '').trim().slice(0, 80),
-      mulai: String(p.mulai || '').trim().slice(0, 30),
-      urut: isFinite(urut) && urut > 0 ? urut : null
-    };
-  });
+  // Profil guru (no. urut, jabatan, mulai khidmah) sekarang ada di data guru; sisa profil lama dipertahankan sampai termigrasi.
+  const profil = (lama && lama.profil) || {};
 
   const a = input.ambang || {};
   const ambang = {
@@ -3651,8 +3687,8 @@ function susunRaporPeriode(cfg, users, nilaiRows, periode, endStr) {
   const roster = users
     .filter((u) => ikutSet.has(String(u.nuptk).trim()))
     .sort((a, b) => {
-      const ua = (profil[String(a.nuptk).trim()] || {}).urut || 99999;
-      const ub = (profil[String(b.nuptk).trim()] || {}).urut || 99999;
+      const ua = a.no_urut_rapor || (profil[String(a.nuptk).trim()] || {}).urut || 99999;
+      const ub = b.no_urut_rapor || (profil[String(b.nuptk).trim()] || {}).urut || 99999;
       if (ua !== ub) return ua - ub;
       return String(a.nama).localeCompare(String(b.nama), 'id');
     });
@@ -3683,7 +3719,7 @@ function susunRaporPeriode(cfg, users, nilaiRows, periode, endStr) {
     const angka = (k) => (baris[k] && baris[k].nilai !== null && baris[k].nilai !== undefined) ? Number(baris[k].nilai) : null;
     const p = profil[nuptk] || {};
     return {
-      nuptk, nama: u.nama, kategori, jabatan: p.jabatan || '', mulai: p.mulai || '', urut: p.urut || null,
+      nuptk, nama: u.nama, kategori, jabatan: u.jabatan || p.jabatan || '', mulai: u.mulai_khidmah || p.mulai || '', urut: u.no_urut_rapor || p.urut || null,
       items, jumlah: bulatkan2(jumlah), bobotTotal, rata, predikat: predikatRapor(rata, cfg.ambang),
       jumlahBelum: belum,
       teguran: angka('TEGURAN') || 0,
@@ -3728,6 +3764,9 @@ async function getRaporConfig(args, env) {
   const aktif = !!cfg && cfg.aktif !== false;
   if (!aktif) return { aktif: false, bisaKelola };
 
+  if (bisaKelola && cfg.profil && Object.keys(cfg.profil).length) {
+    try { await migrasiProfilRapor(env, sekolahId); } catch (e) { /* kolom belum ada: profil lama tetap dipakai */ }
+  }
   const bisaLihatSemua = bisaLihatSemuaRapor(user, cfg);
   return {
     aktif: true, bisaKelola, bisaLihatSemua,
