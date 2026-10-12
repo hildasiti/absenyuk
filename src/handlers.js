@@ -561,8 +561,42 @@ async function getAbsenMasukUntukEdit(args, env) {
   return { keteranganLibur, data };
 }
 
+/** Awalan "Ikut Tawasul" di kolom Keterangan dipasang/dicabut sesuai koreksi admin. */
+function aturKeteranganTawasul(keterangan, ubahTawasul) {
+  const asli = String(keterangan || '').trim();
+  if (!ubahTawasul) return asli || '-';
+  const sisa = asli.replace(/^Ikut Tawasul(\s*-\s*)?/i, '').trim();
+  if (ubahTawasul === 'ya') return sisa && sisa !== '-' ? `Ikut Tawasul - ${sisa}` : 'Ikut Tawasul';
+  return sisa || '-';
+}
+
+/** Koreksi manual kehadiran Briefing & Tawasul oleh admin/piket (guru terlambat absen tapi terbukti ikut). */
+async function terapkanKoreksiTawasul(env, sekolahId, nuptk, nama, tanggal, ubahTawasul, namaAdmin) {
+  const filter = { sekolah_id: sekolahId, jenis_kegiatan: 'BRIEFING_TAWASUL', tanggal, nuptk };
+  if (ubahTawasul === 'tidak') {
+    await sbDeleteWhere(env, 'kegiatan_umum', filter);
+    return;
+  }
+  const ada = await sbSelect(env, 'kegiatan_umum',
+    `sekolah_id=eq.${encodeURIComponent(sekolahId)}&jenis_kegiatan=eq.BRIEFING_TAWASUL&tanggal=eq.${tanggal}&nuptk=eq.${encodeURIComponent(nuptk)}&limit=1`);
+  const catatan = `Dikoreksi oleh ${namaAdmin || 'admin'} (Edit Absen Masuk).`;
+  if (ada.length) {
+    await sbUpdate(env, 'kegiatan_umum', 'id', ada[0].id, { status: 'Hadir', catatan });
+  } else {
+    await sbInsert(env, 'kegiatan_umum', {
+      id: generateShortID('K'), sekolah_id: sekolahId, jenis_kegiatan: 'BRIEFING_TAWASUL', tanggal, nuptk, nama,
+      kegiatan: 'BRIEFING_TAWASUL', status: 'Hadir', catatan, timestamp: new Date().toISOString()
+    });
+  }
+}
+
 async function updateAbsenMasuk(args, env) {
-  const [token, docId, jamBaru, statusBaru, keteranganBaru, nuptkBaru, tanggalBaru] = args;
+  const [token, docId, jamBaru, statusBaru, keteranganBaru, nuptkBaru, tanggalBaru, tawasulUbah] = args;
+  // tawasulUbah: 'ya' = admin menandai guru ikut Briefing & Tawasul, 'tidak' = mencabut tandanya, kosong = tidak diubah.
+  const ubahTawasul = tawasulUbah === 'ya' || tawasulUbah === 'tidak' ? tawasulUbah : '';
+  if (ubahTawasul === 'ya' && !['Hadir', 'Terlambat'].includes(statusBaru)) {
+    return { success: false, message: 'Tawasul hanya bisa ditandai untuk status Hadir atau Terlambat.' };
+  }
   const user = await requireUser(env, token);
   if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak. Hanya Admin yang bisa mengubah data absen.' };
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(jamBaru).trim())) {
@@ -591,14 +625,15 @@ async function updateAbsenMasuk(args, env) {
     const sudahAda = await sbSelect(env, 'absen_masuk',
       `sekolah_id=eq.${target.sekolah_id}&tanggal=eq.${tanggalBaru}&nuptk=eq.${encodeURIComponent(nuptkBaru)}&limit=1`);
     if (sudahAda.length) {
-      await sbUpdate(env, 'absen_masuk', 'id', sudahAda[0].id, { jam: String(jamBaru).trim(), status: statusBaru, keterangan: keteranganBaru || '-' });
+      await sbUpdate(env, 'absen_masuk', 'id', sudahAda[0].id, { jam: String(jamBaru).trim(), status: statusBaru, keterangan: aturKeteranganTawasul(keteranganBaru, ubahTawasul) });
     } else {
       await sbInsert(env, 'absen_masuk', {
         id: generateShortID('AE'), sekolah_id: target.sekolah_id, tanggal: tanggalBaru, nuptk: nuptkBaru, nama: target.nama,
         jam: String(jamBaru).trim(), latitude: null, longitude: null, jarak: null,
-        status: statusBaru, keterangan: keteranganBaru || '-', maps_link: '-'
+        status: statusBaru, keterangan: aturKeteranganTawasul(keteranganBaru, ubahTawasul), maps_link: '-'
       });
     }
+    if (ubahTawasul) await terapkanKoreksiTawasul(env, target.sekolah_id, nuptkBaru, target.nama, tanggalBaru, ubahTawasul, user.nama);
     await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${target.sekolah_id}`);
     return { success: true, message: `Data absen ${target.nama} tanggal ${tanggalBaru} berhasil dibuat.` };
   }
@@ -612,8 +647,9 @@ async function updateAbsenMasuk(args, env) {
   }
 
   await sbUpdate(env, 'absen_masuk', 'id', docId, {
-    jam: String(jamBaru).trim(), status: statusBaru, keterangan: keteranganBaru || '-'
+    jam: String(jamBaru).trim(), status: statusBaru, keterangan: aturKeteranganTawasul(keteranganBaru, ubahTawasul)
   });
+  if (ubahTawasul) await terapkanKoreksiTawasul(env, existing.sekolah_id, existing.nuptk, existing.nama, existing.tanggal, ubahTawasul, user.nama);
   await invalidate(env, `ABSEN_MASUK_PERIODE_CACHE_${existing.sekolah_id}`);
   return { success: true, message: `Data absen ${existing.nama} tanggal ${existing.tanggal} berhasil diperbarui.` };
 }
@@ -3364,7 +3400,15 @@ const ASPEK_RAPOR = {
   C: 'C. PENILAIAN KEPRIBADIAN',
   D: 'D. PROFESIONAL'
 };
-const SUMBER_RAPOR_OTOMATIS = ['KEHADIRAN', 'KETEPATAN', 'TAWASUL', 'SHOLAT', 'PESANTREN', 'KEGIATAN_KHUSUS'];
+const SUMBER_RAPOR_OTOMATIS = ['KEHADIRAN', 'KETEPATAN', 'TAWASUL', 'SHOLAT', 'PESANTREN', 'KEGIATAN_KHUSUS', 'PENDAMPINGAN'];
+
+// Pendampingan (piket pembiasaan): kuota per guru per periode diisi admin; realisasi dihitung dari absen
+// Kegiatan Sekolah. Dhuha terhitung bila status Bertugas ('Hadir' = data lama), Dzuhur/Ashar bila Bertugas.
+const JENIS_PENDAMPINGAN = [
+  { kunci: 'dhuha', jenis: 'PENDAMPINGAN_DHUHA', label: 'Dhuha', status: ['Bertugas', 'Hadir'] },
+  { kunci: 'dzuhur', jenis: 'SHOLAT_DZUHUR', label: 'Dzuhur', status: ['Bertugas'] },
+  { kunci: 'ashar', jenis: 'SHOLAT_ASHAR', label: 'Ashar', status: ['Bertugas'] }
+];
 const SUMBER_RAPOR_SEMUA = [...SUMBER_RAPOR_OTOMATIS, 'MANUAL'];
 const JENIS_PESANTREN_DEFAULT = ['DZIKIR_MAKHSUS', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
 const KEY_BLOK_KEHADIRAN = ['H_SAKIT', 'H_IZIN_DINAS', 'H_IZIN', 'H_TK', 'H_TERLAMBAT', 'K_SAKIT', 'K_IZIN_DINAS', 'K_IZIN', 'K_TK', 'K_TERLAMBAT'];
@@ -3393,7 +3437,7 @@ function templateConfigRapor() {
       I('I09', 'C', 'Shalat Dzuhur / Ashar', 'SHOLAT'),
       I('I10', 'C', 'Adab Suluk (Dzikir Makhsus, Pengajian Arbain, Qini Nasional)', 'PESANTREN', { jenis: JENIS_PESANTREN_DEFAULT.slice() }),
       I('I11', 'C', 'Perhatian dan Aktif Terlibat dalam Kegiatan Sekolah', 'MANUAL'),
-      I('I12', 'C', 'Piket Pembiasaan Sesuai Jadwal', 'MANUAL'),
+      I('I12', 'C', 'Piket Pembiasaan Sesuai Jadwal', 'PENDAMPINGAN'),
       I('I13', 'C', 'Berpenampilan Rapih dan Sopan (seragam sesuai ketentuan)', 'MANUAL'),
       I('I15', 'D', 'Standar Pelayanan', 'MANUAL'),
       I('I16', 'D', 'Mengikuti Rapat Evaluasi GTK', 'KEGIATAN_KHUSUS', { kataKunci: 'rapat' }),
@@ -3555,6 +3599,7 @@ function bersihkanConfigRapor(input, lama) {
     cfg: {
       aktif: true, indikator, penilai, profil, ambang,
       peserta: (lama && lama.peserta) || {},
+      kuota: (lama && lama.kuota) || {},
       tempat_titimangsa: String(input.tempat_titimangsa || '').trim().slice(0, 60),
       ambang_acara_persen: isFinite(persen) && persen >= 1 && persen <= 100 ? persen : 20,
       nilai_pesantren: nilaiPes
@@ -3761,6 +3806,8 @@ async function getRaporPeriode(args, env) {
     titimangsa: { tempat: cfg.tempat_titimangsa || '', tanggal: tanggalTitimangsaRapor() },
     guru: susunRaporPeriode(cfg, users, nilaiRows, info.periode, info.endStr),
     otomatisDihitungPada: periodeRow ? periodeRow.otomatis_dihitung_pada : null,
+    kuota: isAdminAny(user) ? ((cfg.kuota || {})[info.periode] || {}) : undefined,
+    kuotaSebelumnya: isAdminAny(user) ? ((cfg.kuota || {})[periodeSebelumnyaRapor(info.periode)] || {}) : undefined,
     // Daftar semua staf untuk dialog "Atur Peserta Periode" (hanya yang berhak mengubahnya).
     semuaStaf: isAdminAny(user)
       ? daftarStafPeriodeRapor(cfg, users, info.periode, info.endStr, new Set(nilaiRows.map((r) => String(r.nuptk).trim())))
@@ -3810,6 +3857,7 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
   const jenisDibutuhkan = new Set();
   if (punyaSumber('TAWASUL')) jenisDibutuhkan.add('BRIEFING_TAWASUL');
   if (punyaSumber('SHOLAT')) { jenisDibutuhkan.add('SHOLAT_DZUHUR'); jenisDibutuhkan.add('SHOLAT_ASHAR'); }
+  if (punyaSumber('PENDAMPINGAN')) JENIS_PENDAMPINGAN.forEach((j) => jenisDibutuhkan.add(j.jenis));
   indikatorOto.filter((i) => i.sumber === 'PESANTREN').forEach((i) => (i.jenis || []).forEach((j) => jenisDibutuhkan.add(j)));
   const daftarJenis = Array.from(jenisDibutuhkan);
 
@@ -3942,6 +3990,18 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
         });
         if (total === 0) { catatTB(n, k, 'Tidak ada data sholat pada periode ini'); continue; }
         catatNilai(n, k, (sah / total) * 10, `Sah ${sah} dari ${total} waktu wajib`);
+      } else if (ind.sumber === 'PENDAMPINGAN') {
+        const kuotaGuru = ((cfg.kuota || {})[infoAsli.periode] || {})[n] || {};
+        const rasio = [], ket = [];
+        JENIS_PENDAMPINGAN.forEach((j) => {
+          const kuota = Number(kuotaGuru[j.kunci]) || 0;
+          if (kuota <= 0) return;
+          const real = (umumPerGuru(j.jenis)[n] || []).filter((r) => j.status.includes(r.status)).length;
+          rasio.push(Math.min(1, real / kuota));
+          ket.push(`${j.label} ${real}/${kuota}`);
+        });
+        if (rasio.length === 0) { catatTB(n, k, 'Tidak ada penugasan piket pembiasaan pada periode ini'); continue; }
+        catatNilai(n, k, (rasio.reduce((a, b) => a + b, 0) / rasio.length) * 10, ket.join(', '));
       } else if (ind.sumber === 'PESANTREN') {
         const np = Object.assign({ majelis: 10, streaming: 7, berhalangan: 0 }, cfg.nilai_pesantren || {});
         let acara = 0, poin = 0, dikecualikan = 0, nM = 0, nS = 0, nB = 0;
@@ -4165,6 +4225,71 @@ async function getRaporSaya(args, env) {
 
 /** Rerata beberapa periode (semester / tahun ajaran) dari rapor yang sudah FINAL. Khusus Admin & Kepala Sekolah. */
 /** Atur siapa saja yang ikut dirapor pada satu periode (hanya Admin, hanya periode Draft). */
+function periodeSebelumnyaRapor(periode) {
+  const [y, m] = String(periode).split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Admin menyimpan kuota pendampingan (Dhuha/Dzuhur/Ashar) per guru untuk satu periode rapor. */
+async function simpanKuotaPendampingan(args, env) {
+  const [token, periode, kuotaMentah, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!isAdminAny(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  if (!cfg || cfg.aktif === false) return { success: false, message: 'Rapor GTK belum diaktifkan untuk sekolah ini.' };
+  const info = rentangPeriodeRapor(periode);
+  if (!info) return { success: false, message: 'Periode tidak valid.' };
+  if (!kuotaMentah || typeof kuotaMentah !== 'object') return { success: false, message: 'Data penugasan tidak valid.' };
+
+  const periodeRow = await ambilPeriodeRaporRow(env, sekolahId, info.periode, 'status');
+  if (periodeRow && periodeRow.status === 'FINAL') return { success: false, message: 'Periode ini sudah difinalisasi. Buka kembali dulu untuk mengubah penugasan.' };
+
+  const bersih = {};
+  for (const nuptk of Object.keys(kuotaMentah).slice(0, 500)) {
+    const k = kuotaMentah[nuptk] || {};
+    const baris = {};
+    for (const j of JENIS_PENDAMPINGAN) {
+      const v = k[j.kunci] === '' || k[j.kunci] === null || k[j.kunci] === undefined ? 0 : Number(k[j.kunci]);
+      if (!Number.isInteger(v) || v < 0 || v > 60) return { success: false, message: `Penugasan ${j.label} harus bilangan bulat 0 sampai 60.` };
+      if (v > 0) baris[j.kunci] = v;
+    }
+    if (Object.keys(baris).length) bersih[String(nuptk).trim()] = baris;
+  }
+
+  cfg.kuota = cfg.kuota || {};
+  if (Object.keys(bersih).length === 0) delete cfg.kuota[info.periode]; else cfg.kuota[info.periode] = bersih;
+  Object.keys(cfg.kuota).sort().slice(0, Math.max(0, Object.keys(cfg.kuota).length - 36)).forEach((k) => delete cfg.kuota[k]);
+  await tulisConfigRapor(env, sekolahId, cfg);
+  return { success: true, message: `Penugasan piket pembiasaan ${info.label} disimpan untuk ${Object.keys(bersih).length} guru. Jalankan "Hitung Nilai Otomatis" lagi agar nilai terbarui.` };
+}
+
+/** Kuota & realisasi pendampingan milik guru sendiri pada periode berjalan (panel di menu Kegiatan Sekolah). */
+async function getPendampinganSaya(args, env) {
+  const [token] = args;
+  const user = await requireUser(env, token);
+  if (!user || user.role === 'ADMIN_UTAMA' || !user.sekolahId) return { ada: false };
+  const cfg = await bacaConfigRapor(env, user.sekolahId);
+  if (!cfg || cfg.aktif === false) return { ada: false };
+
+  const { start, end, label } = getPeriodeBerjalan();
+  const sDateStr = toDateStr(start), eDateStr = toDateStr(end);
+  const periode = eDateStr.slice(0, 7);
+  const kuota = (((cfg.kuota || {})[periode]) || {})[String(user.nuptk).trim()];
+  if (!kuota || !JENIS_PENDAMPINGAN.some((j) => kuota[j.kunci] > 0)) return { ada: false };
+
+  const rows = await sbSelect(env, 'kegiatan_umum',
+    `sekolah_id=eq.${encodeURIComponent(user.sekolahId)}&nuptk=eq.${encodeURIComponent(user.nuptk)}&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}` +
+    `&jenis_kegiatan=in.(${JENIS_PENDAMPINGAN.map((j) => j.jenis).join(',')})`);
+  const item = JENIS_PENDAMPINGAN.filter((j) => kuota[j.kunci] > 0).map((j) => ({
+    kunci: j.kunci, label: j.label, kuota: kuota[j.kunci],
+    realisasi: rows.filter((r) => r.jenis_kegiatan === j.jenis && j.status.includes(r.status)).length
+  }));
+  return { ada: true, periodeLabel: label, item };
+}
+
 async function simpanPesertaRapor(args, env) {
   const [token, periode, daftarIkut, requestedSekolahId] = args;
   const user = await requireUser(env, token);
@@ -4310,6 +4435,8 @@ export const handlers = {
   deleteRekapJamPelajaran,
   getNilaiGuru,
   getRaporConfig,
+  simpanKuotaPendampingan,
+  getPendampinganSaya,
   aktifkanRapor,
   simpanRaporConfig,
   getRaporPeriode,

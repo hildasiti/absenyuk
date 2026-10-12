@@ -727,6 +727,10 @@
       </button>
     </form>
   </div>
+  <div class='card p-3 shadow-sm border-0 mt-3' id='ak-panel-pendampingan' style='display: none;'>
+    <h6 class='fw-bold text-secondary mb-2'><i class='bi bi-person-check-fill text-primary'></i> Piket Pembiasaan Anda <small class='text-muted fw-normal' id='ak-pend-periode'></small></h6>
+    <div id='ak-pend-isi'></div>
+  </div>
 </div>
 
 <!-- FORM 3: KEHADIRAN KEPESANTRENAN (MENGGUNAKAN GPS) -->
@@ -1580,6 +1584,7 @@
         <button class='btn btn-outline-primary' id='rapor-btn-hitung' onclick='hitungRaporOtomatisUI()'><i class='bi bi-arrow-repeat'></i> Hitung Nilai Otomatis</button>
         <button class='btn btn-success' id='rapor-btn-simpan' onclick='simpanPerubahanRapor()'><i class='bi bi-save'></i> Simpan Perubahan</button>
         <button class='btn btn-outline-secondary' id='rapor-btn-peserta' onclick='aturPesertaRapor()' title='Pilih siapa saja yang ikut dirapor pada periode ini'><i class='bi bi-people'></i> Atur Peserta</button>
+        <button class='btn btn-outline-secondary' id='rapor-btn-kuota' onclick='aturKuotaPendampinganRapor()' title='Penugasan piket pembiasaan (Dhuha, Dzuhur, Ashar) per guru untuk periode ini'><i class='bi bi-person-check'></i> Penugasan Piket Pembiasaan</button>
         <button class='btn btn-warning text-white fw-bold' id='rapor-btn-final' onclick='finalisasiRaporUI(false)'><i class='bi bi-lock-fill'></i> Finalisasi Periode</button>
         <button class='btn btn-outline-danger' id='rapor-btn-buka' onclick='bukaKembaliRaporUI()'><i class='bi bi-unlock'></i> Buka Kembali</button>
       </div>
@@ -2014,7 +2019,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
   'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadGambarIdentitas', 'hapusGambarIdentitas',
   'getRaporConfig', 'aktifkanRapor', 'simpanRaporConfig', 'getRaporPeriode', 'hitungRaporOtomatis',
-  'simpanNilaiRapor', 'finalisasiRapor', 'bukaKembaliRapor', 'getRaporRerata', 'simpanPesertaRapor'
+  'simpanNilaiRapor', 'finalisasiRapor', 'bukaKembaliRapor', 'getRaporRerata', 'simpanPesertaRapor', 'simpanKuotaPendampingan'
 ];
 
 (function () {
@@ -2814,7 +2819,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if(id === 'cuti-guru') { loadCutiGuruList(); loadDropdownGuruUntukCuti(); }
     if(id === 'kelola-kegiatan') loadJadwalKegiatanList();
     if(id === 'absen-kegiatan-khusus') loadKegiatanDropdown();
-    if(id === 'absen-kegiatan') { updateStatusOptionsAK(); checkLockKegiatan('ak'); }
+    if(id === 'absen-kegiatan') { updateStatusOptionsAK(); checkLockKegiatan('ak'); muatPendampinganSaya(); }
     if(id === 'absen-masuk') { muatDanMulaiLiveGPS('sekolah'); muatStatusAbsenHariIni(); }
     if(id === 'absen-pesantren') {
       const tglField = document.getElementById('ap-tanggal');
@@ -3857,7 +3862,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   const RAPOR_LABEL_SUMBER = {
     MANUAL: 'Diisi penilai', KEHADIRAN: 'Otomatis: Kehadiran', KETEPATAN: 'Otomatis: Ketepatan waktu',
     TAWASUL: 'Otomatis: Tawasul', SHOLAT: 'Otomatis: Sholat', PESANTREN: 'Otomatis: Kegiatan Pesantren',
-    KEGIATAN_KHUSUS: 'Otomatis: Kegiatan Khusus'
+    KEGIATAN_KHUSUS: 'Otomatis: Kegiatan Khusus', PENDAMPINGAN: 'Otomatis: Piket Pembiasaan (penugasan)'
   };
   const RAPOR_JENIS_PESANTREN = {
     DZIKIR_MAKHSUS: 'Dzikir Makhsus', PENGAJIAN_AHAD: 'Pengajian Ahad', PENGAJIAN_ARBAIN: 'Pengajian Arbain',
@@ -4059,6 +4064,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     tampil('rapor-btn-simpan', draft && (izin.A || izin.B || izin.C || izin.D || izin.info));
     tampil('rapor-btn-final', draft && info.bisaFinalisasi);
     tampil('rapor-btn-peserta', draft && info.bisaKelola);
+    tampil('rapor-btn-kuota', draft && info.bisaKelola);
     tampil('rapor-btn-buka', !draft && info.bisaKelola);
     perbaruiTombolSimpan();
   }
@@ -4298,6 +4304,52 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if (!r.isConfirmed) return;
     Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
     panggilBackendPromise('simpanPesertaRapor', SESSION_TOKEN, RAPOR.periode, r.value).then(res => {
+      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+      Swal.fire({ icon: 'success', title: 'Tersimpan', text: res.message });
+      muatPeriodeRapor();
+    }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+  }
+
+  /** Dialog penugasan piket pembiasaan (Dhuha/Dzuhur/Ashar) per guru untuk periode ini. */
+  async function aturKuotaPendampinganRapor() {
+    if (!RAPOR.data || !RAPOR.data.semuaStaf) return;
+    if (!(await simpanPerubahanRapor(true))) return;
+    const kuota = RAPOR.data.kuota || {};
+    const sebelumnya = RAPOR.data.kuotaSebelumnya || {};
+    const daftar = RAPOR.data.semuaStaf.filter(s => s.ikut);
+    const kolom = [['dhuha', 'Dhuha'], ['dzuhur', 'Dzuhur'], ['ashar', 'Ashar']];
+    const input = (nuptk, k) => `<input type="number" min="0" max="60" step="1" class="form-control form-control-sm text-center rp-kuota" data-n="${escAttr(nuptk)}" data-k="${k}" value="${(kuota[nuptk] && kuota[nuptk][k]) || ''}" style="min-width:56px;"/>`;
+    const baris = daftar.map(s => `<tr><td class="text-start">${escAttr(s.nama)}</td>${kolom.map(([k]) => `<td>${input(s.nuptk, k)}</td>`).join('')}</tr>`).join('');
+    const adaSebelumnya = Object.keys(sebelumnya).length > 0;
+    const r = await Swal.fire({
+      title: 'Penugasan Piket Pembiasaan ' + RAPOR.data.label,
+      width: 'min(96vw, 560px)',
+      html: '<div class="small text-muted text-start mb-2">Isi jumlah penugasan piket pembiasaan (pendampingan) yang harus dilakukan tiap guru pada periode ini. Kosongkan jika guru tidak punya penugasan. Realisasi dihitung otomatis dari absen Kegiatan Sekolah berstatus <b>Bertugas</b>. Ketidakhadiran dalam bentuk apa pun tidak mengurangi jumlah penugasan.</div>' +
+        `<div class="d-flex gap-2 mb-2">${adaSebelumnya ? '<button type="button" class="btn btn-sm btn-outline-primary" id="rp-kuota-salin">Salin dari periode sebelumnya</button>' : ''}<button type="button" class="btn btn-sm btn-outline-secondary" id="rp-kuota-kosongkan">Kosongkan semua</button></div>` +
+        '<div style="max-height:50vh; overflow:auto; border:1px solid #dee2e6; border-radius:6px;"><table class="table table-sm align-middle mb-0"><thead class="table-light" style="position:sticky;top:0;"><tr><th class="text-start">Guru</th>' + kolom.map(([, l]) => `<th>${l}</th>`).join('') + '</tr></thead><tbody>' + baris + '</tbody></table></div>',
+      didOpen: () => {
+        const salin = document.getElementById('rp-kuota-salin');
+        if (salin) salin.onclick = () => document.querySelectorAll('.rp-kuota').forEach(el => { el.value = (sebelumnya[el.dataset.n] && sebelumnya[el.dataset.n][el.dataset.k]) || ''; });
+        document.getElementById('rp-kuota-kosongkan').onclick = () => document.querySelectorAll('.rp-kuota').forEach(el => { el.value = ''; });
+      },
+      showCancelButton: true, confirmButtonText: 'Simpan', cancelButtonText: 'Batal',
+      preConfirm: () => {
+        const hasil = {};
+        let salah = false;
+        document.querySelectorAll('.rp-kuota').forEach(el => {
+          const v = el.value.trim();
+          if (v === '') return;
+          const angka = Number(v);
+          if (!Number.isInteger(angka) || angka < 0 || angka > 60) { salah = true; return; }
+          (hasil[el.dataset.n] = hasil[el.dataset.n] || {})[el.dataset.k] = angka;
+        });
+        if (salah) { Swal.showValidationMessage('Jumlah penugasan harus bilangan bulat 0 sampai 60.'); return false; }
+        return hasil;
+      }
+    });
+    if (!r.isConfirmed) return;
+    Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    panggilBackendPromise('simpanKuotaPendampingan', SESSION_TOKEN, RAPOR.periode, r.value).then(res => {
       if (!res.success) return Swal.fire('Gagal', res.message, 'error');
       Swal.fire({ icon: 'success', title: 'Tersimpan', text: res.message });
       muatPeriodeRapor();
@@ -4760,13 +4812,37 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     ['Sakit', 'Sakit']
   ];
 
+  // Pendampingan Dhuha: yang mendampingi memilih "Bertugas" (sama seperti pendampingan Sholat).
+  const OPSI_STATUS_DHUHA = [
+    ['Bertugas', 'Bertugas'],
+    ['Izin Terkonfirmasi', 'Izin Terkonfirmasi'],
+    ['Sakit', 'Sakit']
+  ];
+
+  /** Panel penugasan vs realisasi piket pembiasaan (Dhuha/Dzuhur/Ashar) - hanya muncul untuk guru yang punya penugasan. */
+  function muatPendampinganSaya() {
+    const panel = document.getElementById('ak-panel-pendampingan');
+    if (!panel) return;
+    panggilBackendPromise('getPendampinganSaya', SESSION_TOKEN).then(res => {
+      if (!res || !res.ada) { panel.style.display = 'none'; return; }
+      document.getElementById('ak-pend-periode').textContent = '(' + res.periodeLabel + ')';
+      document.getElementById('ak-pend-isi').innerHTML = res.item.map(i => {
+        const persen = Math.min(100, Math.round((i.realisasi / i.kuota) * 100));
+        const warna = persen >= 100 ? 'bg-success' : (persen >= 50 ? 'bg-primary' : 'bg-warning');
+        return `<div class="mb-2"><div class="d-flex justify-content-between small"><span class="fw-semibold">${escAttr(i.label)}</span><span>${i.realisasi} / ${i.kuota}</span></div>
+          <div class="progress" style="height:8px;"><div class="progress-bar ${warna}" style="width:${persen}%"></div></div></div>`;
+      }).join('') + '<div class="small text-muted">Dihitung dari absen berstatus Bertugas pada periode berjalan.</div>';
+      panel.style.display = '';
+    }).catch(() => { panel.style.display = 'none'; });
+  }
+
   function updateStatusOptionsAK() {
     const jenisSelect = document.getElementById('ak-jenis');
     const statusSelect = document.getElementById('ak-status');
     if (!jenisSelect || !statusSelect) return;
 
     const isSholat = jenisSelect.value === 'SHOLAT_DZUHUR' || jenisSelect.value === 'SHOLAT_ASHAR';
-    const opsiBaru = isSholat ? OPSI_STATUS_SHOLAT : OPSI_STATUS_UMUM;
+    const opsiBaru = isSholat ? OPSI_STATUS_SHOLAT : (jenisSelect.value === 'PENDAMPINGAN_DHUHA' ? OPSI_STATUS_DHUHA : OPSI_STATUS_UMUM);
 
     // Kalau pilihan status yang sedang aktif masih ada di daftar opsi baru, pertahankan -
     // supaya tidak reset ke pilihan pertama kalau tidak perlu (mis. tetap di "Sakit"
@@ -4850,7 +4926,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       Swal.fire({title:'Menyimpan...', didOpen:()=>{Swal.showLoading()}});
       google.script.run.withSuccessHandler(res => {
         Swal.fire(res.success?'Berhasil':'Gagal', res.message, res.success?'success':'error');
-        if(res.success) { resetJurnalSaja(prefix); checkLockKegiatan(prefix); }
+        if(res.success) { resetJurnalSaja(prefix); checkLockKegiatan(prefix); if (prefix === 'ak') muatPendampinganSaya(); }
       }).saveKegiatan(SESSION_TOKEN, sheet, sheet, status, jurnal, tanggal, null, null);
     }
   }
@@ -5585,6 +5661,12 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
           <label class="form-label small fw-bold mb-1">Keterangan</label>
           <input class="form-control" id="swal-ea-keterangan" type="text" value="${!row.belumAdaData && row.keterangan && row.keterangan !== '-' ? escAttr(row.keterangan) : ''}" placeholder="${row.belumAdaData ? 'Isi keterangan (opsional)' : 'Opsional'}">
+
+          <div class="form-check mt-3 p-2 rounded border bg-light">
+            <input class="form-check-input ms-0 me-2" type="checkbox" id="swal-ea-tawasul" ${/^Ikut Tawasul/i.test(row.keterangan || '') ? 'checked' : ''}>
+            <label class="form-check-label small fw-bold" for="swal-ea-tawasul">Ikut Briefing &amp; Tawasul</label>
+            <div class="small text-muted">Centang jika guru terbukti tepat waktu dan mengikuti Tawasul (mis. telat menekan absen). Hanya untuk status Hadir/Terlambat.</div>
+          </div>
         </div>
       `,
       showCancelButton: true,
@@ -5600,11 +5682,18 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           Swal.showValidationMessage('Jam masuk wajib diisi.');
           return false;
         }
-        return { jam, status, keterangan };
+        const tawasulAwal = /^Ikut Tawasul/i.test(row.keterangan || '');
+        const tawasulSekarang = document.getElementById('swal-ea-tawasul').checked;
+        if (tawasulSekarang && !['Hadir', 'Terlambat'].includes(status)) {
+          Swal.showValidationMessage('Tawasul hanya bisa ditandai untuk status Hadir atau Terlambat.');
+          return false;
+        }
+        const tawasul = tawasulSekarang === tawasulAwal ? '' : (tawasulSekarang ? 'ya' : 'tidak');
+        return { jam, status, keterangan, tawasul };
       }
     }).then(result => {
       if (!result.isConfirmed) return;
-      const { jam, status, keterangan } = result.value;
+      const { jam, status, keterangan, tawasul } = result.value;
 
       Swal.fire({ title: 'Menyimpan Perubahan...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
       google.script.run.withSuccessHandler(res => {
@@ -5616,7 +5705,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         }
       }).withFailureHandler(err => {
         Swal.fire('Gagal', 'Terjadi kesalahan: ' + err.message, 'error');
-      }).updateAbsenMasuk(SESSION_TOKEN, row.docId, jam, status, keterangan, row.nuptk, row.tanggal);
+      }).updateAbsenMasuk(SESSION_TOKEN, row.docId, jam, status, keterangan, row.nuptk, row.tanggal, tawasul);
     });
   }
 
