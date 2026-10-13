@@ -1579,14 +1579,14 @@ async function changeUsername(args, env) {
   await sbInsert(env, 'users', salinan);
 
   // Langkah 2: migrasikan riwayat di semua tabel yang menyimpan nuptk guru ini.
-  const TABEL_RIWAYAT_NUPTK = ['absen_masuk', 'kegiatan_umum', 'absen_kegiatan_khusus', 'cuti_guru', 'rekap_jam_pelajaran', 'rapor_nilai'];
+  const TABEL_RIWAYAT_NUPTK = ['absen_masuk', 'kegiatan_umum', 'absen_kegiatan_khusus', 'cuti_guru', 'rekap_jam_pelajaran', 'rapor_nilai', 'rapor_catatan'];
   const gagal = [];
   for (const tabel of TABEL_RIWAYAT_NUPTK) {
     try {
       await sbUpdate(env, tabel, 'nuptk', lama, { nuptk: baru });
     } catch (err) {
       // rapor_nilai baru ada setelah fitur Rapor GTK dipasang - kalau tabelnya belum ada, abaikan.
-      if (tabel === 'rapor_nilai' && /PGRST205|does not exist|Could not find the table/i.test(err.message)) continue;
+      if ((tabel === 'rapor_nilai' || tabel === 'rapor_catatan') && /PGRST205|does not exist|Could not find the table/i.test(err.message)) continue;
       gagal.push(`${tabel}: ${err.message}`);
     }
   }
@@ -1929,6 +1929,7 @@ async function deleteUser(args, env) {
   }
   // Sisa baris rapor otomatis/kosong milik akun ini ikut dibersihkan (tabel tanpa foreign key, tidak boleh jadi yatim).
   try { await sbDeleteWhere(env, 'rapor_nilai', { nuptk }); } catch (e) { /* tabel belum ada / tidak ada baris */ }
+  try { await sbDeleteWhere(env, 'rapor_catatan', { nuptk }); } catch (e) { /* tabel belum ada / tidak ada baris */ }
   try {
     await sbDelete(env, 'users', 'nuptk', nuptk);
   } catch (err) {
@@ -2651,12 +2652,14 @@ async function getNilaiGuru(args, env) {
     const jp = jpMap[nuptk] || { impal: 0, terlambat: 0, sakit: 0, izin: 0, tugasLuar: 0, alpa: 0 };
     const kewajibanMingguan = kewajibanMap[nuptk];
     let skorMengajar = null;
+    let jpEfektifOut = null, jpTepatOut = null, jpTerlambatOut = 0;
 
     if (kewajibanMingguan) {
       const kuotaPeriode = kewajibanMingguan * mingguEfektif;
       const jpEfektif = kuotaPeriode - jp.tugasLuar;
       if (jpEfektif > 0) {
         const jpHadirImplisit = jpEfektif - jp.terlambat - jp.sakit - jp.izin - jp.alpa;
+        jpEfektifOut = jpEfektif; jpTepatOut = Math.max(0, jpHadirImplisit); jpTerlambatOut = jp.terlambat;
         const bonusImpal = Math.min(jp.impal * bonusPerImpal, maksBonusImpal);
         skorMengajar = Math.min((((jpHadirImplisit * 1) + (jp.terlambat * bobotTerlambatJp)
           + (jp.sakit * bobotSakit) + (jp.izin * bobotIzin)
@@ -2675,7 +2678,9 @@ async function getNilaiGuru(args, env) {
       skorKehadiran: skorKehadiran !== null ? Math.round(skorKehadiran * 10) / 10 : null,
       predikatKehadiran: skorKehadiran !== null ? hitungPredikat(skorKehadiran) : '-',
       skorMengajar: skorMengajar !== null ? Math.round(skorMengajar * 10) / 10 : null,
-      predikatMengajar: skorMengajar !== null ? hitungPredikat(skorMengajar) : '-'
+      predikatMengajar: skorMengajar !== null ? hitungPredikat(skorMengajar) : '-',
+      // Dipakai rapor: JP efektif periode ini, JP tepat waktu, dan JP terlambat (null = tidak punya kewajiban mengajar)
+      jpEfektif: jpEfektifOut, jpTepat: jpTepatOut, jpTerlambat: jpTerlambatOut
     };
   });
 }
@@ -3445,7 +3450,7 @@ const ASPEK_RAPOR = {
   C: 'C. PENILAIAN KEPRIBADIAN',
   D: 'D. PROFESIONAL'
 };
-const SUMBER_RAPOR_OTOMATIS = ['KEHADIRAN', 'KETEPATAN', 'TAWASUL', 'SHOLAT', 'PESANTREN', 'KEGIATAN_KHUSUS', 'PENDAMPINGAN'];
+const SUMBER_RAPOR_OTOMATIS = ['KEHADIRAN', 'KETEPATAN', 'TAWASUL', 'SHOLAT', 'PESANTREN', 'KEGIATAN_KHUSUS', 'PENDAMPINGAN', 'PELANGGARAN'];
 
 // Pendampingan (piket pembiasaan): kuota per guru per periode diisi admin; realisasi dihitung dari absen
 // Kegiatan Sekolah. Dhuha terhitung bila status Bertugas ('Hadir' = data lama), Dzuhur/Ashar bila Bertugas.
@@ -3484,6 +3489,13 @@ const STATUS_KHUSUS_DIKECUALIKAN = ['Izin', 'Sakit', 'Izin Terkonfirmasi', 'Tuga
 
 const bulatkan2 = (x) => Math.round(x * 100) / 100;
 
+// Catatan pelanggaran (seragam & teguran) yang dicatat Piket / Admin Sekolah. Tanpa catatan = tidak ada pelanggaran.
+const JENIS_CATATAN = { SERAGAM: 'Seragam & Kerapihan', TEGURAN: 'Teguran' };
+const KATEGORI_CATATAN_DEFAULT = {
+  SERAGAM: ['Seragam tidak sesuai hari', 'Tidak rapi', 'Atribut tidak lengkap', 'Lainnya'],
+  TEGURAN: ['Terlambat berulang', 'Pelanggaran tata tertib', 'Administrasi belum lengkap', 'Lainnya']
+};
+
 function templateConfigRapor() {
   const I = (key, aspek, nama, sumber, extra) => Object.assign({ key, aspek, nama, sumber, bobot: 10, aktif: true }, extra || {});
   return {
@@ -3501,7 +3513,7 @@ function templateConfigRapor() {
       I('I10', 'C', 'Adab Suluk (Dzikir Makhsus, Pengajian Arbain, Qini Nasional)', 'PESANTREN', { jenis: JENIS_PESANTREN_DEFAULT.slice() }),
       I('I11', 'C', 'Perhatian dan Aktif Terlibat dalam Kegiatan Sekolah', 'MANUAL'),
       I('I12', 'C', 'Piket Pembiasaan Sesuai Jadwal', 'PENDAMPINGAN', { jenis: ['dhuha', 'dzuhur', 'ashar', 'penjemputan'] }),
-      I('I13', 'C', 'Berpenampilan Rapih dan Sopan (seragam sesuai ketentuan)', 'MANUAL'),
+      I('I13', 'C', 'Berpenampilan Rapih dan Sopan (seragam sesuai ketentuan)', 'PELANGGARAN', { jenisCatatan: 'SERAGAM', pengurangan: 1 }),
       I('I15', 'D', 'Standar Pelayanan', 'MANUAL'),
       I('I16', 'D', 'Mengikuti Rapat Evaluasi GTK', 'KEGIATAN_KHUSUS', { kataKunci: 'rapat' }),
       I('I17', 'D', 'Mengikuti Pelatihan Mandiri', 'KEGIATAN_KHUSUS', { kataKunci: 'pelatihan' }),
@@ -3513,7 +3525,8 @@ function templateConfigRapor() {
     tempat_titimangsa: '',
     ambang_acara_persen: 20,
     nilai_pesantren: { majelis: 10, streaming: 7, berhalangan: 0 },
-    kuota_default: { dhuha: 10, dzuhur: 8, ashar: 8, penjemputan: 0 }
+    kuota_default: { dhuha: 10, dzuhur: 8, ashar: 8, penjemputan: 0 },
+    kategori_catatan: JSON.parse(JSON.stringify(KATEGORI_CATATAN_DEFAULT))
   };
 }
 
@@ -3616,6 +3629,14 @@ function bersihkanConfigRapor(input, lama) {
       ind.kataKunci = String(raw.kataKunci || '').trim().slice(0, 100);
       if (!ind.kataKunci) return { galat: `Indikator "${nama}" bersumber Kegiatan Khusus, isi kata kunci nama agenda.` };
     }
+    if (sumber === 'PELANGGARAN') {
+      const jc = String(raw.jenisCatatan || 'SERAGAM').trim();
+      if (!JENIS_CATATAN[jc]) return { galat: `Jenis catatan indikator "${nama}" tidak valid.` };
+      const peng = raw.pengurangan === '' || raw.pengurangan === undefined || raw.pengurangan === null ? 1 : Number(raw.pengurangan);
+      if (!isFinite(peng) || peng <= 0 || peng > 10) return { galat: `Pengurangan per hari pelanggaran pada "${nama}" harus lebih dari 0 dan paling besar 10.` };
+      ind.jenisCatatan = jc;
+      ind.pengurangan = peng;
+    }
     if (sumber === 'PENDAMPINGAN') {
       const jenis = (Array.isArray(raw.jenis) ? raw.jenis : JENIS_PENDAMPINGAN.map((x) => x.kunci)).filter((j) => JENIS_PENDAMPINGAN.some((x) => x.kunci === j));
       if (jenis.length === 0) return { galat: `Indikator "${nama}" bersumber Piket Pembiasaan, pilih minimal satu jenis pendampingan.` };
@@ -3655,6 +3676,12 @@ function bersihkanConfigRapor(input, lama) {
     if (!Number.isInteger(v) || v < 0 || v > 60) return { galat: `Default penugasan ${j.label} harus bilangan bulat 0 sampai 60.` };
     kuotaDefault[j.kunci] = v;
   }
+  const kategoriCatatan = {};
+  for (const jc of Object.keys(JENIS_CATATAN)) {
+    const dariInput = input.kategori_catatan && Array.isArray(input.kategori_catatan[jc]) ? input.kategori_catatan[jc] : null;
+    const bersih = Array.from(new Set((dariInput || []).map((x) => String(x).trim().slice(0, 60)).filter(Boolean))).slice(0, 12);
+    kategoriCatatan[jc] = bersih.length ? bersih : (((lama && lama.kategori_catatan) || {})[jc] || KATEGORI_CATATAN_DEFAULT[jc]).slice();
+  }
   const persen = Number(input.ambang_acara_persen);
   const np = input.nilai_pesantren || {};
   const nilaiPes = {};
@@ -3671,7 +3698,8 @@ function bersihkanConfigRapor(input, lama) {
       tempat_titimangsa: String(input.tempat_titimangsa || '').trim().slice(0, 60),
       ambang_acara_persen: isFinite(persen) && persen >= 1 && persen <= 100 ? persen : 20,
       nilai_pesantren: nilaiPes,
-      kuota_default: kuotaDefault
+      kuota_default: kuotaDefault,
+      kategori_catatan: kategoriCatatan
     }
   };
 }
@@ -3950,7 +3978,7 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
 
   const [users, nilaiGuru, payroll, jp, jadwal, khusus, ...umumPerJenis] = await Promise.all([
     getUsersListCached(env, sekolahId),
-    punyaSumber('KEHADIRAN') ? getNilaiGuru([token, info.startStr, info.endStr, sekolahId], env) : [],
+    (punyaSumber('KEHADIRAN') || punyaSumber('KETEPATAN')) ? getNilaiGuru([token, info.startStr, info.endStr, sekolahId], env) : [],
     getPayrollReport([token, info.startStr, info.endStr, sekolahId], env),
     getPayrollJamPelajaran([token, info.startStr, info.endStr, sekolahId], env),
     punyaSumber('KEGIATAN_KHUSUS') ? getJadwalKegiatanCached(env, sekolahId) : [],
@@ -3963,6 +3991,18 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
 
   const umumByJenis = {};
   daftarJenis.forEach((j, i) => { umumByJenis[j] = umumPerJenis[i]; });
+
+  // Catatan pelanggaran (seragam / teguran) per guru. Tabel baru: bila belum dibuat, dianggap kosong.
+  let catatanRows = [];
+  try {
+    catatanRows = await sbSelectAll(env, 'rapor_catatan', `select=nuptk,tanggal,jenis,kategori&${filterSekolah}&tanggal=gte.${infoAsli.startStr}&tanggal=lte.${infoAsli.endStr}&order=tanggal.asc`);
+  } catch (e) { catatanRows = []; }
+  const catatanPerGuru = {};
+  catatanRows.forEach((r) => {
+    const n = String(r.nuptk).trim();
+    if (!catatanPerGuru[n]) catatanPerGuru[n] = [];
+    catatanPerGuru[n].push(r);
+  });
 
   // Peserta periode ini: sama persis dengan yang tampil di getRaporPeriode (aturan bawaan + penimpaan admin).
   const barisAda = await sbSelectAll(env, 'rapor_nilai', `select=nuptk&${filterSekolah}&periode=eq.${infoAsli.periode}&order=nuptk.asc,indikator_key.asc`);
@@ -4031,13 +4071,23 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
       if (ind.aspek === 'B' && (u.kategori || 'Mengajar') !== 'Mengajar') continue;
 
       if (ind.sumber === 'KEHADIRAN') {
-        const skor = mapNilai[n] ? mapNilai[n].skorKehadiran : null;
-        if (skor === null || skor === undefined) { catatTB(n, k, 'Belum ada data absen pada periode ini'); continue; }
+        const mn = mapNilai[n] || {};
+        const skorHarian = mn.skorKehadiran;
+        if (skorHarian === null || skorHarian === undefined) { catatTB(n, k, 'Belum ada data absen pada periode ini'); continue; }
+        // Guru berkategori Mengajar yang punya Kewajiban Mengajar: rata-rata kehadiran masuk sekolah dan kehadiran jam pelajaran (rekap Piket).
+        const pakaiJp = (u.kategori || 'Mengajar') === 'Mengajar' && mn.skorMengajar !== null && mn.skorMengajar !== undefined;
+        const skor = pakaiJp ? (skorHarian + mn.skorMengajar) / 2 : skorHarian;
         const ket = gabungKet([
           pay.hadir ? `Hadir ${pay.hadir}` : '', pay.terlambat ? `terlambat ${pay.terlambat}` : '',
           pay.sakit ? `sakit/cuti ${pay.sakit}` : '', pay.izin ? `izin ${pay.izin}` : '',
           pay.tugasLuar ? `tugas dinas ${pay.tugasLuar}` : '', pay.alpa ? `tanpa keterangan ${pay.alpa}` : ''
-        ]);
+        ]) + (pakaiJp ? ` | Hari ${bulatkan2(skorHarian / 10)}, JP ${bulatkan2(mn.skorMengajar / 10)}` + (() => {
+          const d = gabungKet([
+            jpRow.impal ? `impal ${jpRow.impal}` : '', jpRow.terlambat ? `JP terlambat ${jpRow.terlambat}` : '',
+            jpRow.sakit ? `JP sakit ${jpRow.sakit}` : '', jpRow.izin ? `JP izin ${jpRow.izin}` : '', jpRow.alpa ? `JP tanpa ket. ${jpRow.alpa}` : ''
+          ]);
+          return d ? ' (' + d + ')' : '';
+        })() : '');
         catatNilai(n, k, skor / 10, ket);
       } else if (ind.sumber === 'KETEPATAN') {
         let tepat = pay.hadir, total = hariHadir, dariKhusus = 0;
@@ -4045,8 +4095,20 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
           if (r.status_kehadiran === 'Hadir') { tepat++; total++; dariKhusus++; }
           else if (r.status_kehadiran === 'Terlambat') { total++; dariKhusus++; }
         });
-        if (total === 0) { catatTB(n, k, 'Belum ada data kehadiran'); continue; }
-        catatNilai(n, k, (tepat / total) * 10, `Tepat waktu ${tepat} dari ${total} kehadiran${dariKhusus ? ` (termasuk ${dariKhusus} kegiatan khusus)` : ''}`);
+        const mnK = mapNilai[n] || {};
+        const pakaiJpK = (u.kategori || 'Mengajar') === 'Mengajar' && mnK.jpEfektif !== null && mnK.jpEfektif !== undefined;
+        const jpTotalHadir = pakaiJpK ? (mnK.jpTepat + mnK.jpTerlambat) : 0;
+        if (total === 0 && jpTotalHadir === 0) { catatTB(n, k, 'Belum ada data kehadiran'); continue; }
+        const ketHari = `Tepat waktu ${tepat} dari ${total} kehadiran${dariKhusus ? ` (termasuk ${dariKhusus} kegiatan khusus)` : ''}`;
+        if (pakaiJpK && jpTotalHadir > 0) {
+          // Rata-rata dua rasio (harian & jam pelajaran) supaya jumlah JP yang jauh lebih banyak tidak menenggelamkan kehadiran harian.
+          const rasioJp = mnK.jpTepat / jpTotalHadir;
+          const rasio = total > 0 ? ((tepat / total) + rasioJp) / 2 : rasioJp;
+          catatNilai(n, k, rasio * 10, `${total > 0 ? ketHari + ' | ' : ''}JP tepat waktu ${Math.round(mnK.jpTepat)} dari ${Math.round(jpTotalHadir)} JP`);
+        } else {
+          if (total === 0) { catatTB(n, k, 'Belum ada data kehadiran'); continue; }
+          catatNilai(n, k, (tepat / total) * 10, ketHari);
+        }
       } else if (ind.sumber === 'TAWASUL') {
         const baru = (umumPerGuru('BRIEFING_TAWASUL')[n] || []).filter((r) => r.status === 'Hadir');
         const hariTawasul = new Set(baru.map((r) => r.tanggal)).size;
@@ -4063,6 +4125,16 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
         });
         if (total === 0) { catatTB(n, k, 'Tidak ada data sholat pada periode ini'); continue; }
         catatNilai(n, k, (sah / total) * 10, `Sah ${sah} dari ${total} waktu wajib`);
+      } else if (ind.sumber === 'PELANGGARAN') {
+        const jc = ind.jenisCatatan || 'SERAGAM';
+        const peng = Number(ind.pengurangan) > 0 ? Number(ind.pengurangan) : 1;
+        const rows = (catatanPerGuru[n] || []).filter((r) => r.jenis === jc);
+        const hari = new Set(rows.map((r) => r.tanggal)).size;
+        if (hari === 0) { catatNilai(n, k, 10, 'Tidak ada pelanggaran tercatat'); continue; }
+        const hitungKat = {};
+        rows.forEach((r) => String(r.kategori || '').split(' | ').filter(Boolean).forEach((c) => { hitungKat[c] = (hitungKat[c] || 0) + 1; }));
+        const ringkas = Object.keys(hitungKat).sort((a, b) => hitungKat[b] - hitungKat[a]).slice(0, 2).join(', ');
+        catatNilai(n, k, 10 - hari * peng, `${hari} hari pelanggaran${ringkas ? ` (${ringkas})` : ''}`);
       } else if (ind.sumber === 'PENDAMPINGAN') {
         const kuotaGuru = penugasanEfektif(cfg, infoAsli.periode, n);
         const rasio = [], ket = [];
@@ -4120,6 +4192,10 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
         catatNilai(n, k, (hadir / penyebut) * 10, `Hadir ${hadir} dari ${penyebut} agenda`);
       }
     }
+
+    // Jumlah teguran terisi otomatis dari catatan teguran (bila ada); kalau tidak ada catatan, isian manual dibiarkan.
+    const jmlTeguran = (catatanPerGuru[n] || []).filter((r) => r.jenis === 'TEGURAN').length;
+    if (jmlTeguran > 0) baris.push(Object.assign(dasar(n, 'TEGURAN'), { nilai: jmlTeguran, status: 'NILAI', keterangan: 'Dari catatan teguran' }));
 
     // Blok Kehadiran Harian & KBM (angka murni untuk lembar rapor)
     const blok = {
@@ -4271,6 +4347,145 @@ async function bukaKembaliRapor(args, env) {
 }
 
 /** Rapor milik sendiri (hanya periode yang sudah FINAL). */
+// ====================================================================
+// CATATAN PELANGGARAN (seragam & teguran) - dicatat Piket / Admin Sekolah
+// ====================================================================
+
+/** Periode rapor ('YYYY-MM' = bulan akhir periode 21-20) tempat sebuah tanggal jatuh. */
+function periodeRaporDariTanggal(tanggal) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(tanggal || ''));
+  if (!m) return null;
+  let tahun = parseInt(m[1], 10), bulan = parseInt(m[2], 10);
+  if (parseInt(m[3], 10) >= 21) { bulan++; if (bulan > 12) { bulan = 1; tahun++; } }
+  return `${tahun}-${String(bulan).padStart(2, '0')}`;
+}
+
+function bolehCatatPelanggaran(user) {
+  return isAdminAny(user) || isRole(user, 'PIKET');
+}
+
+function kategoriCatatanSekolah(cfg) {
+  const k = (cfg && cfg.kategori_catatan) || {};
+  const hasil = {};
+  Object.keys(JENIS_CATATAN).forEach((jc) => { hasil[jc] = (Array.isArray(k[jc]) && k[jc].length) ? k[jc] : KATEGORI_CATATAN_DEFAULT[jc]; });
+  return hasil;
+}
+
+async function periodeSudahFinal(env, sekolahId, periode) {
+  const row = await ambilPeriodeRaporRow(env, sekolahId, periode, 'status');
+  return !!(row && row.status === 'FINAL');
+}
+
+/** Daftar catatan satu periode + data untuk form (guru, kategori). Piket & Admin. */
+async function getCatatanPelanggaran(args, env) {
+  const [token, periode, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!bolehCatatPelanggaran(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const berjalan = periodeRaporBerjalan();
+  const info = rentangPeriodeRapor(periode || berjalan);
+  if (!info) return { success: false, message: 'Periode tidak valid.' };
+  const cfg = await bacaConfigRapor(env, sekolahId);
+  const f = `sekolah_id=eq.${encodeURIComponent(sekolahId)}`;
+  const [users, rows, final] = await Promise.all([
+    getUsersListCached(env, sekolahId),
+    sbSelectAll(env, 'rapor_catatan', `select=id,nuptk,tanggal,jenis,kategori,catatan,dicatat_oleh,dicatat_nama&${f}&tanggal=gte.${info.startStr}&tanggal=lte.${info.endStr}&order=tanggal.desc,id.desc`),
+    periodeSudahFinal(env, sekolahId, info.periode)
+  ]);
+  const staf = users.filter((u) => ROLE_STAF_RAPOR.includes(String(u.role).trim()) && String(u.status).trim() === 'Aktif')
+    .map((u) => ({ nuptk: String(u.nuptk).trim(), nama: u.nama }))
+    .sort((a, b) => String(a.nama).localeCompare(String(b.nama)));
+  const nama = {}; users.forEach((u) => { nama[String(u.nuptk).trim()] = u.nama; });
+  const daftarPeriode = [];
+  let p = berjalan;
+  for (let i = 0; i < 12; i++) { daftarPeriode.push({ periode: p, label: labelPeriodeRapor(p) }); p = periodeSebelumnyaRapor(p); }
+  return {
+    success: true, periode: info.periode, label: info.label, rentangLabel: info.rentangLabel, final,
+    mulai: info.startStr, selesai: info.endStr, hariIni: nowJakarta().dateStr,
+    daftarPeriode, jenis: JENIS_CATATAN, kategori: kategoriCatatanSekolah(cfg), staf,
+    catatan: rows.map((r) => ({
+      id: r.id, nuptk: String(r.nuptk).trim(), nama: nama[String(r.nuptk).trim()] || String(r.nuptk), tanggal: r.tanggal, jenis: r.jenis,
+      kategori: r.kategori, catatan: r.catatan || '', pencatat: r.dicatat_nama || '',
+      bisaHapus: !final && (isAdminAny(user) || String(r.dicatat_oleh) === String(user.nuptk).trim())
+    }))
+  };
+}
+
+/** Catat pelanggaran untuk satu atau beberapa guru sekaligus pada satu tanggal. */
+async function simpanCatatanPelanggaran(args, env) {
+  const [token, data, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!bolehCatatPelanggaran(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const d = data || {};
+  const tanggal = String(d.tanggal || '').trim();
+  const periode = periodeRaporDariTanggal(tanggal);
+  if (!periode || !rentangPeriodeRapor(periode)) return { success: false, message: 'Tanggal tidak valid.' };
+  if (tanggal > nowJakarta().dateStr) return { success: false, message: 'Tanggal tidak boleh di masa depan.' };
+  const jenis = String(d.jenis || '').trim();
+  if (!JENIS_CATATAN[jenis]) return { success: false, message: 'Jenis catatan tidak valid.' };
+  const kategori = Array.from(new Set((Array.isArray(d.kategori) ? d.kategori : []).map((x) => String(x).trim().slice(0, 60)).filter(Boolean))).slice(0, 6);
+  if (kategori.length === 0) return { success: false, message: 'Pilih minimal satu kategori.' };
+  const nuptks = Array.from(new Set((Array.isArray(d.nuptks) ? d.nuptks : []).map((x) => String(x).trim()).filter(Boolean)));
+  if (nuptks.length === 0) return { success: false, message: 'Pilih minimal satu guru.' };
+  if (nuptks.length > 60) return { success: false, message: 'Terlalu banyak guru dalam satu catatan.' };
+  if (await periodeSudahFinal(env, sekolahId, periode)) return { success: false, message: 'Periode rapor untuk tanggal ini sudah difinalisasi.' };
+
+  const users = await getUsersListCached(env, sekolahId);
+  const sah = new Set(users.filter((u) => ROLE_STAF_RAPOR.includes(String(u.role).trim())).map((u) => String(u.nuptk).trim()));
+  const tidakSah = nuptks.filter((n) => !sah.has(n));
+  if (tidakSah.length) return { success: false, message: `Akun tidak ditemukan di sekolah ini: ${tidakSah.join(', ')}` };
+
+  const catatan = String(d.catatan || '').trim().slice(0, 200);
+  const sekarang = new Date().toISOString();
+  const baris = nuptks.map((n) => ({
+    sekolah_id: sekolahId, nuptk: n, tanggal, jenis, kategori: kategori.join(' | '), catatan: catatan || null,
+    dicatat_oleh: String(user.nuptk).trim(), dicatat_nama: user.nama, created_at: sekarang
+  }));
+  await sbInsertMany(env, 'rapor_catatan', baris);
+  return { success: true, jumlah: baris.length, message: `Tercatat untuk ${baris.length} orang.` };
+}
+
+async function hapusCatatanPelanggaran(args, env) {
+  const [token, id, requestedSekolahId] = args;
+  const user = await requireUser(env, token);
+  if (!bolehCatatPelanggaran(user)) return { success: false, message: 'Akses ditolak.' };
+  const sekolahId = sekolahIdRapor(user, requestedSekolahId);
+  if (!sekolahId) return { success: false, message: 'Pilih sekolah dulu.' };
+  const idNum = parseInt(id, 10);
+  if (!Number.isInteger(idNum)) return { success: false, message: 'Catatan tidak valid.' };
+  const rows = await sbSelect(env, 'rapor_catatan', `select=id,tanggal,dicatat_oleh&id=eq.${idNum}&sekolah_id=eq.${encodeURIComponent(sekolahId)}&limit=1`);
+  if (!rows.length) return { success: false, message: 'Catatan tidak ditemukan.' };
+  if (!isAdminAny(user) && String(rows[0].dicatat_oleh) !== String(user.nuptk).trim()) return { success: false, message: 'Piket hanya bisa menghapus catatan yang ia buat sendiri.' };
+  if (await periodeSudahFinal(env, sekolahId, periodeRaporDariTanggal(rows[0].tanggal))) return { success: false, message: 'Periode ini sudah difinalisasi.' };
+  await sbDeleteWhere(env, 'rapor_catatan', { id: idNum, sekolah_id: sekolahId });
+  return { success: true };
+}
+
+/** Catatan pelanggaran milik guru yang sedang login (periode berjalan maupun sebelumnya). */
+async function getCatatanSaya(args, env) {
+  const [token, periode] = args;
+  const user = await requireUser(env, token);
+  if (!user || !user.sekolahId) return { aktif: false };
+  const cfg = await bacaConfigRapor(env, user.sekolahId);
+  if (!cfg || cfg.aktif === false) return { aktif: false };
+  const berjalan = periodeRaporBerjalan();
+  const pilih = (periode && rentangPeriodeRapor(periode) && periode <= berjalan) ? periode : berjalan;
+  const info = rentangPeriodeRapor(pilih);
+  const rows = await sbSelect(env, 'rapor_catatan',
+    `select=tanggal,jenis,kategori,catatan,dicatat_nama&sekolah_id=eq.${encodeURIComponent(user.sekolahId)}&nuptk=eq.${encodeURIComponent(String(user.nuptk).trim())}&tanggal=gte.${info.startStr}&tanggal=lte.${info.endStr}&order=tanggal.desc`);
+  const daftarPeriode = [];
+  let p = berjalan;
+  for (let i = 0; i < 12; i++) { daftarPeriode.push({ periode: p, label: labelPeriodeRapor(p) }); p = periodeSebelumnyaRapor(p); }
+  return {
+    aktif: true, periode: pilih, label: info.label, rentangLabel: info.rentangLabel, berjalan: pilih === berjalan,
+    daftarPeriode, jenis: JENIS_CATATAN,
+    catatan: rows.map((r) => ({ tanggal: r.tanggal, jenis: r.jenis, kategori: r.kategori, catatan: r.catatan || '', pencatat: r.dicatat_nama || '' }))
+  };
+}
+
 async function getRaporSaya(args, env) {
   const [token, periode] = args;
   const user = await requireUser(env, token);
@@ -4512,6 +4727,10 @@ export const handlers = {
   getNilaiGuru,
   getRaporConfig,
   simpanKuotaPendampingan,
+  getCatatanPelanggaran,
+  simpanCatatanPelanggaran,
+  hapusCatatanPelanggaran,
+  getCatatanSaya,
   getPendampinganSaya,
   aktifkanRapor,
   simpanRaporConfig,
