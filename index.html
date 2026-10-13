@@ -331,6 +331,47 @@
   .rapor-in.is-bad { border-color: #dc3545; background: #fff5f5; }
   .rapor-in.is-dirty { background: #fff8e1; border-color: #ffc107; }
   .rapor-setup-table td, .rapor-setup-table th { vertical-align: middle; }
+  .rapor-grid .rp-ket { display: none; }
+  /* ---- Rapor GTK di smartphone: tabel lebar diubah jadi kartu per guru / per indikator ---- */
+  @media (max-width: 767.98px) {
+    #rapor-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; }
+    #rapor-tabs .nav-link { padding: 0.5rem 0.75rem; font-size: 0.9rem; }
+    #rapor-toolbar .btn { flex: 1 1 calc(50% - 0.5rem); font-size: 0.85rem; padding: 0.55rem 0.5rem; }
+    .rapor-grid-wrap { max-height: none; overflow: visible; background: transparent !important; box-shadow: none !important; }
+    .rapor-grid { min-width: 0; display: block; font-size: 0.95rem; border: 0; }
+    .rapor-grid thead { display: none; }
+    .rapor-grid tbody { display: block; }
+    .rapor-grid tbody tr { display: block; background: #fff; border: 1px solid #d5dde8; border-radius: 12px; margin-bottom: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(15,76,129,0.08); }
+    .rapor-grid tbody td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 9px 14px; border: 0; border-bottom: 1px solid #eef1f5; text-align: right; }
+    .rapor-grid tbody td::before { content: attr(data-label); flex: 1 1 auto; text-align: left; font-weight: 600; font-size: 0.85rem; line-height: 1.25; color: #2b3a4a; }
+    .rapor-grid tbody td.rp-no { display: none; }
+    .rapor-grid tbody td.rp-nama { position: static; display: block; max-width: none; min-width: 0; background: #0f4c81; color: #fff; padding: 11px 14px; text-align: left; }
+    .rapor-grid tbody td.rp-nama::before { content: none; }
+    .rapor-grid tbody td.rp-nama .text-muted { color: rgba(255,255,255,0.8) !important; }
+    .rapor-grid tbody td.rp-sel { min-width: 0; }
+    .rapor-grid .rp-val { display: flex; flex-direction: column; align-items: flex-end; max-width: 55%; font-weight: 600; }
+    .rapor-grid .rp-ket { display: block; font-weight: 400; font-size: 0.72rem; color: #5b6b7b; text-align: right; margin-top: 2px; }
+    .rapor-grid td.rapor-oto, .rapor-grid td.rapor-kunci { text-align: right; }
+    .rapor-grid .rapor-in, .rapor-grid td input.form-control { font-size: 16px; height: 42px; width: 96px; flex: 0 0 96px; min-width: 0; }
+    .rapor-grid td.rp-catatan { flex-direction: column; align-items: stretch; }
+    .rapor-grid td.rp-catatan::before { margin-bottom: 4px; }
+    .rapor-grid td.rp-catatan input.form-control { width: 100%; flex: 1 1 auto; }
+    .rapor-grid td.rp-ringkas { background: #f4f8fc; }
+    /* ---- Pengaturan indikator: kartu per indikator ---- */
+    .rapor-setup-table, .rapor-setup-table tbody { display: block; width: 100%; border: 0; }
+    .rapor-setup-table thead { display: none; }
+    .rapor-setup-table tr { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px 10px; background: #fff; border: 1px solid #d5dde8; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    .rapor-setup-table td { display: block; border: 0 !important; padding: 0 !important; width: auto !important; min-width: 0 !important; }
+    .rapor-setup-table td::before { content: attr(data-label); display: block; font-size: 0.75rem; font-weight: 600; color: #5b6b7b; margin-bottom: 3px; }
+    .rapor-setup-table td.rp-s-nama, .rapor-setup-table td.rp-s-sumber, .rapor-setup-table td.rp-s-param, .rapor-setup-table td.rp-s-aksi { grid-column: 1 / -1; }
+    .rapor-setup-table td.rp-s-aksi::before { content: none; }
+    .rapor-setup-table td.rp-s-aksi { display: flex; gap: 8px; justify-content: flex-end; }
+    .rapor-setup-table td.rp-s-aksi .btn { padding: 0.45rem 0.8rem; }
+    .rapor-setup-table .form-control, .rapor-setup-table .form-select { font-size: 16px; height: 42px; width: 100%; }
+    .rapor-setup-table td.rp-s-aktif .form-check-input { width: 1.5em; height: 1.5em; }
+    .rapor-setup-table .form-check-inline { margin-right: 14px; margin-bottom: 4px; }
+    .rapor-setup-table .form-check-inline .form-check-input { width: 1.3em; height: 1.3em; }
+  }
   .content-section { display: none; }
   .content-section.active { display: block; animation: slideUp 0.35s ease; }
 
@@ -4146,29 +4187,29 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
     d.guru.forEach((g, gi) => {
       const mengajar = g.kategori === 'Mengajar';
-      h += `<tr data-gi="${gi}"><td class="rp-no">${gi + 1}</td><td class="rp-nama"><div class="fw-semibold">${escAttr(g.nama)}</div><div class="small text-muted">${escAttr(g.jabatan || (mengajar ? 'Guru' : 'Tidak mengajar'))}</div></td>`;
+      h += `<tr data-gi="${gi}"><td class="rp-no">${gi + 1}</td><td class="rp-nama"><div class="fw-semibold"><span class="d-md-none">${gi + 1}. </span>${escAttr(g.nama)}</div><div class="small text-muted">${escAttr(g.jabatan || (mengajar ? 'Guru' : 'Tidak mengajar'))}</div></td>`;
       ind.forEach(i => {
         const it = g.items[i.key] || { status: 'BELUM', nilai: null, ket: '' };
         const otomatis = i.sumber !== 'MANUAL';
         const bisaIsi = draft && !otomatis && izin[i.aspek] && !(i.aspek === 'B' && !mengajar);
         if (bisaIsi) {
-          h += `<td class="rp-sel"><input class="form-control form-control-sm rapor-in" inputmode="decimal" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="${escAttr(i.key)}" data-gi="${gi}" value="${escAttr(rpTampilNilaiInput(it))}" aria-label="${escAttr(g.nama + ' - ' + i.nama)}"/></td>`;
+          h += `<td class="rp-sel" data-label="${escAttr(i.aspek + '. ' + i.nama)}"><input class="form-control form-control-sm rapor-in" inputmode="decimal" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="${escAttr(i.key)}" data-gi="${gi}" value="${escAttr(rpTampilNilaiInput(it))}" aria-label="${escAttr(g.nama + ' - ' + i.nama)}"/></td>`;
         } else {
           let teks;
           if (it.status === 'TIDAK_BERLAKU') teks = 'TB';
           else if (it.status === 'NILAI' && it.nilai !== null) teks = rpFmt(it.nilai);
           else teks = '-';
-          h += `<td class="rp-sel text-center ${otomatis ? 'rapor-oto' : 'rapor-kunci'}" title="${escAttr(it.ket || '')}">${teks}</td>`;
+          h += `<td class="rp-sel text-center ${otomatis ? 'rapor-oto' : 'rapor-kunci'}" data-label="${escAttr(i.aspek + '. ' + i.nama)}" title="${escAttr(it.ket || '')}"><span class="rp-val">${teks}${it.ket ? `<small class="rp-ket">${escAttr(it.ket)}</small>` : ''}</span></td>`;
         }
       });
       const infoBisa = draft && izin.info;
       if (infoBisa) {
-        h += `<td class="rp-sel"><input class="form-control form-control-sm rapor-in" inputmode="numeric" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="TEGURAN" data-gi="${gi}" value="${g.teguran ? g.teguran : ''}" aria-label="Teguran ${escAttr(g.nama)}"/></td>`;
-        h += `<td><input class="form-control form-control-sm" maxlength="200" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="CATATAN" data-gi="${gi}" value="${escAttr(g.catatan || '')}" aria-label="Catatan ${escAttr(g.nama)}"/></td>`;
+        h += `<td class="rp-sel" data-label="Jumlah Teguran"><input class="form-control form-control-sm rapor-in" inputmode="numeric" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="TEGURAN" data-gi="${gi}" value="${g.teguran ? g.teguran : ''}" aria-label="Teguran ${escAttr(g.nama)}"/></td>`;
+        h += `<td class="rp-catatan" data-label="Catatan"><input class="form-control form-control-sm" maxlength="200" autocomplete="off" data-n="${escAttr(g.nuptk)}" data-k="CATATAN" data-gi="${gi}" value="${escAttr(g.catatan || '')}" aria-label="Catatan ${escAttr(g.nama)}"/></td>`;
       } else {
-        h += `<td class="text-center rapor-kunci">${g.teguran ? g.teguran : '-'}</td><td class="small rapor-kunci">${escAttr(g.catatan || '')}</td>`;
+        h += `<td class="text-center rapor-kunci" data-label="Jumlah Teguran">${g.teguran ? g.teguran : '-'}</td><td class="small rapor-kunci rp-catatan" data-label="Catatan">${escAttr(g.catatan || '')}</td>`;
       }
-      h += `<td class="text-center fw-bold" id="rp-rata-${gi}"></td><td class="text-center" id="rp-pred-${gi}"></td><td class="text-center small" id="rp-belum-${gi}"></td></tr>`;
+      h += `<td class="text-center fw-bold rp-ringkas" data-label="Rata-rata" id="rp-rata-${gi}"></td><td class="text-center rp-ringkas" data-label="Predikat" id="rp-pred-${gi}"></td><td class="text-center small rp-ringkas" data-label="Belum diisi" id="rp-belum-${gi}"></td></tr>`;
     });
     h += '</tbody>';
     grid.innerHTML = h;
@@ -4443,13 +4484,13 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         param = Object.keys(RAPOR_JENIS_PESANTREN).map(j => `<div class="form-check form-check-inline small"><input class="form-check-input" type="checkbox" id="rp-j-${i}-${j}" ${jenis.indexOf(j) !== -1 ? 'checked' : ''} onchange="rpSetupJenis(${i},'${j}',this.checked)"/><label class="form-check-label" for="rp-j-${i}-${j}">${RAPOR_JENIS_PESANTREN[j]}</label></div>`).join('');
       }
       return `<tr>
-        <td class="text-center"><input class="form-check-input" type="checkbox" ${ind.aktif !== false ? 'checked' : ''} onchange="rpSetupUbah(${i},'aktif',this.checked)" aria-label="Aktif"/></td>
-        <td style="width:70px;"><select class="form-select form-select-sm" onchange="rpSetupUbah(${i},'aspek',this.value)" aria-label="Aspek">${aspekOpt}</select></td>
-        <td style="min-width:220px;"><input class="form-control form-control-sm" maxlength="150" value="${escAttr(ind.nama)}" oninput="rpSetupUbah(${i},'nama',this.value)" aria-label="Nama indikator"/></td>
-        <td style="width:90px;"><input class="form-control form-control-sm" type="number" min="1" max="100" step="any" value="${ind.bobot}" oninput="rpSetupUbah(${i},'bobot',this.value)" aria-label="Bobot"/></td>
-        <td style="min-width:170px;"><select class="form-select form-select-sm" onchange="rpSetupSumber(${i},this.value)" aria-label="Sumber nilai">${sumberOpt}</select></td>
-        <td style="min-width:200px;">${param}</td>
-        <td class="text-nowrap">
+        <td class="text-center rp-s-aktif" data-label="Aktif"><input class="form-check-input" type="checkbox" ${ind.aktif !== false ? 'checked' : ''} onchange="rpSetupUbah(${i},'aktif',this.checked)" aria-label="Aktif"/></td>
+        <td class="rp-s-aspek" data-label="Aspek" style="width:70px;"><select class="form-select form-select-sm" onchange="rpSetupUbah(${i},'aspek',this.value)" aria-label="Aspek">${aspekOpt}</select></td>
+        <td class="rp-s-nama" data-label="Nama indikator" style="min-width:220px;"><input class="form-control form-control-sm" maxlength="150" value="${escAttr(ind.nama)}" oninput="rpSetupUbah(${i},'nama',this.value)" aria-label="Nama indikator"/></td>
+        <td class="rp-s-bobot" data-label="Bobot" style="width:90px;"><input class="form-control form-control-sm" type="number" min="1" max="100" step="any" value="${ind.bobot}" oninput="rpSetupUbah(${i},'bobot',this.value)" aria-label="Bobot"/></td>
+        <td class="rp-s-sumber" data-label="Sumber nilai" style="min-width:170px;"><select class="form-select form-select-sm" onchange="rpSetupSumber(${i},this.value)" aria-label="Sumber nilai">${sumberOpt}</select></td>
+        <td class="rp-s-param" data-label="Parameter" style="min-width:200px;">${param}</td>
+        <td class="text-nowrap rp-s-aksi">
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="rpSetupPindah(${i},-1)" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan"><i class="bi bi-arrow-up"></i></button>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="rpSetupPindah(${i},1)" ${i === RAPOR.setup.length - 1 ? 'disabled' : ''} aria-label="Turunkan"><i class="bi bi-arrow-down"></i></button>
           <button type="button" class="btn btn-sm btn-outline-danger" onclick="rpSetupHapus(${i})" aria-label="Hapus"><i class="bi bi-trash"></i></button>
@@ -4629,6 +4670,20 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
         .ttd-kolom p { margin:1px 0; }
         .fw-bold { font-weight:bold; }
         @media print { .halaman { padding:0; } }
+        @media screen and (max-width: 640px) {
+          body { font-size: 12.5px; }
+          .halaman { padding: 10px 8px; }
+          .kop-title { font-size: 15px; } .kop-baris-atas { font-size: 12px; } .kop-subtitle { font-size: 10px; }
+          .judul { font-size: 13px; }
+          .meta td { font-size: 12.5px; }
+          .nilai, .kecil { font-size: 12px; }
+          .nilai th, .nilai td, .kecil th, .kecil td { padding: 4px 4px; font-size: 12px; }
+          .ket { font-size: 11px; }
+          .dua { flex-direction: column; gap: 10px; }
+          .ttd { flex-direction: column; gap: 14px; align-items: center; }
+          .ttd-kolom { width: 80%; font-size: 12.5px; }
+          .halaman { border-bottom: 6px solid #dfe6ee; margin-bottom: 10px; }
+        }
       </style></head><body>${halaman}${untukCetak ? `<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},800);},400);};<\/script>` : ''}</body></html>`;
   }
 
