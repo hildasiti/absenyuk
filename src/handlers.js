@@ -1282,7 +1282,16 @@ async function getIdentitasSekolahUntukCetak(args, env) {
   const user = await requireUser(env, token);
   if (!user) return {};
   const settings = await getSettingsMap(env, user.sekolahId);
+  // Nama Kepala Sekolah (penilai di rapor) diambil dari akun berperan Kepala Sekolah yang aktif di sekolah ini.
+  let namaKepsek = '';
+  try {
+    const daftar = await getUsersListCached(env, user.sekolahId);
+    const ks = daftar.find((u) => String(u.role).trim() === 'KEPALA_SEKOLAH' && String(u.status).trim() === 'Aktif');
+    if (ks) namaKepsek = ks.nama || '';
+  } catch (e) { /* biarkan kosong */ }
   return {
+    nama_kepsek: namaKepsek,
+    ttd_kepsek_url: settings.ttd_kepsek_url || '',
     nama_sekolah: settings.nama_sekolah || '',
     alamat_sekolah: settings.alamat_sekolah || '',
     nama_wakasek: settings.nama_wakasek || '',
@@ -1312,7 +1321,7 @@ async function uploadGambarIdentitas(args, env) {
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const jenisBersih = String(jenis || '').trim().toLowerCase();
-  if (!['kiri', 'kanan', 'ttd'].includes(jenisBersih)) {
+  if (!['kiri', 'kanan', 'ttd', 'ttd_kepsek'].includes(jenisBersih)) {
     return { success: false, message: 'Jenis gambar tidak valid (harus "kiri", "kanan", atau "ttd").' };
   }
   if (!driveSudahDisetup(env)) {
@@ -1329,8 +1338,8 @@ async function uploadGambarIdentitas(args, env) {
   const ekstensi = mimeBersih === 'image/png' ? 'png' : 'jpg';
   const namaFile = jenisBersih === 'ttd'
     ? `ttd-wakasek-${sekolahId}.${ekstensi}`
-    : `logo-${jenisBersih}-${sekolahId}.${ekstensi}`;
-  const keySettings = jenisBersih === 'ttd' ? 'ttd_wakasek_url' : `logo_${jenisBersih}_url`;
+    : (jenisBersih === 'ttd_kepsek' ? `ttd-kepsek-${sekolahId}.${ekstensi}` : `logo-${jenisBersih}-${sekolahId}.${ekstensi}`);
+  const keySettings = jenisBersih === 'ttd' ? 'ttd_wakasek_url' : (jenisBersih === 'ttd_kepsek' ? 'ttd_kepsek_url' : `logo_${jenisBersih}_url`);
 
   let hasil;
   try {
@@ -1353,7 +1362,7 @@ async function uploadGambarIdentitas(args, env) {
   // menumpuk setiap kali gambar diganti.
   if (urlLama) await hapusFileDriveDariUrl(env, urlLama);
 
-  return { success: true, url: hasil.url, message: `${jenisBersih === 'ttd' ? 'Tanda tangan digital' : 'Logo ' + jenisBersih} berhasil diupload dan disimpan.` };
+  return { success: true, url: hasil.url, message: `${jenisBersih === 'ttd' ? 'Tanda tangan digital Wakasek' : (jenisBersih === 'ttd_kepsek' ? 'Tanda tangan digital Kepala Sekolah' : 'Logo ' + jenisBersih)} berhasil diupload dan disimpan.` };
 }
 
 async function saveSettingsData(args, env) {
@@ -1632,11 +1641,11 @@ async function hapusGambarIdentitas(args, env) {
   const sekolahId = resolveSekolahId(user, requestedSekolahId);
 
   const jenisBersih = String(jenis || '').trim().toLowerCase();
-  if (!['kiri', 'kanan', 'ttd'].includes(jenisBersih)) {
+  if (!['kiri', 'kanan', 'ttd', 'ttd_kepsek'].includes(jenisBersih)) {
     return { success: false, message: 'Jenis gambar tidak valid (harus "kiri", "kanan", atau "ttd").' };
   }
-  const keySettings = jenisBersih === 'ttd' ? 'ttd_wakasek_url' : `logo_${jenisBersih}_url`;
-  const namaTampil = jenisBersih === 'ttd' ? 'Tanda tangan digital' : `Logo ${jenisBersih}`;
+  const keySettings = jenisBersih === 'ttd' ? 'ttd_wakasek_url' : (jenisBersih === 'ttd_kepsek' ? 'ttd_kepsek_url' : `logo_${jenisBersih}_url`);
+  const namaTampil = jenisBersih === 'ttd' ? 'Tanda tangan digital Wakasek' : (jenisBersih === 'ttd_kepsek' ? 'Tanda tangan digital Kepala Sekolah' : `Logo ${jenisBersih}`);
 
   const rows = await sbSelect(env, 'settings', `sekolah_id=eq.${sekolahId}&key=eq.${keySettings}&limit=1`);
   const urlLama = rows.length > 0 ? rows[0].value : '';

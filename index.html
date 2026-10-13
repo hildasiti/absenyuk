@@ -559,7 +559,7 @@
           <a class='menu-btn' href='#' id='sub-cuti-guru' onclick='switchView(&apos;cuti-guru&apos;)'><i class='bi bi-person-x-fill me-2'></i> Cuti / Sakit Guru</a>
           <a class='menu-btn' href='#' id='sub-laporan' onclick='switchView(&apos;laporan&apos;)'><i class='bi bi-file-earmark-excel me-2'></i> Laporan</a>
           <a class='menu-btn' href='#' id='sub-rekap-payroll' onclick='switchView(&apos;rekap-payroll&apos;)'><i class='bi bi-calculator-fill me-2'></i> Rekap Payroll</a>
-          <a class='menu-btn' href='#' id='sub-nilai-guru' onclick='switchView(&apos;nilai-guru&apos;)'><i class='bi bi-star-fill me-2'></i> Nilai Guru</a>
+          <a class='menu-btn' href='#' id='sub-catat-pelanggaran' style='display:none;' onclick='switchView(&apos;catat-pelanggaran&apos;)'><i class='bi bi-exclamation-triangle me-2'></i> Catat Pelanggaran</a>
           <a class='menu-btn' href='#' id='sub-rapor-gtk' style='display:none;' onclick='switchView(&apos;rapor-gtk&apos;)'><i class='bi bi-journal-check me-2'></i> Rapor GTK</a>
 
           <p class='menu-section-label' style='font-size: 0.68rem; opacity: 0.7; margin-top: 0.5rem;'>Manajemen &amp; Setup</p>
@@ -1092,6 +1092,18 @@
                 </div>
               </div>
             </div>
+            <div class='col-md-6 mb-3'>
+              <label class='form-label fw-semibold'>Tanda Tangan Digital Kepala Sekolah (PNG/JPG)</label>
+              <small class='text-muted d-block mb-2'>Tampil di kolom Penilai pada lembar Rapor GTK. Nama Kepala Sekolah diambil otomatis dari akun berperan Kepala Sekolah. Kalau tidak diupload, tersedia ruang kosong untuk tanda tangan basah. Disarankan PNG latar transparan/putih. Maks 5MB.</small>
+              <div class='d-flex align-items-center gap-3 flex-wrap'>
+                <img id='preview-img-ttd_kepsek' src='' style='display:none; max-height: 70px; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; background: #fff;'/>
+                <div class='flex-grow-1' style='min-width: 180px;'>
+                  <input class='form-control' type='file' accept='image/png,image/jpeg' onchange='uploadGambarUI(this, &quot;ttd_kepsek&quot;)'/>
+                  <small id='status-img-ttd_kepsek' class='text-muted'></small>
+                  <button class='btn btn-outline-danger btn-sm mt-1' id='hapus-img-ttd_kepsek' onclick='hapusGambarUI(&quot;ttd_kepsek&quot;)' style='display:none;' type='button'><i class='bi bi-trash'></i> Hapus gambar</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1449,8 +1461,8 @@
                 <input class='form-control' id='u-kwj-jp' min='1' max='60' placeholder='Sesuai SK, biasanya 20-35' title='Kewajiban Mengajar (JP/minggu) - sesuai SK, biasanya 20-35' type='number'/>
             </div>
             <div class='col-12 col-md-4'>
-                <label class='form-label mb-1' for='u-urut'>No. Urut di Rapor <small class='text-muted fw-normal'>(opsional)</small></label>
-                <input class='form-control' id='u-urut' type='number' min='1' max='999' placeholder='Kosong = urut abjad'/>
+                <label class='form-label mb-1' for='u-urut'>No. Urut di Rapor</label>
+                <input class='form-control' id='u-urut' type='number' min='1' max='999'/>
             </div>
             <div class='col-12 col-md-4'>
                 <label class='form-label mb-1' for='u-jabatan'>Jabatan <small class='text-muted fw-normal'>(tampil di rapor)</small></label>
@@ -1545,48 +1557,6 @@
 
   <div class='mt-3' id='payroll-rekap-box'></div>
 </div>
-
-<div class='content-section' id='nilai-guru' style='display: none;'>
-  <div class='card p-4 shadow-sm mb-3 border-0 border-start border-warning border-4'>
-    <h6 class='mb-2 text-secondary fw-bold'><i class='bi bi-star-fill text-warning'></i> Nilai Kinerja Guru</h6>
-    <p class='text-muted small mb-3'>Skor Kehadiran dihitung dari Rekap Absen Masuk (semua staf). Skor Mengajar khusus guru yang punya Kewajiban Mengajar (Data Guru), dihitung dari Rekap Jam Pelajaran. Bobot & ambang predikat diatur lewat menu <strong>Aturan Penilaian</strong>.</p>
-    <div class='row g-2'>
-      <div class='col-md-4'><label class='form-label fw-semibold small mb-1'>Tanggal Awal</label><input class='form-control' id='nilai-start' required='required' type='date'/></div>
-      <div class='col-md-4'><label class='form-label fw-semibold small mb-1'>Tanggal Akhir</label><input class='form-control' id='nilai-end' required='required' type='date'/></div>
-      <div class='col-md-4 d-flex align-items-end'>
-        <button class='btn btn-warning w-100 text-white fw-bold' onclick='loadNilaiGuru()'><i class='bi bi-arrow-clockwise'></i> Hitung Nilai</button>
-      </div>
-    </div>
-  </div>
-
-  <div class='mb-3'>
-    <button class='btn btn-success shadow-sm me-2' onclick='exportNilaiGuruToExcel()'>
-      <i class='bi bi-file-earmark-excel-fill'></i> Download Excel (.xlsx)
-    </button>
-    <button class='btn btn-danger shadow-sm' onclick='printNilaiGuruPDF()'>
-      <i class='bi bi-file-earmark-pdf-fill'></i> Cetak PDF Resmi
-    </button>
-  </div>
-
-  <div class='table-responsive bg-white shadow-sm p-3 rounded'>
-    <table class='table table-bordered table-hover text-center align-middle'>
-      <thead class='table-secondary font-weight-bold'>
-        <tr>
-          <th>No</th>
-          <th class='text-start'>Nama Guru</th>
-          <th>Skor Kehadiran</th>
-          <th>Predikat</th>
-          <th>Skor Mengajar</th>
-          <th>Predikat</th>
-        </tr>
-      </thead>
-      <tbody id='nilai-guru-body'>
-        <tr><td class='text-center text-muted py-3' colspan='6'>Tentukan rentang tanggal lalu klik &quot;Hitung Nilai&quot;</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
 
 <div class='content-section' id='rapor-gtk' style='display: none;'>
 
@@ -1701,7 +1671,6 @@
         </div>
       </div>
 
-      <div class='alert alert-light border small mb-3'><i class='bi bi-info-circle'></i> No. urut, Jabatan, dan Mulai Khidmah yang tampil di lembar rapor diatur di menu <strong>Data Guru</strong> (tombol Edit pada tiap guru).</div>
 
       <div class='card p-3 shadow-sm border-0 mb-3'>
         <h6 class='fw-bold text-secondary mb-2'>Predikat &amp; lain-lain</h6>
@@ -1720,6 +1689,12 @@
           <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-pes-berhalangan'>Berhalangan</label><input class='form-control' type='number' step='0.01' min='0' max='10' id='rapor-pes-berhalangan'/></div>
         </div>
         <small class='text-muted d-block mt-1'>Nilai indikator Pesantren = rata-rata nilai tiap acara. Tidak absen dihitung 0; Sakit / Izin Terkonfirmasi tidak dihitung.</small>
+        <h6 class='fw-bold text-secondary mt-3 mb-1'>Kategori Catatan Pelanggaran</h6>
+        <div class='row g-2'>
+          <div class='col-12 col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-kat-seragam'>Seragam &amp; Kerapihan (satu kategori per baris)</label><textarea class='form-control' rows='5' id='rapor-kat-seragam'></textarea></div>
+          <div class='col-12 col-md-6'><label class='form-label small fw-semibold mb-1' for='rapor-kat-teguran'>Teguran (satu kategori per baris)</label><textarea class='form-control' rows='5' id='rapor-kat-teguran'></textarea></div>
+        </div>
+        <small class='text-muted d-block mt-1'>Pilihan kategori di menu Catat Pelanggaran. Poin pengurangan per hari diatur pada indikatornya (sumber nilai: Otomatis: Catatan Pelanggaran).</small>
         <h6 class='fw-bold text-secondary mt-3 mb-1'>Penugasan Piket Pembiasaan - Default per Bulan</h6>
         <div class='row g-2'>
           <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-def-dhuha'>Pendampingan Dhuha</label><input class='form-control' type='number' min='0' max='60' step='1' id='rapor-def-dhuha'/></div>
@@ -1733,6 +1708,56 @@
 
       <button class='btn btn-primary' onclick='simpanPengaturanRapor()'><i class='bi bi-save'></i> Simpan Pengaturan Rapor</button>
     </div>
+  </div>
+</div>
+
+<div class='content-section' id='catat-pelanggaran' style='display: none;'>
+  <div class='card p-3 shadow-sm border-0 mb-3'>
+    <h5 class='fw-bold text-secondary mb-1'><i class='bi bi-exclamation-triangle text-warning'></i> Catat Pelanggaran</h5>
+    <p class='text-muted small mb-3'>Catat hanya guru yang melanggar. Hari tanpa catatan dianggap sesuai ketentuan. Catatan Seragam &amp; Kerapihan mengurangi nilai indikator rapor otomatis; catatan Teguran mengisi Jumlah Teguran.</p>
+    <div class='row g-2'>
+      <div class='col-12'>
+        <label class='form-label small fw-semibold mb-1'>Jenis</label>
+        <div class='btn-group w-100' role='group' aria-label='Jenis catatan'>
+          <input type='radio' class='btn-check' name='cp-jenis' id='cp-jenis-seragam' value='SERAGAM' checked onchange='cpGantiJenis()'/>
+          <label class='btn btn-outline-primary' for='cp-jenis-seragam'>Seragam &amp; Kerapihan</label>
+          <input type='radio' class='btn-check' name='cp-jenis' id='cp-jenis-teguran' value='TEGURAN' onchange='cpGantiJenis()'/>
+          <label class='btn btn-outline-primary' for='cp-jenis-teguran'>Teguran</label>
+        </div>
+      </div>
+      <div class='col-12 col-md-4'>
+        <label class='form-label small fw-semibold mb-1' for='cp-tanggal'>Tanggal</label>
+        <input class='form-control' type='date' id='cp-tanggal'/>
+      </div>
+      <div class='col-12 col-md-8'>
+        <label class='form-label small fw-semibold mb-1' for='cp-cari'>Guru <span class='text-muted fw-normal' id='cp-jumlah-pilih'></span></label>
+        <input class='form-control mb-1' type='search' id='cp-cari' placeholder='Cari nama guru...' oninput='cpRenderGuru()'/>
+        <div id='cp-guru' class='border rounded p-2 bg-white' style='max-height:220px; overflow-y:auto;'></div>
+      </div>
+      <div class='col-12'>
+        <label class='form-label small fw-semibold mb-1'>Kategori</label>
+        <div id='cp-kategori'></div>
+      </div>
+      <div class='col-12'>
+        <label class='form-label small fw-semibold mb-1' for='cp-catatan'>Catatan (opsional)</label>
+        <input class='form-control' type='text' id='cp-catatan' maxlength='200' placeholder='Contoh: tidak memakai ikat pinggang'/>
+      </div>
+      <div class='col-12'>
+        <button class='btn btn-primary w-100' id='cp-simpan' onclick='cpSimpan()'><i class='bi bi-save'></i> Simpan Catatan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class='card p-3 shadow-sm border-0'>
+    <div class='d-flex flex-wrap gap-2 align-items-end mb-2'>
+      <div class='flex-grow-1'>
+        <label class='form-label small fw-semibold mb-1' for='cp-periode'>Daftar catatan - periode</label>
+        <select class='form-select' id='cp-periode' onchange='muatCatatPelanggaran(this.value)'></select>
+      </div>
+      <div class='small text-muted' id='cp-rentang'></div>
+    </div>
+    <div id='cp-final' class='alert alert-secondary py-2 small' style='display:none;'>Periode ini sudah difinalisasi, catatan tidak bisa ditambah atau dihapus.</div>
+    <div id='cp-daftar'></div>
   </div>
 </div>
 
@@ -1752,6 +1777,13 @@
       </div>
     </div>
     <iframe id='rapor-frame-saya' title='Rapor saya' style='width:100%; height:78vh; border:1px solid #dee2e6; border-radius:6px; background:#fff;'></iframe>
+  </div>
+  <div id='catatan-saya-card' class='card p-3 shadow-sm border-0 mt-3' style='display:none;'>
+    <h6 class='fw-bold text-secondary mb-2'><i class='bi bi-exclamation-triangle text-warning'></i> Catatan Pelanggaran Saya</h6>
+    <label class='form-label small fw-semibold mb-1' for='catatan-saya-periode'>Periode</label>
+    <select class='form-select mb-2' id='catatan-saya-periode' onchange='muatCatatanSaya(this.value)'></select>
+    <div class='small text-muted mb-2' id='catatan-saya-info'></div>
+    <div id='catatan-saya-daftar'></div>
   </div>
 </div>
 
@@ -2057,7 +2089,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   'saveCutiGuru', 'getCutiList', 'getPayrollReport', 'getReport', 'getPayrollJamPelajaran', 'getGuruList',
   'getGuruMengajarList', 'getStafAktifUntukImpal', 'getDashboardCharts', 'uploadGambarIdentitas', 'hapusGambarIdentitas',
   'getRaporConfig', 'aktifkanRapor', 'simpanRaporConfig', 'getRaporPeriode', 'hitungRaporOtomatis',
-  'simpanNilaiRapor', 'finalisasiRapor', 'bukaKembaliRapor', 'getRaporRerata', 'simpanPesertaRapor', 'simpanKuotaPendampingan'
+  'simpanNilaiRapor', 'finalisasiRapor', 'bukaKembaliRapor', 'getRaporRerata', 'simpanPesertaRapor', 'simpanKuotaPendampingan',
+  'getCatatanPelanggaran', 'simpanCatatanPelanggaran', 'hapusCatatanPelanggaran'
 ];
 
 (function () {
@@ -2187,7 +2220,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   let USER_DATA = null;
   let LAST_REPORT_DATA = null; 
   let LAST_PAYROLL_DATA = null; 
-  let LAST_NILAI_GURU_DATA = null;
   let LAST_PAYROLL_JENIS = 'ABSEN_MASUK';
   // Objek global baru untuk menampung kiriman daftar nama guru per kategori hari ini
   let DATA_GURU_POPUP = {
@@ -2837,7 +2869,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       'kelola-kegiatan': 'Kelola Kegiatan Khusus',
       'absen-kegiatan-khusus': 'Absen Kegiatan Khusus',
       'rekap-jam-pelajaran': 'Input Rekap Ketidakhadiran Jam Pelajaran',
-      'rapor-gtk': 'Rapor GTK', 'rapor-saya': 'Rapor Saya'
+      'rapor-gtk': 'Rapor GTK', 'rapor-saya': 'Rapor Saya', 'catat-pelanggaran': 'Catat Pelanggaran'
     };
     document.getElementById('page-title').innerText = titles[id] || 'Panel';
 
@@ -2867,11 +2899,11 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }
     if(id === 'rekap-jam-pelajaran') { loadGuruDropdownJamPelajaran(); loadRekapJamPelajaranList(); }
     if(id === 'rapor-gtk') initRaporGtk();
-    if(id === 'rapor-saya') muatRaporSaya();
+    if(id === 'rapor-saya') { muatRaporSaya(); muatCatatanSaya(); }
+    if(id === 'catat-pelanggaran') initCatatPelanggaran();
     if(id === 'pengaturan') loadSettings();
     if(id === 'kirim-notifikasi') loadStafUntukNotifikasi();
     if(id === 'aturan-penilaian') loadAturanPenilaian();
-    if(id === 'nilai-guru') isiDefaultTanggalPeriodePayroll('nilai-start', 'nilai-end');
     if(id === 'rekap-payroll') isiDefaultTanggalPeriodePayroll('pay-start', 'pay-end');
   }
 
@@ -3900,8 +3932,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   const RAPOR_LABEL_SUMBER = {
     MANUAL: 'Diisi penilai', KEHADIRAN: 'Otomatis: Kehadiran', KETEPATAN: 'Otomatis: Ketepatan waktu',
     TAWASUL: 'Otomatis: Tawasul', SHOLAT: 'Otomatis: Sholat', PESANTREN: 'Otomatis: Kegiatan Pesantren',
-    KEGIATAN_KHUSUS: 'Otomatis: Kegiatan Khusus', PENDAMPINGAN: 'Otomatis: Piket Pembiasaan (penugasan)'
+    KEGIATAN_KHUSUS: 'Otomatis: Kegiatan Khusus', PENDAMPINGAN: 'Otomatis: Piket Pembiasaan (penugasan)',
+    PELANGGARAN: 'Otomatis: Catatan Pelanggaran'
   };
+  const RAPOR_JENIS_CATATAN = { SERAGAM: 'Seragam & Kerapihan', TEGURAN: 'Teguran' };
   const RAPOR_JENIS_PENDAMPINGAN = { dhuha: 'Dhuha', dzuhur: 'Dzuhur', ashar: 'Ashar', penjemputan: 'Penjemputan' };
   const RAPOR_JENIS_PESANTREN = {
     DZIKIR_MAKHSUS: 'Dzikir Makhsus', PENGAJIAN_AHAD: 'Pengajian Ahad', PENGAJIAN_ARBAIN: 'Pengajian Arbain',
@@ -3973,6 +4007,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   function inisialisasiMenuRapor() {
     const tampil = (id, ya) => { const el = document.getElementById(id); if (el) el.style.display = ya ? 'block' : 'none'; };
     tampil('sub-rapor-saya', false); tampil('sub-rapor-penilai', false); tampil('sub-rapor-gtk', false);
+    tampil('sub-catat-pelanggaran', ['PIKET', 'ADMIN_SEKOLAH', 'ADMIN_UTAMA'].indexOf(USER_DATA.role) !== -1);
     if (USER_DATA.role === 'ADMIN_UTAMA') { tampil('sub-rapor-gtk', true); return; }
     if (USER_DATA.role === 'ADMIN_SEKOLAH') tampil('sub-rapor-gtk', true); // supaya bisa mengaktifkan
     panggilBackendPromise('getRaporConfig', SESSION_TOKEN).then(res => {
@@ -4449,6 +4484,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     document.getElementById('rapor-pes-majelis').value = np.majelis;
     document.getElementById('rapor-pes-streaming').value = np.streaming;
     document.getElementById('rapor-pes-berhalangan').value = np.berhalangan;
+    const kc = cfg.kategori_catatan || {};
+    document.getElementById('rapor-kat-seragam').value = (kc.SERAGAM || []).join('\n');
+    document.getElementById('rapor-kat-teguran').value = (kc.TEGURAN || []).join('\n');
     const kd = cfg.kuota_default || {};
     ['dhuha', 'dzuhur', 'ashar', 'penjemputan'].forEach(k => { document.getElementById('rapor-def-' + k).value = kd[k] ? kd[k] : ''; });
   }
@@ -4464,6 +4502,10 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       } else if (ind.sumber === 'PENDAMPINGAN') {
         const jenisP = ind.jenis || [];
         param = Object.keys(RAPOR_JENIS_PENDAMPINGAN).map(j => `<div class="form-check form-check-inline small"><input class="form-check-input" type="checkbox" id="rp-p-${i}-${j}" ${jenisP.indexOf(j) !== -1 ? 'checked' : ''} onchange="rpSetupJenis(${i},'${j}',this.checked)"/><label class="form-check-label" for="rp-p-${i}-${j}">${RAPOR_JENIS_PENDAMPINGAN[j]}</label></div>`).join('') + '<div class="small text-muted">Jenis piket pembiasaan yang diterapkan sekolah.</div>';
+      } else if (ind.sumber === 'PELANGGARAN') {
+        const jc = ind.jenisCatatan || 'SERAGAM';
+        const optJc = Object.keys(RAPOR_JENIS_CATATAN).map(k => `<option value="${k}" ${jc === k ? 'selected' : ''}>${RAPOR_JENIS_CATATAN[k]}</option>`).join('');
+        param = `<select class="form-select form-select-sm mb-1" onchange="rpSetupUbah(${i},'jenisCatatan',this.value)" aria-label="Jenis catatan">${optJc}</select><div class="input-group input-group-sm"><span class="input-group-text">Kurangi</span><input class="form-control" type="number" min="0.1" max="10" step="any" value="${ind.pengurangan === undefined || ind.pengurangan === '' ? 1 : ind.pengurangan}" oninput="rpSetupUbah(${i},'pengurangan',this.value)" aria-label="Poin per hari pelanggaran"/><span class="input-group-text">poin / hari</span></div><div class="small text-muted">Nilai awal 10. Tanpa catatan = 10.</div>`;
       } else if (ind.sumber === 'PESANTREN') {
         const jenis = ind.jenis || [];
         param = Object.keys(RAPOR_JENIS_PESANTREN).map(j => `<div class="form-check form-check-inline small"><input class="form-check-input" type="checkbox" id="rp-j-${i}-${j}" ${jenis.indexOf(j) !== -1 ? 'checked' : ''} onchange="rpSetupJenis(${i},'${j}',this.checked)"/><label class="form-check-label" for="rp-j-${i}-${j}">${RAPOR_JENIS_PESANTREN[j]}</label></div>`).join('');
@@ -4487,6 +4529,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const ind = RAPOR.setup[i];
     ind.sumber = v;
     if (v === 'PENDAMPINGAN' && !(ind.jenis && ind.jenis.length && ind.jenis.every(j => RAPOR_JENIS_PENDAMPINGAN[j]))) ind.jenis = Object.keys(RAPOR_JENIS_PENDAMPINGAN);
+    if (v === 'PELANGGARAN') { if (!ind.jenisCatatan) ind.jenisCatatan = 'SERAGAM'; if (!ind.pengurangan) ind.pengurangan = 1; }
     if (v === 'PESANTREN' && !(ind.jenis && ind.jenis.length && ind.jenis.every(j => RAPOR_JENIS_PESANTREN[j]))) ind.jenis = ['DZIKIR_MAKHSUS', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
     renderBarisIndikatorSetup();
   }
@@ -4519,7 +4562,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const cfgLama = RAPOR.info.config || {};
     const ambilMulti = id => Array.from(document.getElementById(id).selectedOptions).map(o => o.value);
     const config = {
-      indikator: RAPOR.setup.map(i => ({ key: i.key, aspek: i.aspek, nama: i.nama, bobot: Number(i.bobot), sumber: i.sumber, aktif: i.aktif !== false, kataKunci: i.kataKunci, jenis: i.jenis })),
+      indikator: RAPOR.setup.map(i => ({ key: i.key, aspek: i.aspek, nama: i.nama, bobot: Number(i.bobot), sumber: i.sumber, aktif: i.aktif !== false, kataKunci: i.kataKunci, jenis: i.jenis, jenisCatatan: i.jenisCatatan, pengurangan: i.pengurangan })),
       penilai: { pedagogik: ambilMulti('rapor-penilai-ped'), lainnya: ambilMulti('rapor-penilai-lain') },
       ambang: {
         sangat_baik: parseFloat(document.getElementById('rapor-amb-sb').value), baik: parseFloat(document.getElementById('rapor-amb-b').value),
@@ -4529,6 +4572,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       ambang_acara_persen: parseFloat(document.getElementById('rapor-acara-persen').value),
       kuota_default: {
         dhuha: document.getElementById('rapor-def-dhuha').value, dzuhur: document.getElementById('rapor-def-dzuhur').value, ashar: document.getElementById('rapor-def-ashar').value, penjemputan: document.getElementById('rapor-def-penjemputan').value
+      },
+      kategori_catatan: {
+        SERAGAM: document.getElementById('rapor-kat-seragam').value.split('\n'), TEGURAN: document.getElementById('rapor-kat-teguran').value.split('\n')
       },
       nilai_pesantren: {
         majelis: document.getElementById('rapor-pes-majelis').value, streaming: document.getElementById('rapor-pes-streaming').value,
@@ -4592,7 +4638,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           baris += `<tr><td class="c">${n + 1}</td><td>${escAttr(ind.nama)}</td><td class="c">${rpFmt(ind.bobot)}</td><td class="c">${ada ? rpFmt(it.nilai) : '-'}</td><td class="c">${ada ? rpFmt(it.nilai * ind.bobot) : '-'}</td><td class="ket">${escAttr(it.status === 'TIDAK_BERLAKU' ? 'Tidak berlaku' : (it.ket || ''))}</td></tr>`;
         });
       });
-      const kunciTtd = ruangTtdHtml(identitas.ttd_wakasek_url, 38);
+      const kunciTtd = ruangTtdHtml(identitas.ttd_kepsek_url, 38);
+      const namaKepsek = escAttr(identitas.nama_kepsek || '( .................................... )');
       return `<div class="halaman">
         <div class="kop-surat">${bungkusKopSurat(identitas, `<h3 class="kop-title">${schName}</h3><p class="kop-subtitle">${schAddress}</p>`)}</div>
         <div class="judul">RAPORT KINERJA GURU DAN TENAGA KEPENDIDIKAN${meta.final ? '' : ' <span class="draft">(DRAFT)</span>'}</div>
@@ -4618,8 +4665,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           </div>
           <div class="ttd-kolom">
             <p>${escAttr((meta.titimangsa && meta.titimangsa.tempat) || 'Tasikmalaya')}, ${escAttr((meta.titimangsa && meta.titimangsa.tanggal) || '..........')}</p>
-            <p style="margin-bottom:0; position:relative; z-index:1;">Penilai,<br/>Wakasek Bidang SDM</p>${kunciTtd}
-            <p class="fw-bold" style="text-decoration:underline; position:relative; z-index:1;">${wakasek}</p>
+            <p style="margin-bottom:0; position:relative; z-index:1;">Penilai,<br/>Kepala Sekolah</p>${kunciTtd}
+            <p class="fw-bold" style="text-decoration:underline; position:relative; z-index:1;">${namaKepsek}</p>
           </div>
         </div>
       </div>`;
@@ -4758,6 +4805,124 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       const identitas = await ambilIdentitasRapor();
       frame.srcdoc = bangunDokumenRapor(identitas, { indikator: res.indikator, ambang: res.ambang, titimangsa: res.titimangsa, label: res.label, rentangLabel: res.rentangLabel, final: true }, [res.rapor], false);
     }).catch(err => { kosong.style.display = 'block'; isi.style.display = 'none'; kosong.textContent = 'Gagal memuat rapor: ' + ((err && err.message) || err); });
+  }
+
+  // ====================================================================
+  // CATATAN PELANGGARAN (Piket & Admin) + Catatan Saya (semua staf)
+  // ====================================================================
+  const CP = { data: null, terpilih: new Set() };
+  const CP_LABEL_JENIS = { SERAGAM: 'Seragam', TEGURAN: 'Teguran' };
+
+  function cpFormatTanggal(t) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(t || ''));
+    if (!m) return escAttr(t || '');
+    const bln = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'][parseInt(m[2], 10) - 1];
+    return parseInt(m[3], 10) + ' ' + bln + ' ' + m[1];
+  }
+
+  function initCatatPelanggaran() {
+    if (USER_DATA.role === 'ADMIN_UTAMA' && !CURRENT_SEKOLAH_ID) {
+      document.getElementById('cp-daftar').innerHTML = '<div class="alert alert-warning">Pilih sekolah dulu di kotak pilihan sekolah (menu samping), lalu buka lagi menu ini.</div>';
+      return;
+    }
+    CP.terpilih = new Set();
+    muatCatatPelanggaran(null);
+  }
+
+  function muatCatatPelanggaran(periode) {
+    const daftar = document.getElementById('cp-daftar');
+    daftar.innerHTML = '<div class="text-muted small">Memuat...</div>';
+    panggilBackendPromise('getCatatanPelanggaran', SESSION_TOKEN, periode || null).then(res => {
+      if (!res || !res.success) { daftar.innerHTML = '<div class="alert alert-danger">' + escAttr((res && res.message) || 'Gagal memuat.') + '</div>'; return; }
+      const gantiPeriode = !CP.data || CP.data.periode !== res.periode;
+      CP.data = res;
+      document.getElementById('cp-periode').innerHTML = res.daftarPeriode.map(p => `<option value="${escAttr(p.periode)}" ${p.periode === res.periode ? 'selected' : ''}>${escAttr(p.label)}</option>`).join('');
+      document.getElementById('cp-rentang').textContent = res.rentangLabel;
+      document.getElementById('cp-final').style.display = res.final ? 'block' : 'none';
+      document.getElementById('cp-simpan').disabled = !!res.final;
+      const tgl = document.getElementById('cp-tanggal');
+      tgl.min = res.mulai; tgl.max = res.selesai < res.hariIni ? res.selesai : res.hariIni;
+      if (gantiPeriode || !tgl.value || tgl.value < tgl.min || tgl.value > tgl.max) tgl.value = tgl.max;
+      cpRenderGuru(); cpGantiJenis(); cpRenderDaftar();
+    }).catch(err => { daftar.innerHTML = '<div class="alert alert-danger">Gagal memuat: ' + escAttr((err && err.message) || String(err)) + '</div>'; });
+  }
+
+  function cpRenderGuru() {
+    if (!CP.data) return;
+    const kata = (document.getElementById('cp-cari').value || '').trim().toLowerCase();
+    const list = CP.data.staf.filter(g => !kata || String(g.nama).toLowerCase().indexOf(kata) !== -1);
+    document.getElementById('cp-guru').innerHTML = list.length ? list.map(g =>
+      `<div class="form-check py-1"><input class="form-check-input" type="checkbox" id="cp-g-${escAttr(g.nuptk)}" ${CP.terpilih.has(g.nuptk) ? 'checked' : ''} onchange="cpPilihGuru('${escAttr(g.nuptk)}',this.checked)" style="width:1.25em;height:1.25em;"/><label class="form-check-label ms-1" for="cp-g-${escAttr(g.nuptk)}">${escAttr(g.nama)}</label></div>`).join('')
+      : '<div class="text-muted small">Tidak ada guru yang cocok.</div>';
+    cpHitungPilih();
+  }
+  function cpPilihGuru(nuptk, ya) { if (ya) CP.terpilih.add(nuptk); else CP.terpilih.delete(nuptk); cpHitungPilih(); }
+  function cpHitungPilih() { document.getElementById('cp-jumlah-pilih').textContent = CP.terpilih.size ? '(' + CP.terpilih.size + ' dipilih)' : ''; }
+
+  function cpJenisTerpilih() { const r = document.querySelector('input[name="cp-jenis"]:checked'); return r ? r.value : 'SERAGAM'; }
+  function cpGantiJenis() {
+    if (!CP.data) return;
+    const jenis = cpJenisTerpilih();
+    document.getElementById('cp-kategori').innerHTML = (CP.data.kategori[jenis] || []).map((k, i) =>
+      `<div class="form-check py-1"><input class="form-check-input cp-kat" type="checkbox" id="cp-k-${i}" value="${escAttr(k)}" style="width:1.25em;height:1.25em;"/><label class="form-check-label ms-1" for="cp-k-${i}">${escAttr(k)}</label></div>`).join('');
+  }
+
+  function cpSimpan() {
+    if (!CP.data) return;
+    const kategori = Array.from(document.querySelectorAll('#cp-kategori .cp-kat:checked')).map(e => e.value);
+    const nuptks = Array.from(CP.terpilih);
+    const data = { tanggal: document.getElementById('cp-tanggal').value, jenis: cpJenisTerpilih(), nuptks, kategori, catatan: document.getElementById('cp-catatan').value.trim() };
+    if (!data.tanggal) return Swal.fire('Tanggal kosong', 'Pilih tanggal kejadian.', 'warning');
+    if (!nuptks.length) return Swal.fire('Guru belum dipilih', 'Centang minimal satu guru.', 'warning');
+    if (!kategori.length) return Swal.fire('Kategori belum dipilih', 'Centang minimal satu kategori.', 'warning');
+    const btn = document.getElementById('cp-simpan'); btn.disabled = true;
+    panggilBackendPromise('simpanCatatanPelanggaran', SESSION_TOKEN, data).then(res => {
+      btn.disabled = false;
+      if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+      Swal.fire({ icon: 'success', title: 'Tercatat', text: res.message, timer: 1500, showConfirmButton: false });
+      CP.terpilih = new Set();
+      document.getElementById('cp-catatan').value = '';
+      document.getElementById('cp-cari').value = '';
+      muatCatatPelanggaran(CP.data.periode);
+    }).catch(err => { btn.disabled = false; Swal.fire('Gagal', (err && err.message) || String(err), 'error'); });
+  }
+
+  function cpRenderDaftar() {
+    const el = document.getElementById('cp-daftar');
+    const rows = CP.data.catatan;
+    if (!rows.length) { el.innerHTML = '<div class="text-muted small py-2">Belum ada catatan pada periode ini.</div>'; return; }
+    el.innerHTML = rows.map(c => `<div class="border rounded p-2 mb-2 bg-white">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div><div class="fw-semibold">${escAttr(c.nama)}</div>
+          <div class="small text-muted">${cpFormatTanggal(c.tanggal)} &middot; <span class="badge ${c.jenis === 'TEGURAN' ? 'bg-danger' : 'bg-warning text-dark'}">${CP_LABEL_JENIS[c.jenis] || escAttr(c.jenis)}</span></div></div>
+        ${c.bisaHapus ? `<button class="btn btn-sm btn-outline-danger flex-shrink-0" onclick="cpHapus(${Number(c.id)})" aria-label="Hapus catatan"><i class="bi bi-trash"></i></button>` : ''}
+      </div>
+      <div class="small mt-1">${escAttr(String(c.kategori).split(' | ').join(', '))}${c.catatan ? ' - ' + escAttr(c.catatan) : ''}</div>
+      <div class="small text-muted">Dicatat oleh ${escAttr(c.pencatat || '-')}</div></div>`).join('');
+  }
+
+  function cpHapus(id) {
+    Swal.fire({ icon: 'warning', title: 'Hapus catatan ini?', showCancelButton: true, confirmButtonText: 'Hapus', cancelButtonText: 'Batal', confirmButtonColor: '#dc3545' }).then(r => {
+      if (!r.isConfirmed) return;
+      panggilBackendPromise('hapusCatatanPelanggaran', SESSION_TOKEN, id).then(res => {
+        if (!res.success) return Swal.fire('Gagal', res.message, 'error');
+        muatCatatPelanggaran(CP.data.periode);
+      }).catch(err => Swal.fire('Gagal', (err && err.message) || String(err), 'error'));
+    });
+  }
+
+  function muatCatatanSaya(periode) {
+    const kartu = document.getElementById('catatan-saya-card');
+    panggilBackendPromise('getCatatanSaya', SESSION_TOKEN, periode || null).then(res => {
+      if (!res || !res.aktif) { kartu.style.display = 'none'; return; }
+      kartu.style.display = 'block';
+      document.getElementById('catatan-saya-periode').innerHTML = res.daftarPeriode.map(p => `<option value="${escAttr(p.periode)}" ${p.periode === res.periode ? 'selected' : ''}>${escAttr(p.label)}${p.periode === res.daftarPeriode[0].periode ? ' (berjalan)' : ''}</option>`).join('');
+      document.getElementById('catatan-saya-info').textContent = res.rentangLabel + (res.berjalan ? ' - periode berjalan, bisa bertambah.' : '');
+      document.getElementById('catatan-saya-daftar').innerHTML = res.catatan.length ? res.catatan.map(c => `<div class="border rounded p-2 mb-2">
+        <div class="small text-muted">${cpFormatTanggal(c.tanggal)} &middot; <span class="badge ${c.jenis === 'TEGURAN' ? 'bg-danger' : 'bg-warning text-dark'}">${CP_LABEL_JENIS[c.jenis] || escAttr(c.jenis)}</span></div>
+        <div>${escAttr(String(c.kategori).split(' | ').join(', '))}${c.catatan ? ' - ' + escAttr(c.catatan) : ''}</div>
+        <div class="small text-muted">Dicatat oleh ${escAttr(c.pencatat || '-')}</div></div>`).join('') : '<div class="text-success small">Tidak ada catatan pelanggaran pada periode ini.</div>';
+    }).catch(() => { kartu.style.display = 'none'; });
   }
 
   function cetakRaporSaya(mode) {
@@ -5009,7 +5174,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       });
 
       // Preview gambar identitas (logo kiri/kanan + tanda tangan digital Wakasek).
-      [['kiri', data.logo_kiri_url], ['kanan', data.logo_kanan_url], ['ttd', data.ttd_wakasek_url]].forEach(([jenis, url]) => {
+      [['kiri', data.logo_kiri_url], ['kanan', data.logo_kanan_url], ['ttd', data.ttd_wakasek_url], ['ttd_kepsek', data.ttd_kepsek_url]].forEach(([jenis, url]) => {
         const previewEl = document.getElementById('preview-img-' + jenis);
         if (!previewEl) return;
         const btnHapus = document.getElementById('hapus-img-' + jenis);
@@ -5056,7 +5221,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
           const previewEl = document.getElementById('preview-img-' + jenis);
           previewEl.src = res.url; previewEl.style.display = 'inline-block';
           document.getElementById('hapus-img-' + jenis).style.display = 'inline-block';
-          Swal.fire('Berhasil', `${jenis === 'ttd' ? 'Tanda tangan digital' : 'Logo ' + jenis} berhasil diupload dan langsung dipakai di semua Cetak PDF.`, 'success');
+          Swal.fire('Berhasil', `${jenis === 'ttd' ? 'Tanda tangan digital Wakasek' : (jenis === 'ttd_kepsek' ? 'Tanda tangan digital Kepala Sekolah' : 'Logo ' + jenis)} berhasil diupload dan langsung dipakai di cetakan.`, 'success');
         } else {
           statusEl.textContent = '';
           Swal.fire('Gagal', res.message, 'error');
@@ -5073,7 +5238,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   // diupload: backend menghapus file di Google Drive DAN mengosongkan pengaturannya,
   // jadi cetakan berikutnya kembali tanpa gambar itu.
   function hapusGambarUI(jenis) {
-    const nama = jenis === 'ttd' ? 'tanda tangan digital' : 'logo ' + jenis;
+    const nama = jenis === 'ttd' ? 'tanda tangan digital Wakasek' : (jenis === 'ttd_kepsek' ? 'tanda tangan digital Kepala Sekolah' : 'logo ' + jenis);
     Swal.fire({
       title: 'Hapus ' + nama + '?',
       text: 'Gambar akan dihapus dari Google Drive dan tidak dipakai lagi di semua Cetak PDF.',
@@ -5329,7 +5494,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
 
           <div class="row g-2 mb-2">
             <div class="col-4"><label class="form-label small fw-semibold">No. Urut Rapor</label>
-              <input id="edit-u-urut" type="number" min="1" max="999" class="form-control" value="${guru.noUrutRapor || ''}" placeholder="Kosong = abjad" /></div>
+              <input id="edit-u-urut" type="number" min="1" max="999" class="form-control" value="${guru.noUrutRapor || ''}" /></div>
             <div class="col-8"><label class="form-label small fw-semibold">Mulai Khidmah</label>
               <input id="edit-u-mulai" maxlength="30" class="form-control" value="${escAttr(guru.mulaiKhidmah || '')}" placeholder="mis. Juli 2018" /></div>
             <div class="col-12"><label class="form-label small fw-semibold">Jabatan <span class="text-muted fw-normal">(tampil di rapor)</span></label>
@@ -6074,41 +6239,6 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     }
   }
 
-  /** Download Excel untuk Nilai Kinerja Guru - mengikuti data yang SEDANG tampil
-   * di tabel (LAST_NILAI_GURU_DATA), termasuk periode tanggal yang sedang dipakai. */
-  function exportNilaiGuruToExcel() {
-    if (!LAST_NILAI_GURU_DATA || !LAST_NILAI_GURU_DATA.data || LAST_NILAI_GURU_DATA.data.length === 0) {
-      return Swal.fire('Gagal Export', 'Belum ada data nilai guru untuk di-export - klik "Hitung Nilai" dulu.', 'warning');
-    }
-    try {
-      const { data, start, end } = LAST_NILAI_GURU_DATA;
-      let excelRows = [];
-      excelRows.push([`Nilai Kinerja Guru - Periode ${start} s/d ${end}`]);
-      excelRows.push([]);
-      excelRows.push(['No', 'Nama Guru', 'Skor Kehadiran', 'Predikat Kehadiran', 'Skor Mengajar', 'Predikat Mengajar']);
-
-      data.forEach((row, idx) => {
-        excelRows.push([
-          idx + 1, row.nama,
-          row.skorKehadiran !== null ? row.skorKehadiran : '-',
-          row.skorKehadiran !== null ? row.predikatKehadiran : '-',
-          row.punyaKewajibanMengajar && row.skorMengajar !== null ? row.skorMengajar : '-',
-          row.punyaKewajibanMengajar && row.skorMengajar !== null ? row.predikatMengajar : '-'
-        ]);
-      });
-
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(excelRows);
-      ws['!cols'] = [{ wch: 5 }, { wch: 25 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 18 }];
-      XLSX.utils.book_append_sheet(wb, ws, 'Nilai Guru');
-      const filename = `NilaiGuru_${start}_sd_${end}.xlsx`;
-      XLSX.writeFile(wb, filename);
-      Swal.fire('Berhasil!', 'File Excel (.xlsx) Nilai Kinerja Guru berhasil di-download.', 'success');
-    } catch (error) {
-      Swal.fire('Error', 'Gagal memproses file Excel: ' + error.message, 'error');
-    }
-  }
-  
   // =========================================================================
   // MODIFIKASI CETAK PDF: MENERAPKAN REKAPITULASI UNTUK KEGIATAN KHUSUS
   // =========================================================================
@@ -6145,7 +6275,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   async function siapkanGambarKopUntukPng(settings) {
     const hasil = Object.assign({}, settings);
     let gagal = false;
-    await Promise.all(['logo_kiri_url', 'logo_kanan_url', 'ttd_wakasek_url'].map(async k => {
+    await Promise.all(['logo_kiri_url', 'logo_kanan_url', 'ttd_wakasek_url', 'ttd_kepsek_url'].map(async k => {
       const url = settings[k];
       if (!url) return;
       try {
@@ -6933,148 +7063,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     return 'secondary';
   }
 
-  function loadNilaiGuru() {
-    const start = document.getElementById('nilai-start').value;
-    const end = document.getElementById('nilai-end').value;
-    if (!start || !end) return Swal.fire('Perhatian', 'Tentukan tanggal awal dan akhir terlebih dahulu.', 'warning');
-    const sekolahIdUntukNilai = (typeof CURRENT_SEKOLAH_ID !== 'undefined' && CURRENT_SEKOLAH_ID) ? CURRENT_SEKOLAH_ID : '';
-    if (USER_DATA && USER_DATA.role === 'ADMIN_UTAMA' && !sekolahIdUntukNilai) {
-      return Swal.fire('Pilih Sekolah Dulu', 'Pilih sekolah di pojok kiri atas sebelum menghitung nilai guru.', 'warning');
-    }
 
-    const tbody = document.getElementById('nilai-guru-body');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-warning spinner-border-sm"></div> Menghitung nilai kinerja guru...</td></tr>';
-
-    google.script.run.withSuccessHandler(res => {
-      LAST_NILAI_GURU_DATA = { data: res || [], start, end };
-      if (!res || res.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Tidak ditemukan data guru aktif pada periode ini.</td></tr>';
-        return;
-      }
-      let html = '';
-      res.forEach((row, idx) => {
-        const kehadiranTampil = row.skorKehadiran !== null ? row.skorKehadiran : '-';
-        const mengajarTampil = row.punyaKewajibanMengajar ? (row.skorMengajar !== null ? row.skorMengajar : '-') : '<span class="text-muted">-</span>';
-        const predikatKehadiranTampil = row.skorKehadiran !== null ? `<span class="badge bg-${warnaPredikat(row.predikatKehadiran)}">${row.predikatKehadiran}</span>` : '-';
-        const predikatMengajarTampil = row.punyaKewajibanMengajar && row.skorMengajar !== null ? `<span class="badge bg-${warnaPredikat(row.predikatMengajar)}">${row.predikatMengajar}</span>` : '<span class="text-muted">-</span>';
-        html += `
-          <tr>
-            <td>${idx + 1}</td>
-            <td class="text-start fw-bold">${row.nama}</td>
-            <td class="fw-bold">${kehadiranTampil}</td>
-            <td>${predikatKehadiranTampil}</td>
-            <td class="fw-bold">${mengajarTampil}</td>
-            <td>${predikatMengajarTampil}</td>
-          </tr>
-        `;
-      });
-      tbody.innerHTML = html;
-    }).getNilaiGuru(SESSION_TOKEN, start, end, sekolahIdUntukNilai);
-  }
-
-  function printNilaiGuruPDF() {
-    if (!LAST_NILAI_GURU_DATA || !LAST_NILAI_GURU_DATA.data || LAST_NILAI_GURU_DATA.data.length === 0) {
-      return Swal.fire('Gagal Cetak', 'Belum ada data nilai guru untuk dicetak - klik "Hitung Nilai" dulu.', 'warning');
-    }
-    Swal.fire({ title: 'Menyiapkan Dokumen...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-
-    google.script.run.withSuccessHandler(identitas => {
-      Swal.close();
-      const schName = identitas.nama_sekolah || 'SEKOLAH';
-      const schAddress = identitas.alamat_sekolah || '-';
-      const schWakasek = identitas.nama_wakasek || '( .................................... )';
-      const { data, start, end } = LAST_NILAI_GURU_DATA;
-
-      let printWindowContent = `
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Cetak Nilai Guru</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 30px; color: #000; background-color: #fff; }
-            .kop-surat { border-bottom: 3px double #000; padding-bottom: 5px; margin-bottom: 15px; text-align: center; }
-            .kop-title { font-size: 20px; font-weight: bold; text-transform: uppercase; margin: 0; }
-            .kop-subtitle { font-size: 12px; margin: 5px 0 0 0; color: #333; }
-            .kop-baris-atas { font-size: 16px; font-weight: 600; text-transform: uppercase; margin: 0; letter-spacing: 0.3px; }
-            .laporan-title { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 5px; text-transform: uppercase; }
-            .laporan-periode { font-size: 12px; text-align: center; margin-bottom: 15px; color: #555; }
-            table { font-size: 11px !important; width: 100%; border-collapse: collapse; table-layout: fixed; }
-            th { background-color: #f2f2f2 !important; color: #000 !important; font-weight: bold; text-transform: uppercase; border: 1px solid #000 !important; text-align: center; vertical-align: middle; word-wrap: break-word; }
-            td { border: 1px solid #000 !important; padding: 4px !important; text-align: center; vertical-align: middle; word-wrap: break-word; }
-            .row { display: flex; flex-wrap: wrap; margin: 0 -8px; }
-            .row.mt-5 { margin-top: 40px; }
-            .col-4 { flex: 0 0 33.333%; max-width: 33.333%; padding: 0 8px; box-sizing: border-box; }
-            .col-8 { flex: 0 0 66.666%; max-width: 66.666%; padding: 0 8px; box-sizing: border-box; }
-            .text-center { text-align: center; }
-            .fw-bold { font-weight: bold; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <div class="kop-surat">
-            ${bungkusKopSurat(identitas, `<h3 class="kop-title">${schName}</h3><p class="kop-subtitle">${schAddress}</p>`)}
-          </div>
-          <div class="laporan-title">Nilai Kinerja Guru</div>
-          <div class="laporan-periode">Periode: ${start} s.d ${end}</div>
-          <table>
-            <thead>
-              <tr>
-                <th width="4%">No.</th>
-                <th width="24%">Nama Guru</th>
-                <th width="14%">Skor Kehadiran</th>
-                <th width="16%">Predikat</th>
-                <th width="14%">Skor Mengajar</th>
-                <th width="16%">Predikat</th>
-              </tr>
-            </thead>
-            <tbody>
-      `;
-      data.forEach((row, idx) => {
-        const kehadiran = row.skorKehadiran !== null ? row.skorKehadiran : '-';
-        const predKehadiran = row.skorKehadiran !== null ? row.predikatKehadiran : '-';
-        const mengajar = row.punyaKewajibanMengajar && row.skorMengajar !== null ? row.skorMengajar : '-';
-        const predMengajar = row.punyaKewajibanMengajar && row.skorMengajar !== null ? row.predikatMengajar : '-';
-        printWindowContent += `
-          <tr>
-            <td>${idx + 1}</td>
-            <td class="fw-bold" style="text-align:left;">${row.nama}</td>
-            <td class="fw-bold">${kehadiran}</td>
-            <td>${predKehadiran}</td>
-            <td class="fw-bold">${mengajar}</td>
-            <td>${predMengajar}</td>
-          </tr>
-        `;
-      });
-      printWindowContent += `
-            </tbody>
-          </table>
-          <div class="row mt-5" style="font-size: 11px;">
-            <div class="col-8"></div>
-            <div class="col-4 text-center">
-              <p>Tasikmalaya, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p style="margin-bottom: 0; position:relative; z-index:1;">Wakasek Bidang SDM,</p>${ruangTtdHtml(identitas.ttd_wakasek_url, 55)}
-              <p class="fw-bold" style="text-decoration: underline; position:relative; z-index:1;">${schWakasek}</p>
-            </div>
-          </div>
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-                setTimeout(function() { window.close(); }, 800);
-              }, 300);
-            }
-          <\/script>
-        </body>
-        </html>
-      `;
-      const blob = new Blob([printWindowContent], { type: 'text/html' });
-      const blobUrl = URL.createObjectURL(blob);
-      const printWindow = window.open(blobUrl, '_blank');
-      if (!printWindow) {
-        Swal.fire('Pop-up Diblokir', 'Harap izinkan pop-up pada browser Anda untuk mencetak PDF.', 'warning');
-      }
-    }).getIdentitasSekolahUntukCetak(SESSION_TOKEN);
-  }
 
   function loadAturanPenilaian() {
     google.script.run.withSuccessHandler(data => {
