@@ -99,7 +99,7 @@ async function getJadwalKegiatanCached(env, sekolahId) {
 // sesi yang sama. Total 4 hari kegiatan (Kamis-Ahad) x sesi yang relevan = 6 kali absen:
 // Kamis malam, Jumat subuh, Jumat malam, Sabtu subuh, Sabtu malam, Ahad subuh.
 const KEGIATAN_IDENTIK = [
-  'BRIEFING_TAWASUL', 'PENDAMPINGAN_DHUHA', 'SHOLAT_DZUHUR', 'SHOLAT_ASHAR',
+  'BRIEFING_TAWASUL', 'PENDAMPINGAN_DHUHA', 'PENDAMPINGAN_PENJEMPUTAN', 'SHOLAT_DZUHUR', 'SHOLAT_ASHAR',
   'DZIKIR_MAKHSUS', 'PENGAJIAN_AHAD', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'
 ];
 
@@ -1676,6 +1676,7 @@ async function getGuruList(args, env) {
 const LABEL_KEGIATAN_RIWAYAT = {
   BRIEFING_TAWASUL: 'Briefing & Tawasul',
   PENDAMPINGAN_DHUHA: 'Pendampingan Dhuha',
+  PENDAMPINGAN_PENJEMPUTAN: 'Pendampingan Penjemputan',
   SHOLAT_DZUHUR: 'Sholat Dzuhur',
   SHOLAT_ASHAR: 'Sholat Ashar',
   DZIKIR_MAKHSUS: 'Dzikir Makhsus',
@@ -3451,15 +3452,24 @@ const SUMBER_RAPOR_OTOMATIS = ['KEHADIRAN', 'KETEPATAN', 'TAWASUL', 'SHOLAT', 'P
 const JENIS_PENDAMPINGAN = [
   { kunci: 'dhuha', jenis: 'PENDAMPINGAN_DHUHA', label: 'Dhuha', status: ['Bertugas', 'Hadir'] },
   { kunci: 'dzuhur', jenis: 'SHOLAT_DZUHUR', label: 'Dzuhur', status: ['Bertugas'] },
-  { kunci: 'ashar', jenis: 'SHOLAT_ASHAR', label: 'Ashar', status: ['Bertugas'] }
+  { kunci: 'ashar', jenis: 'SHOLAT_ASHAR', label: 'Ashar', status: ['Bertugas'] },
+  { kunci: 'penjemputan', jenis: 'PENDAMPINGAN_PENJEMPUTAN', label: 'Penjemputan', status: ['Bertugas'] }
 ];
+
+/** Jenis pendampingan yang diterapkan sekolah (centang di Pengaturan Rapor). Belum diatur = semua. */
+function jenisPendampinganAktif(cfg) {
+  const ind = (cfg.indikator || []).find((i) => i.sumber === 'PENDAMPINGAN' && i.aktif !== false);
+  const pilih = ind && Array.isArray(ind.jenis) ? ind.jenis : null;
+  const hasil = pilih ? JENIS_PENDAMPINGAN.filter((j) => pilih.includes(j.kunci)) : JENIS_PENDAMPINGAN;
+  return hasil.length ? hasil : JENIS_PENDAMPINGAN;
+}
 
 /** Penugasan efektif satu guru pada satu periode: penyesuaian admin kalau ada, kalau tidak default sekolah. */
 function penugasanEfektif(cfg, periode, nuptk) {
   const ov = ((cfg.kuota || {})[periode] || {})[String(nuptk).trim()];
   const sumber = ov || cfg.kuota_default || {};
   const hasil = {};
-  JENIS_PENDAMPINGAN.forEach((j) => { hasil[j.kunci] = Number(sumber[j.kunci]) || 0; });
+  jenisPendampinganAktif(cfg).forEach((j) => { hasil[j.kunci] = Number(sumber[j.kunci]) || 0; });
   return hasil;
 }
 const SUMBER_RAPOR_SEMUA = [...SUMBER_RAPOR_OTOMATIS, 'MANUAL'];
@@ -3490,7 +3500,7 @@ function templateConfigRapor() {
       I('I09', 'C', 'Shalat Dzuhur / Ashar', 'SHOLAT'),
       I('I10', 'C', 'Adab Suluk (Dzikir Makhsus, Pengajian Arbain, Qini Nasional)', 'PESANTREN', { jenis: JENIS_PESANTREN_DEFAULT.slice() }),
       I('I11', 'C', 'Perhatian dan Aktif Terlibat dalam Kegiatan Sekolah', 'MANUAL'),
-      I('I12', 'C', 'Piket Pembiasaan Sesuai Jadwal', 'PENDAMPINGAN'),
+      I('I12', 'C', 'Piket Pembiasaan Sesuai Jadwal', 'PENDAMPINGAN', { jenis: ['dhuha', 'dzuhur', 'ashar', 'penjemputan'] }),
       I('I13', 'C', 'Berpenampilan Rapih dan Sopan (seragam sesuai ketentuan)', 'MANUAL'),
       I('I15', 'D', 'Standar Pelayanan', 'MANUAL'),
       I('I16', 'D', 'Mengikuti Rapat Evaluasi GTK', 'KEGIATAN_KHUSUS', { kataKunci: 'rapat' }),
@@ -3503,7 +3513,7 @@ function templateConfigRapor() {
     tempat_titimangsa: '',
     ambang_acara_persen: 20,
     nilai_pesantren: { majelis: 10, streaming: 7, berhalangan: 0 },
-    kuota_default: { dhuha: 10, dzuhur: 8, ashar: 8 }
+    kuota_default: { dhuha: 10, dzuhur: 8, ashar: 8, penjemputan: 0 }
   };
 }
 
@@ -3605,6 +3615,11 @@ function bersihkanConfigRapor(input, lama) {
     if (sumber === 'KEGIATAN_KHUSUS') {
       ind.kataKunci = String(raw.kataKunci || '').trim().slice(0, 100);
       if (!ind.kataKunci) return { galat: `Indikator "${nama}" bersumber Kegiatan Khusus, isi kata kunci nama agenda.` };
+    }
+    if (sumber === 'PENDAMPINGAN') {
+      const jenis = (Array.isArray(raw.jenis) ? raw.jenis : JENIS_PENDAMPINGAN.map((x) => x.kunci)).filter((j) => JENIS_PENDAMPINGAN.some((x) => x.kunci === j));
+      if (jenis.length === 0) return { galat: `Indikator "${nama}" bersumber Piket Pembiasaan, pilih minimal satu jenis pendampingan.` };
+      ind.jenis = jenis;
     }
     if (sumber === 'PESANTREN') {
       const jenis = (Array.isArray(raw.jenis) ? raw.jenis : []).filter((j) => KEGIATAN_IDENTIK.includes(j));
@@ -3865,6 +3880,7 @@ async function getRaporPeriode(args, env) {
     otomatisDihitungPada: periodeRow ? periodeRow.otomatis_dihitung_pada : null,
     kuota: isAdminAny(user) ? ((cfg.kuota || {})[info.periode] || {}) : undefined,
     kuotaDefault: isAdminAny(user) ? (cfg.kuota_default || {}) : undefined,
+    jenisPendampingan: isAdminAny(user) ? jenisPendampinganAktif(cfg).map((j) => ({ kunci: j.kunci, label: j.label })) : undefined,
     // Daftar semua staf untuk dialog "Atur Peserta Periode" (hanya yang berhak mengubahnya).
     semuaStaf: isAdminAny(user)
       ? daftarStafPeriodeRapor(cfg, users, info.periode, info.endStr, new Set(nilaiRows.map((r) => String(r.nuptk).trim())))
@@ -3914,7 +3930,7 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
   const jenisDibutuhkan = new Set();
   if (punyaSumber('TAWASUL')) jenisDibutuhkan.add('BRIEFING_TAWASUL');
   if (punyaSumber('SHOLAT')) { jenisDibutuhkan.add('SHOLAT_DZUHUR'); jenisDibutuhkan.add('SHOLAT_ASHAR'); }
-  if (punyaSumber('PENDAMPINGAN')) JENIS_PENDAMPINGAN.forEach((j) => jenisDibutuhkan.add(j.jenis));
+  if (punyaSumber('PENDAMPINGAN')) jenisPendampinganAktif(cfg).forEach((j) => jenisDibutuhkan.add(j.jenis));
   indikatorOto.filter((i) => i.sumber === 'PESANTREN').forEach((i) => (i.jenis || []).forEach((j) => jenisDibutuhkan.add(j)));
   const daftarJenis = Array.from(jenisDibutuhkan);
 
@@ -4050,7 +4066,7 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
       } else if (ind.sumber === 'PENDAMPINGAN') {
         const kuotaGuru = penugasanEfektif(cfg, infoAsli.periode, n);
         const rasio = [], ket = [];
-        JENIS_PENDAMPINGAN.forEach((j) => {
+        jenisPendampinganAktif(cfg).forEach((j) => {
           const kuota = Number(kuotaGuru[j.kunci]) || 0;
           if (kuota <= 0) return;
           const real = (umumPerGuru(j.jenis)[n] || []).filter((r) => j.status.includes(r.status)).length;
@@ -4337,12 +4353,13 @@ async function getPendampinganSaya(args, env) {
   const sDateStr = toDateStr(start), eDateStr = toDateStr(end);
   const periode = eDateStr.slice(0, 7);
   const kuota = penugasanEfektif(cfg, periode, user.nuptk);
-  if (!JENIS_PENDAMPINGAN.some((j) => kuota[j.kunci] > 0)) return { ada: false };
+  const aktif = jenisPendampinganAktif(cfg);
+  if (!aktif.some((j) => kuota[j.kunci] > 0)) return { ada: false };
 
   const rows = await sbSelect(env, 'kegiatan_umum',
     `sekolah_id=eq.${encodeURIComponent(user.sekolahId)}&nuptk=eq.${encodeURIComponent(user.nuptk)}&tanggal=gte.${sDateStr}&tanggal=lte.${eDateStr}` +
-    `&jenis_kegiatan=in.(${JENIS_PENDAMPINGAN.map((j) => j.jenis).join(',')})`);
-  const item = JENIS_PENDAMPINGAN.filter((j) => kuota[j.kunci] > 0).map((j) => ({
+    `&jenis_kegiatan=in.(${aktif.map((j) => j.jenis).join(',')})`);
+  const item = aktif.filter((j) => kuota[j.kunci] > 0).map((j) => ({
     kunci: j.kunci, label: j.label, kuota: kuota[j.kunci],
     realisasi: rows.filter((r) => r.jenis_kegiatan === j.jenis && j.status.includes(r.status)).length
   }));

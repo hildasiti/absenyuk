@@ -707,6 +707,7 @@
         <label class='form-label fw-semibold'>Jenis Kegiatan Sekolah</label>
         <select class='form-select' id='ak-jenis' onchange='updateStatusOptionsAK(); checkLockKegiatan(&apos;ak&apos;)' required='required'>
           <option value='PENDAMPINGAN_DHUHA'>Pendampingan Dhuha</option>
+          <option value='PENDAMPINGAN_PENJEMPUTAN'>Pendampingan Penjemputan</option>
           <option value='SHOLAT_DZUHUR'>Pendampingan Sholat Dzuhur</option>
           <option value='SHOLAT_ASHAR'>Pendampingan Sholat Ashar</option>
         </select>
@@ -1306,6 +1307,7 @@
           <optgroup label='Kegiatan Sekolah'>
             <option value='BRIEFING_TAWASUL'>Briefing &amp; Tawasul</option>
             <option value='PENDAMPINGAN_DHUHA'>Pendampingan Dhuha</option>
+            <option value='PENDAMPINGAN_PENJEMPUTAN'>Pendampingan Penjemputan</option>
             <option value='SHOLAT_DZUHUR'>Pendampingan Sholat Dzuhur</option>
             <option value='SHOLAT_ASHAR'>Pendampingan Sholat Ashar</option>
           </optgroup>
@@ -1697,8 +1699,9 @@
           <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-def-dhuha'>Pendampingan Dhuha</label><input class='form-control' type='number' min='0' max='60' step='1' id='rapor-def-dhuha'/></div>
           <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-def-dzuhur'>Pendampingan Dzuhur</label><input class='form-control' type='number' min='0' max='60' step='1' id='rapor-def-dzuhur'/></div>
           <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-def-ashar'>Pendampingan Ashar</label><input class='form-control' type='number' min='0' max='60' step='1' id='rapor-def-ashar'/></div>
+          <div class='col-6 col-md-4'><label class='form-label small fw-semibold mb-1' for='rapor-def-penjemputan'>Pendampingan Penjemputan</label><input class='form-control' type='number' min='0' max='60' step='1' id='rapor-def-penjemputan'/></div>
         </div>
-        <small class='text-muted d-block mt-1'>Berlaku otomatis untuk semua guru setiap bulan. Guru yang penugasannya berbeda diatur per periode lewat tombol <strong>Peserta &amp; Penugasan</strong>. Kosong/0 = tidak ada penugasan jenis itu.</small>
+        <small class='text-muted d-block mt-1'>Berlaku otomatis untuk semua guru setiap bulan. Guru yang penugasannya berbeda diatur per periode lewat tombol <strong>Peserta &amp; Penugasan</strong>. Kosong/0 = tidak ada penugasan jenis itu. Jenis yang diterapkan sekolah dicentang di tabel Indikator (baris Piket Pembiasaan).</small>
         <small class='text-muted d-block mt-2'>Bobot kehadiran (terlambat, izin, sakit) tetap diatur di menu <strong>Aturan Penilaian</strong> milik Admin Utama dan dipakai juga oleh rapor.</small>
       </div>
 
@@ -3873,6 +3876,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     TAWASUL: 'Otomatis: Tawasul', SHOLAT: 'Otomatis: Sholat', PESANTREN: 'Otomatis: Kegiatan Pesantren',
     KEGIATAN_KHUSUS: 'Otomatis: Kegiatan Khusus', PENDAMPINGAN: 'Otomatis: Piket Pembiasaan (penugasan)'
   };
+  const RAPOR_JENIS_PENDAMPINGAN = { dhuha: 'Dhuha', dzuhur: 'Dzuhur', ashar: 'Ashar', penjemputan: 'Penjemputan' };
   const RAPOR_JENIS_PESANTREN = {
     DZIKIR_MAKHSUS: 'Dzikir Makhsus', PENGAJIAN_AHAD: 'Pengajian Ahad', PENGAJIAN_ARBAIN: 'Pengajian Arbain',
     QINI_NASIONAL_SUBUH: 'Qini Nasional Subuh', QINI_NASIONAL_MALAM: 'Qini Nasional Malam'
@@ -4297,7 +4301,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const daftar = RAPOR.data.semuaStaf;
     const kuota = RAPOR.data.kuota || {};
     const def = RAPOR.data.kuotaDefault || {};
-    const kolom = [['dhuha', 'Dhuha'], ['dzuhur', 'Dzuhur'], ['ashar', 'Ashar']];
+    const kolom = (RAPOR.data.jenisPendampingan || [{ kunci: 'dhuha', label: 'Dhuha' }, { kunci: 'dzuhur', label: 'Dzuhur' }, { kunci: 'ashar', label: 'Ashar' }]).map(j => [j.kunci, j.label]);
     const nilaiAwal = (nuptk, k) => {
       const sumber = kuota[nuptk] || def;
       const v = Number(sumber[k]) || 0;
@@ -4402,6 +4406,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     const cfg = RAPOR.info && RAPOR.info.config;
     if (!cfg || !RAPOR.info.bisaKelola) return;
     RAPOR.setup = JSON.parse(JSON.stringify(cfg.indikator || []));
+    RAPOR.setup.forEach(i => { if (i.sumber === 'PENDAMPINGAN' && !(i.jenis && i.jenis.length)) i.jenis = Object.keys(RAPOR_JENIS_PENDAMPINGAN); });
     renderBarisIndikatorSetup();
     const staf = (RAPOR.data && RAPOR.data.guru) || [];
     const opsi = (terpilih) => staf.map(g => `<option value="${escAttr(g.nuptk)}" ${terpilih.indexOf(g.nuptk) !== -1 ? 'selected' : ''}>${escAttr(g.nama)}</option>`).join('');
@@ -4419,7 +4424,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     document.getElementById('rapor-pes-streaming').value = np.streaming;
     document.getElementById('rapor-pes-berhalangan').value = np.berhalangan;
     const kd = cfg.kuota_default || {};
-    ['dhuha', 'dzuhur', 'ashar'].forEach(k => { document.getElementById('rapor-def-' + k).value = kd[k] ? kd[k] : ''; });
+    ['dhuha', 'dzuhur', 'ashar', 'penjemputan'].forEach(k => { document.getElementById('rapor-def-' + k).value = kd[k] ? kd[k] : ''; });
   }
 
   function renderBarisIndikatorSetup() {
@@ -4430,6 +4435,9 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       let param = '<span class="text-muted small">-</span>';
       if (ind.sumber === 'KEGIATAN_KHUSUS') {
         param = `<input class="form-control form-control-sm" placeholder="kata kunci nama agenda" maxlength="100" value="${escAttr(ind.kataKunci || '')}" oninput="rpSetupUbah(${i},'kataKunci',this.value)" aria-label="Kata kunci agenda"/><div class="small text-muted">Agenda kegiatan khusus yang namanya memuat kata ini.</div>`;
+      } else if (ind.sumber === 'PENDAMPINGAN') {
+        const jenisP = ind.jenis || [];
+        param = Object.keys(RAPOR_JENIS_PENDAMPINGAN).map(j => `<div class="form-check form-check-inline small"><input class="form-check-input" type="checkbox" id="rp-p-${i}-${j}" ${jenisP.indexOf(j) !== -1 ? 'checked' : ''} onchange="rpSetupJenis(${i},'${j}',this.checked)"/><label class="form-check-label" for="rp-p-${i}-${j}">${RAPOR_JENIS_PENDAMPINGAN[j]}</label></div>`).join('') + '<div class="small text-muted">Jenis piket pembiasaan yang diterapkan sekolah.</div>';
       } else if (ind.sumber === 'PESANTREN') {
         const jenis = ind.jenis || [];
         param = Object.keys(RAPOR_JENIS_PESANTREN).map(j => `<div class="form-check form-check-inline small"><input class="form-check-input" type="checkbox" id="rp-j-${i}-${j}" ${jenis.indexOf(j) !== -1 ? 'checked' : ''} onchange="rpSetupJenis(${i},'${j}',this.checked)"/><label class="form-check-label" for="rp-j-${i}-${j}">${RAPOR_JENIS_PESANTREN[j]}</label></div>`).join('');
@@ -4452,7 +4460,8 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
   function rpSetupSumber(i, v) {
     const ind = RAPOR.setup[i];
     ind.sumber = v;
-    if (v === 'PESANTREN' && !(ind.jenis && ind.jenis.length)) ind.jenis = ['DZIKIR_MAKHSUS', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
+    if (v === 'PENDAMPINGAN' && !(ind.jenis && ind.jenis.length && ind.jenis.every(j => RAPOR_JENIS_PENDAMPINGAN[j]))) ind.jenis = Object.keys(RAPOR_JENIS_PENDAMPINGAN);
+    if (v === 'PESANTREN' && !(ind.jenis && ind.jenis.length && ind.jenis.every(j => RAPOR_JENIS_PESANTREN[j]))) ind.jenis = ['DZIKIR_MAKHSUS', 'PENGAJIAN_ARBAIN', 'QINI_NASIONAL_SUBUH', 'QINI_NASIONAL_MALAM'];
     renderBarisIndikatorSetup();
   }
   function rpSetupJenis(i, j, ya) {
@@ -4493,7 +4502,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
       tempat_titimangsa: document.getElementById('rapor-tempat').value.trim(),
       ambang_acara_persen: parseFloat(document.getElementById('rapor-acara-persen').value),
       kuota_default: {
-        dhuha: document.getElementById('rapor-def-dhuha').value, dzuhur: document.getElementById('rapor-def-dzuhur').value, ashar: document.getElementById('rapor-def-ashar').value
+        dhuha: document.getElementById('rapor-def-dhuha').value, dzuhur: document.getElementById('rapor-def-dzuhur').value, ashar: document.getElementById('rapor-def-ashar').value, penjemputan: document.getElementById('rapor-def-penjemputan').value
       },
       nilai_pesantren: {
         majelis: document.getElementById('rapor-pes-majelis').value, streaming: document.getElementById('rapor-pes-streaming').value,
@@ -4801,7 +4810,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     ['Sakit', 'Sakit']
   ];
 
-  // Pendampingan Dhuha: yang mendampingi memilih "Bertugas" (sama seperti pendampingan Sholat).
+  // Pendampingan Dhuha & Penjemputan: yang mendampingi memilih "Bertugas" (sama seperti pendampingan Sholat).
   const OPSI_STATUS_DHUHA = [
     ['Bertugas', 'Bertugas'],
     ['Izin Terkonfirmasi', 'Izin Terkonfirmasi'],
@@ -4831,7 +4840,7 @@ var FUNGSI_BUTUH_SEKOLAH_ID = [
     if (!jenisSelect || !statusSelect) return;
 
     const isSholat = jenisSelect.value === 'SHOLAT_DZUHUR' || jenisSelect.value === 'SHOLAT_ASHAR';
-    const opsiBaru = isSholat ? OPSI_STATUS_SHOLAT : (jenisSelect.value === 'PENDAMPINGAN_DHUHA' ? OPSI_STATUS_DHUHA : OPSI_STATUS_UMUM);
+    const opsiBaru = isSholat ? OPSI_STATUS_SHOLAT : (['PENDAMPINGAN_DHUHA', 'PENDAMPINGAN_PENJEMPUTAN'].includes(jenisSelect.value) ? OPSI_STATUS_DHUHA : OPSI_STATUS_UMUM);
 
     // Kalau pilihan status yang sedang aktif masih ada di daftar opsi baru, pertahankan -
     // supaya tidak reset ke pilihan pertama kalau tidak perlu (mis. tetap di "Sakit"
