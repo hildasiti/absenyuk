@@ -4121,8 +4121,15 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
       } else if (ind.sumber === 'TAWASUL') {
         const baru = (umumPerGuru('BRIEFING_TAWASUL')[n] || []).filter((r) => r.status === 'Hadir');
         const hariTawasul = new Set(baru.map((r) => r.tanggal)).size;
-        if (hariHadir === 0) { catatTB(n, k, 'Belum ada hari hadir'); continue; }
-        catatNilai(n, k, (Math.min(hariTawasul, hariHadir) / hariHadir) * 10, `Ikut Tawasul ${Math.min(hariTawasul, hariHadir)} dari ${hariHadir} hari hadir`);
+        // Pembanding sama untuk semua guru: seluruh hari kerja periode. Hanya hari Sakit/Cuti dan Tugas Dinas milik guru itu
+        // yang dikeluarkan; Izin dan Tanpa Keterangan tetap penuh. (hadir + terlambat + izin + tanpa ket. = hari kerja - sakit/cuti - dinas)
+        const hariKerja = pay.hadir + pay.terlambat + pay.sakit + pay.izin + pay.tugasLuar + pay.alpa;
+        const dikecualikanT = pay.sakit + pay.tugasLuar;
+        const penyebutT = hariKerja - dikecualikanT;
+        if (hariKerja === 0) { catatTB(n, k, 'Belum ada hari kerja pada periode ini'); continue; }
+        if (penyebutT <= 0) { catatTB(n, k, 'Seluruh hari sakit/cuti/tugas dinas'); continue; }
+        const ikutT = Math.min(hariTawasul, penyebutT);
+        catatNilai(n, k, (ikutT / penyebutT) * 10, `Ikut Tawasul ${ikutT} dari ${penyebutT} hari kerja` + (dikecualikanT ? ` (${dikecualikanT} hari sakit/cuti/dinas tidak dihitung)` : ''));
       } else if (ind.sumber === 'SHOLAT') {
         let sah = 0, total = 0;
         ['SHOLAT_DZUHUR', 'SHOLAT_ASHAR'].forEach((j) => {
