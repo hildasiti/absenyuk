@@ -3954,7 +3954,7 @@ async function hitungRaporOtomatis(args, env) {
 
   return {
     success: true, jumlahGuru: hasil.jumlahGuru, jumlahIndikatorOtomatis: hasil.jumlahIndikatorOtomatis, sebagian: hasil.sebagian,
-    message: `Nilai otomatis dihitung untuk ${hasil.jumlahGuru} orang (${hasil.jumlahIndikatorOtomatis} indikator otomatis). Nilai manual tidak diubah.`
+    message: `Nilai otomatis dihitung untuk ${hasil.jumlahGuru} orang (${hasil.jumlahIndikatorOtomatis} indikator otomatis). Nilai manual tidak diubah. [versi hitung 16-10-2026]`
       + (hasil.sebagian ? ` Periode belum berakhir, jadi dihitung sampai ${hasil.akhirEfektif}. Hitung ulang setelah tanggal 20.` : '')
   };
 }
@@ -4099,24 +4099,29 @@ async function hitungNilaiOtomatisRapor(env, token, sekolahId, cfg, infoAsli, us
         })() : '');
         catatNilai(n, k, skor / 10, ket);
       } else if (ind.sumber === 'KETEPATAN') {
-        let tepat = pay.hadir, total = hariHadir, dariKhusus = 0;
+        // Pembanding = seluruh hari kerja periode, sama untuk semua guru. Hanya hari Sakit/Cuti dan Tugas Dinas guru itu
+        // yang dikeluarkan; terlambat, izin, dan tanpa keterangan tetap dihitung (tidak tepat waktu).
+        const hariKerjaK = pay.hadir + pay.terlambat + pay.sakit + pay.izin + pay.tugasLuar + pay.alpa;
+        const penyebutHarian = hariKerjaK - pay.sakit - pay.tugasLuar;
+        let tepat = pay.hadir, total = penyebutHarian, dariKhusus = 0;
         (khususPerGuru[n] || []).forEach((r) => {
           if (r.status_kehadiran === 'Hadir') { tepat++; total++; dariKhusus++; }
           else if (r.status_kehadiran === 'Terlambat') { total++; dariKhusus++; }
         });
         const mnK = mapNilai[n] || {};
         const pakaiJpK = (u.kategori || 'Mengajar') === 'Mengajar' && mnK.jpEfektif !== null && mnK.jpEfektif !== undefined;
-        const jpTotalHadir = pakaiJpK ? (mnK.jpTepat + mnK.jpTerlambat) : 0;
-        if (total === 0 && jpTotalHadir === 0) { catatTB(n, k, 'Belum ada data kehadiran'); continue; }
-        const ketHari = `Tepat waktu ${tepat} dari ${total} kehadiran${dariKhusus ? ` (termasuk ${dariKhusus} kegiatan khusus)` : ''}`;
-        if (pakaiJpK && jpTotalHadir > 0) {
+        const penyebutJp = pakaiJpK ? (mnK.jpEfektif - (jpRow.sakit || 0)) : 0;
+        if (hariKerjaK === 0 && dariKhusus === 0 && !(penyebutJp > 0)) { catatTB(n, k, 'Belum ada hari kerja pada periode ini'); continue; }
+        if (total <= 0 && !(penyebutJp > 0)) { catatTB(n, k, 'Seluruh hari sakit/cuti/tugas dinas'); continue; }
+        const dikecualikanK = pay.sakit + pay.tugasLuar;
+        const ketHari = `Tepat waktu ${tepat} dari ${total} hari kerja${dariKhusus ? ` (termasuk ${dariKhusus} kegiatan khusus)` : ''}` + (dikecualikanK ? ` (${dikecualikanK} hari sakit/cuti/dinas tidak dihitung)` : '');
+        if (penyebutJp > 0) {
           // Rata-rata dua rasio (harian & jam pelajaran) supaya jumlah JP yang jauh lebih banyak tidak menenggelamkan kehadiran harian.
-          const rasioJp = mnK.jpTepat / jpTotalHadir;
-          const rasio = total > 0 ? ((tepat / total) + rasioJp) / 2 : rasioJp;
-          catatNilai(n, k, rasio * 10, `${total > 0 ? ketHari + ' | ' : ''}JP tepat waktu ${Math.round(mnK.jpTepat)} dari ${Math.round(jpTotalHadir)} JP`);
+          const rasioJp = Math.min(1, mnK.jpTepat / penyebutJp);
+          const rasio = total > 0 ? ((Math.min(1, tepat / total)) + rasioJp) / 2 : rasioJp;
+          catatNilai(n, k, rasio * 10, `${total > 0 ? ketHari + ' | ' : ''}JP tepat waktu ${Math.round(mnK.jpTepat)} dari ${Math.round(penyebutJp)} JP`);
         } else {
-          if (total === 0) { catatTB(n, k, 'Belum ada data kehadiran'); continue; }
-          catatNilai(n, k, (tepat / total) * 10, ketHari);
+          catatNilai(n, k, (Math.min(1, tepat / total)) * 10, ketHari);
         }
       } else if (ind.sumber === 'TAWASUL') {
         const baru = (umumPerGuru('BRIEFING_TAWASUL')[n] || []).filter((r) => r.status === 'Hadir');
